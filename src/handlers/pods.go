@@ -1,18 +1,15 @@
 package handlers
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"math/rand"
-	"strings"
-	"time"
 
-	batchv1 "k8s.io/api/batch/v1"
 	k8sv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
-	batchtypev1 "k8s.io/client-go/kubernetes/typed/batch/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 )
 
@@ -21,21 +18,26 @@ var (
 	falseVal = false
 )
 
-type JobsArray struct {
-	JobInfo []JobInfo `json:"jobs"`
-}
+const ambassadorYaml = `---
+apiVersion: ambassador/v1
+kind:  Mapping
+name:  hatchery_mapping
+prefix: /
+headers:
+  remote_user: %s
+service: h-%s-s.%s.svc.cluster.local:80
+bypass_auth: true
+timeout_ms: 300000
+use_websocket: true
+rewrite: %s
+tls: %s
+`
 
-type JobInfo struct {
-	UID    string `json:"uid"`
-	Name   string `json:"name"`
+type WorkspaceStatus struct {
 	Status string `json:"status"`
 }
 
-type JobOutput struct {
-	Output string `json:"output"`
-}
-
-func getJobClient() batchtypev1.JobInterface {
+func getPodClient() corev1.CoreV1Interface {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -45,148 +47,182 @@ func getJobClient() batchtypev1.JobInterface {
 	clientset, err := kubernetes.NewForConfig(config)
 	// Access jobs. We can't do it all in one line, since we need to receive the
 	// errors and manage thgem appropriately
-	batchClient := clientset.BatchV1()
-	jobsClient := batchClient.Jobs("default")
-	return jobsClient
+	podClient := clientset.CoreV1()
+	return podClient
 }
 
-func createK8sJob(inputData string, accessToken string, userName string) (*JobInfo, error) {
-	jobsClient := getJobClient()
-	randname := GetRandString(5)
-	name := fmt.Sprintf("simu-%s", randname)
-	fmt.Println("input data: ", inputData)
-	var deadline int64 = 300
-	var backoff int32 = 1
-	labels := make(map[string]string)
-	labels["app"] = "sowerjob"
-	annotations := make(map[string]string)
-	annotations["gen3username"] = userName
-	// For an example of how to create jobs, see this file:
-	// https://github.com/pachyderm/pachyderm/blob/805e63/src/server/pps/server/api_server.go#L2320-L2345
-	batchJob := &batchv1.Job{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Job",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
-			Labels:      labels,
-			Annotations: annotations,
-		},
-		Spec: batchv1.JobSpec{
-			// Optional: Parallelism:,
-			// Optional: Completions:,
-			// Optional: ActiveDeadlineSeconds:,
-			// Optional: Selector:,
-			// Optional: ManualSelector:,
-			BackoffLimit:          &backoff,
-			ActiveDeadlineSeconds: &deadline,
-			Template: k8sv1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   name,
-					Labels: labels,
-				},
-				Spec: k8sv1.PodSpec{
-					InitContainers: []k8sv1.Container{}, // Doesn't seem obligatory(?)...
-					Containers: []k8sv1.Container{
-						{
-							Name:  "job-task",
-							Image: "quay.io/cdis/mickey-demo:latest",
-							SecurityContext: &k8sv1.SecurityContext{
-								Privileged: &falseVal,
-							},
-							ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways),
-							Env: []k8sv1.EnvVar{
-								{
-									Name:  "INPUT_DATA",
-									Value: inputData,
-								},
-								{
-									Name:  "ACCESS_TOKEN",
-									Value: accessToken,
-								},
-							},
-							VolumeMounts: []k8sv1.VolumeMount{},
-						},
-					},
-					RestartPolicy:    k8sv1.RestartPolicyNever,
-					Volumes:          []k8sv1.Volume{},
-					ImagePullSecrets: []k8sv1.LocalObjectReference{},
-				},
-			},
-		},
-		// Optional, not used by pach: JobStatus:,
-	}
+func statusK8sPod(userName string) (*WorkspaceStatus, error) {
+	podClient := getPodClient()
 
-	newJob, err := jobsClient.Create(batchJob)
+	safeUserName := escapism(userName)
+
+	status := WorkspaceStatus{}
+
+	podName := fmt.Sprintf("hatchery-%s", safeUserName)
+	_, err := podClient.Pods(Config.Config.UserNamespace).Get(podName, metav1.GetOptions{})
 	if err != nil {
-		return nil, err
+		// not found
+		return nil, fmt.Errorf("A workspace pod was not found: %s", err)
 	}
-	fmt.Println("New job name: ", newJob.Name)
-	ji := JobInfo{}
-	ji.Name = newJob.Name
-	ji.UID = string(newJob.GetUID())
-	ji.Status = jobStatusToString(&newJob.Status)
-	return &ji, nil
+	status.Status = "Running"
+
+	return &status, nil
 }
 
-func getPodMatchingJob(jobname string) *k8sv1.Pod {
-	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
+func deleteK8sPod(userName string) error {
+	podClient := getPodClient()
+
+	policy := metav1.DeletePropagationBackground
+	deleteOptions := &metav1.DeleteOptions{
+		PropagationPolicy: &policy,
+	}
+
+	safeUserName := escapism(userName)
+
+	podName := fmt.Sprintf("hatchery-%s", safeUserName)
+	_, err := podClient.Pods(Config.Config.UserNamespace).Get(podName, metav1.GetOptions{})
 	if err != nil {
-		return nil
+		return fmt.Errorf("A workspace pod was not found: %s", err)
 	}
-	// creates the clientset
-	clientset, err := kubernetes.NewForConfig(config)
-	pods, err := clientset.CoreV1().Pods("default").List(metav1.ListOptions{})
-	for _, pod := range pods.Items {
-		if strings.HasPrefix(pod.Name, jobname) {
-			return &pod
-		}
+	fmt.Printf("Attempting to delete pod %s for user %s\n", podName, userName)
+	podClient.Pods(Config.Config.UserNamespace).Delete(podName, deleteOptions)
+
+	serviceName := fmt.Sprintf("h-%s-s", safeUserName)
+	_, err = podClient.Services(Config.Config.UserNamespace).Get(serviceName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("A workspace service was not found: %s", err)
 	}
+	fmt.Printf("Attempting to delete service %s for user %s\n", serviceName, userName)
+	podClient.Services(Config.Config.UserNamespace).Delete(serviceName, deleteOptions)
+
 	return nil
 }
 
-func getJobLogs(jobid string) (*JobOutput, error) {
-	job, err := getJobByID(getJobClient(), jobid)
+func createK8sPod(hash string, accessToken string, userName string) error {
+	containerSettings := Config.ContainersMap[hash]
+
+	podClient := getPodClient()
+	safeUserName := escapism(userName)
+	name := fmt.Sprintf("hatchery-%s", safeUserName)
+	labels := make(map[string]string)
+	labels["app"] = name
+	annotations := make(map[string]string)
+	annotations["gen3username"] = userName
+
+	_, err := podClient.Pods(Config.Config.UserNamespace).Get(name, metav1.GetOptions{})
+	if err == nil {
+		return fmt.Errorf("A workspace is already running")
+	}
+
+	var envVars []k8sv1.EnvVar
+	for key, value := range containerSettings.Env {
+		envVar := k8sv1.EnvVar{
+			Name:  key,
+			Value: value,
+		}
+		envVars = append(envVars, envVar)
+	}
+
+	pod := &k8sv1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   Config.Config.UserNamespace,
+			Labels:      labels,
+			Annotations: annotations,
+		},
+		Spec: k8sv1.PodSpec{
+			InitContainers: []k8sv1.Container{},
+			Containers: []k8sv1.Container{
+				{
+					Name:  "hatchery-container",
+					Image: containerSettings.Image,
+					SecurityContext: &k8sv1.SecurityContext{
+						Privileged: &falseVal,
+					},
+					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullIfNotPresent),
+					Env: envVars,
+					Command: containerSettings.Command,
+					Args: containerSettings.Args,
+					VolumeMounts: []k8sv1.VolumeMount{},
+					Resources: k8sv1.ResourceRequirements{
+						Limits: k8sv1.ResourceList{
+							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),
+							k8sv1.ResourceMemory: resource.MustParse(containerSettings.MemoryLimit),
+						},
+						Requests: k8sv1.ResourceList{
+							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),
+							k8sv1.ResourceMemory: resource.MustParse(containerSettings.MemoryLimit),
+						},
+					},
+				},
+			},
+			RestartPolicy:    k8sv1.RestartPolicyNever,
+			Volumes:          []k8sv1.Volume{},
+			ImagePullSecrets: []k8sv1.LocalObjectReference{},
+			NodeSelector: map[string]string{
+				"role": "jupyter",
+			},
+			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}},
+		},
+	}
+	_, err = podClient.Pods(Config.Config.UserNamespace).Create(pod)
 	if err != nil {
-		return nil, err
-	}
-	if job.Labels["app"] != "sowerjob" {
-		return nil, fmt.Errorf("job with jobid %s not found", jobid)
+		fmt.Printf("Failed to launch pod %s for user %s. Image: %s, CPU %s, Memory %s. Error: %s\n", name, userName, containerSettings.Image, containerSettings.CPULimit, containerSettings.MemoryLimit, err)
+		return err
 	}
 
-	pod := getPodMatchingJob(job.Name)
-	if pod == nil {
-		return nil, fmt.Errorf("Pod not found")
+	fmt.Printf("Launched pod %s for user %s. Image: %s, CPU %s, Memory %s\n", name, userName, containerSettings.Image, containerSettings.CPULimit, containerSettings.MemoryLimit)
+
+	labelsService := make(map[string]string)
+	labels["app"] = name
+	annotationsService := make(map[string]string)
+	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userName, safeUserName, Config.Config.UserNamespace, containerSettings.PathRewrite, containerSettings.UseTLS)
+	serviceName := fmt.Sprintf("h-%s-s", safeUserName)
+
+	_, err = podClient.Services(Config.Config.UserNamespace).Get(serviceName, metav1.GetOptions{})
+	if err == nil {
+		// This probably happened as the result of some error... there was no pod but was a service
+		// Lets just clean it up and proceed
+		policy := metav1.DeletePropagationBackground
+		deleteOptions := &metav1.DeleteOptions{
+			PropagationPolicy: &policy,
+		}
+		podClient.Services(Config.Config.UserNamespace).Delete(serviceName, deleteOptions)
 	}
 
-	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
+	service := &k8sv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        serviceName,
+			Namespace:   Config.Config.UserNamespace,
+			Labels:      labelsService,
+			Annotations: annotationsService,
+		},
+		Spec: k8sv1.ServiceSpec{
+			Type:     k8sv1.ServiceTypeClusterIP,
+			Selector: map[string]string{"app": name},
+			Ports: []k8sv1.ServicePort{
+				{
+					Name:     name,
+					Protocol: k8sv1.ProtocolTCP,
+					Port:     80,
+					TargetPort: intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: containerSettings.TargetPort,
+					},
+				},
+			},
+		},
+	}
+
+	_, err = podClient.Services(Config.Config.UserNamespace).Create(service)
 	if err != nil {
-		panic(err.Error())
+		fmt.Printf("Failed to launch service %s for user %s forwarding port %d. Error: %s\n", serviceName, userName, containerSettings.TargetPort, err)
+		return err
 	}
-	// creates the clientset
-	clientset, err := kubernetes.NewForConfig(config)
-	podLogOptions := k8sv1.PodLogOptions{}
-	req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOptions)
-	podLogs, err := req.Stream()
-	if err != nil {
-		return nil, err
-	}
-	defer podLogs.Close()
 
-	buf := new(bytes.Buffer)
-	_, err = io.Copy(buf, podLogs)
-	if err != nil {
-		return nil, fmt.Errorf("Error copying output")
-	}
-	str := buf.String()
+	fmt.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, containerSettings.TargetPort)
 
-	ji := JobOutput{}
-	ji.Output = str
-	return &ji, nil
-
+	return nil
 }
 
 // GetRandString returns a random string of lenght N
@@ -199,44 +235,26 @@ func GetRandString(n int) string {
 	return string(b)
 }
 
-func jobOlderThan(status *batchv1.JobStatus, cutoffSeconds int32) bool {
-	then := time.Now().Add(time.Duration(-cutoffSeconds) * time.Second)
-	return status.StartTime.Time.Before(then)
+// Escapism escapes characters not allowed into hex with -
+func escapism(input string) string {
+	safeBytes := "abcdefghijklmnopqrstuvwxyz0123456789"
+	var escaped string
+	for _, v := range input {
+		if !characterInString(v, safeBytes) {
+			hexCode := fmt.Sprintf("%2x", v)
+			escaped += "-" + hexCode
+		} else {
+			escaped += string(v)
+		}
+	}
+	return escaped
 }
 
-func StartMonitoringProcess() {
-	jc := getJobClient()
-	deleteOption := metav1.NewDeleteOptions(120)
-	var deletionPropagation metav1.DeletionPropagation = "Background"
-	deleteOption.PropagationPolicy = &deletionPropagation
-	for {
-		jobsList, err := jc.List(metav1.ListOptions{LabelSelector: "app=sowerjob"})
-
-		if err != nil {
-			fmt.Println("Monitoring error: ", err)
-			time.Sleep(30 * time.Second)
-			continue
+func characterInString(a rune, list string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
 		}
-
-		for _, job := range jobsList.Items {
-			k8sJob, err := getJobStatusByID(string(job.GetUID()))
-			if err != nil {
-				fmt.Println("Can't get job status by UID: ", job.Name, err)
-			} else {
-				if k8sJob.Status == "Unknown" || k8sJob.Status == "Running" {
-					continue
-				} else {
-					if jobOlderThan(&job.Status, 1800) {
-						fmt.Println("Deleting old job: ", job.Name)
-						if err = jc.Delete(job.Name, deleteOption); err != nil {
-							fmt.Println("Error deleting job : ", job.Name, err)
-						}
-					}
-				}
-			}
-
-		}
-
-		time.Sleep(30 * time.Second)
 	}
+	return false
 }

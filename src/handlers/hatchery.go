@@ -3,107 +3,123 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"strings"
 )
 
+var Config = loadConfig("/hatchery.json")
+
 func RegisterHatchery() {
-	http.HandleFunc("/", dispatch)
-	http.HandleFunc("/spawn", spawn)
-	http.HandleFunc("/despawn", despawn)
-	http.HandleFunc("/workspace", workspace)
+	http.HandleFunc("/", home)
+	http.HandleFunc("/launch", launch)
+	http.HandleFunc("/terminate", terminate)
+	http.HandleFunc("/status", status)
+	http.HandleFunc("/options", options)
 }
 
-func workspace(w http.ResponseWriter, r *http.Request) {
-	userName := r.Header.Get("REMOTE_USER")
-	
-}
+func home(w http.ResponseWriter, r *http.Request) {
+	htmlHeader := `<html>
+	<head>Gen3 Hatchery</head>
+	<body>`
+	fmt.Fprintf(w, htmlHeader)
 
-func spawn(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Not Found", 404)
-		return
-	}
-	accessToken := getBearerToken(r)
-
-	inputData, err := ioutil.ReadAll(r.Body)
-	defer r.Body.Close()
-
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
+	for k, v := range Config.ContainersMap { 
+		fmt.Fprintf(w, "<h1><a href=\"%s/launch?hash=%s\">Launch %s - %s CPU - %s Memory</a></h1>", Config.Config.SubDir, k, v.Name, v.CPULimit, v.MemoryLimit)
 	}
 
-	userName := r.Header.Get("REMOTE_USER")
+	htmlFooter := `</body>
+	</html>`
+	fmt.Fprintf(w, htmlFooter)
 
-	result, err := createK8sJob(string(inputData), *accessToken, userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	out, err := json.Marshal(result)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	fmt.Fprintf(w, string(out))
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
-	UID := r.URL.Query().Get("UID")
-	if UID != "" {
-		result, errUID := getJobStatusByID(UID)
-		if errUID != nil {
-			http.Error(w, errUID.Error(), 500)
-			return
-		}
+	userName := r.Header.Get("REMOTE_USER")
 
-		out, err := json.Marshal(result)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		fmt.Fprintf(w, string(out))
-	} else {
-		http.Error(w, "Missing UID argument", 300)
+	result, err := statusK8sPod(userName)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
 		return
 	}
-}
 
-func output(w http.ResponseWriter, r *http.Request) {
-	UID := r.URL.Query().Get("UID")
-	if UID != "" {
-		result, errUID := getJobLogs(UID)
-		if errUID != nil {
-			http.Error(w, errUID.Error(), 500)
-			return
-		}
-
-		out, err := json.Marshal(result)
-		if err != nil {
+	out, err := json.Marshal(result)
+	if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
-		}
-
-		fmt.Fprintf(w, string(out))
-	} else {
-		http.Error(w, "Missing UID argument", 300)
-		return
 	}
+
+	fmt.Fprintf(w, string(out))
+
 }
 
-func getBearerToken(r *http.Request) *string {
+func options(w http.ResponseWriter, r *http.Request) {
+	type container struct {
+		Name        string            `json:"name"`
+		CPULimit    string            `json:"cpu-limit"`
+		MemoryLimit string            `json:"memory-limit"`
+		ID 			string            `json:"id"`
+	}
+	var options []container
+	for k, v := range Config.ContainersMap {
+		c := container{
+			Name: v.Name,
+			CPULimit: v.CPULimit,
+			MemoryLimit: v.MemoryLimit,
+			ID: k,
+		}
+		options = append(options, c)
+	}
+
+	out, err := json.Marshal(options)
+	if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+	}
+
+	fmt.Fprintf(w, string(out))
+
+}
+
+func launch(w http.ResponseWriter, r *http.Request) {
+	accessToken := getBearerToken(r)
+
+	hash := r.URL.Query().Get("hash")
+    if hash == "" {
+        http.Error(w, "Missing hash argument", 400)
+        return
+    }
+
+	userName := r.Header.Get("REMOTE_USER")
+
+	err := createK8sPod(string(hash), accessToken, userName)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	fmt.Fprintf(w, "Success")
+}
+
+func terminate(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+
+	err := deleteK8sPod(userName)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	fmt.Fprintf(w, "Terminated workspace")
+}
+
+func getBearerToken(r *http.Request) string {
 	authHeader := r.Header.Get("Authorization")
-	fmt.Println("header: ", authHeader)
 	if authHeader == "" {
-		return nil
+		return ""
 	}
 	s := strings.SplitN(authHeader, " ", 2)
 	if len(s) == 2 && strings.ToLower(s[0]) == "bearer" {
-		return &s[1]
+		return s[1]
 	}
-	return nil
+	return ""
 }
