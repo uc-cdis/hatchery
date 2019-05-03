@@ -206,12 +206,17 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 				},
 			},
 			RestartPolicy:    k8sv1.RestartPolicyNever,
-			Volumes:          []k8sv1.Volume{},
 			ImagePullSecrets: []k8sv1.LocalObjectReference{},
 			NodeSelector: map[string]string{
 				"role": "jupyter",
 			},
 			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}},
+			Volumes: []k8sv1.Volume{
+				{
+					Name:         "shared-data",
+					VolumeSource: k8sv1.VolumeSource{},
+				},
+			},
 		},
 	}
 	_, err = podClient.Pods(Config.Config.UserNamespace).Create(pod)
