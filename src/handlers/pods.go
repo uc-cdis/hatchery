@@ -5,10 +5,10 @@ import (
 	"math/rand"
 
 	k8sv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/apimachinery/pkg/api/resource"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 )
@@ -108,6 +108,10 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	labels["app"] = name
 	annotations := make(map[string]string)
 	annotations["gen3username"] = userName
+	var runAsUser int64 = 0
+	var runAsGroup int64 = 0
+	var hostToContainer k8sv1.MountPropagationMode = k8sv1.MountPropagationHostToContainer
+	var bidirectional k8sv1.MountPropagationMode = k8sv1.MountPropagationBidirectional
 
 	_, err := podClient.Pods(Config.Config.UserNamespace).Get(name, metav1.GetOptions{})
 	if err == nil {
@@ -121,6 +125,15 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 			Value: value,
 		}
 		envVars = append(envVars, envVar)
+	}
+
+	var sidecarEnvVars []k8sv1.EnvVar
+	for key, value := range Config.Config.Sidecar.Env {
+		envVar := k8sv1.EnvVar{
+			Name:  key,
+			Value: value,
+		}
+		sidecarEnvVars = append(sidecarEnvVars, envVar)
 	}
 
 	pod := &k8sv1.Pod{
@@ -140,10 +153,46 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 						Privileged: &falseVal,
 					},
 					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullIfNotPresent),
-					Env: envVars,
-					Command: containerSettings.Command,
-					Args: containerSettings.Args,
-					VolumeMounts: []k8sv1.VolumeMount{},
+					Env:             envVars,
+					Command:         containerSettings.Command,
+					Args:            containerSettings.Args,
+					VolumeMounts:    []k8sv1.VolumeMount{
+						{
+							MountPath: 	  "/data", 
+							Name: 		  "shared-data",
+							MountPropagation: &hostToContainer,
+						},
+					},
+					Resources: k8sv1.ResourceRequirements{
+						Limits: k8sv1.ResourceList{
+							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),
+							k8sv1.ResourceMemory: resource.MustParse(containerSettings.MemoryLimit),
+						},
+						Requests: k8sv1.ResourceList{
+							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),
+							k8sv1.ResourceMemory: resource.MustParse(containerSettings.MemoryLimit),
+						},
+					},
+				},
+				{
+					Name:  "fuse-container",
+					Image: Config.Config.Sidecar.Image,
+					SecurityContext: &k8sv1.SecurityContext{
+						Privileged: &trueVal,
+						RunAsUser: &runAsUser,
+						RunAsGroup: &runAsGroup,
+					},
+					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullIfNotPresent),
+					Env:             sidecarEnvVars,
+					Command:         Config.Config.Sidecar.Command,
+					Args:            Config.Config.Sidecar.Args,
+					VolumeMounts:    []k8sv1.VolumeMount{
+						{
+							MountPath: 	  "/data", 
+							Name: 		  "shared-data",
+							MountPropagation: &bidirectional,
+						},
+					},
 					Resources: k8sv1.ResourceRequirements{
 						Limits: k8sv1.ResourceList{
 							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),

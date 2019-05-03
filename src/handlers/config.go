@@ -21,12 +21,22 @@ type Container struct {
 	UseTLS 		string            `json:"use-tls"`
 }
 
+type SidecarContainer struct {
+	CPULimit    string            `json:"cpu-limit"`
+	MemoryLimit string            `json:"memory-limit"`
+	Image       string            `json:"image"`
+	Env         map[string]string `json:"env"`
+	Args        []string          `json:"args"`
+	Command     []string          `json:"command"`
+}
+
 // HatcheryConfig Struct to hold all the configuration
 type HatcheryConfig struct {
-	Name          string      `json:"name"`
-	UserNamespace string      `json:"user-namespace"`
-	SubDir        string      `json:"sub-dir"`
-	Containers    []Container `json:"containers"`
+	Name          string      		 `json:"name"`
+	UserNamespace string      	     `json:"user-namespace"`
+	SubDir        string      		 `json:"sub-dir"`
+	Containers    []Container 		 `json:"containers"`
+	Sidecar    	  SidecarContainer   `json:"sidecar"`
 }
 
 type FullHatcheryConfig struct {
