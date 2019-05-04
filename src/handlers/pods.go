@@ -195,12 +195,19 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 					},
 					Resources: k8sv1.ResourceRequirements{
 						Limits: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(containerSettings.MemoryLimit),
+							k8sv1.ResourceCPU:    resource.MustParse(Config.Config.Sidecar.CPULimit),
+							k8sv1.ResourceMemory: resource.MustParse(Config.Config.Sidecar.MemoryLimit),
 						},
 						Requests: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(containerSettings.MemoryLimit),
+							k8sv1.ResourceCPU:    resource.MustParse(Config.Config.Sidecar.CPULimit),
+							k8sv1.ResourceMemory: resource.MustParse(Config.Config.Sidecar.MemoryLimit),
+						},
+					},
+					Lifecycle: &k8sv1.Lifecycle{
+						PreStop: &k8sv1.Handler{
+							Exec: &k8sv1.ExecAction{
+								Command: Config.Config.Sidecar.LifecyclePreStop,
+							},
 						},
 					},
 				},

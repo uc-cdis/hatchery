@@ -28,6 +28,7 @@ type SidecarContainer struct {
 	Env         map[string]string `json:"env"`
 	Args        []string          `json:"args"`
 	Command     []string          `json:"command"`
+	LifecyclePreStop     []string `json:"lifecycle-pre-stop"`
 }
 
 // HatcheryConfig Struct to hold all the configuration
