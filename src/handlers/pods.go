@@ -62,7 +62,8 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 	_, err := podClient.Pods(Config.Config.UserNamespace).Get(podName, metav1.GetOptions{})
 	if err != nil {
 		// not found
-		return nil, fmt.Errorf("A workspace pod was not found: %s", err)
+		status.Status = "Not Found"
+		return &status, nil
 	}
 	status.Status = "Running"
 
@@ -136,6 +137,16 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		sidecarEnvVars = append(sidecarEnvVars, envVar)
 	}
 
+	var volumeMounts = []k8sv1.VolumeMount{
+		{
+			MountPath: 	  "/data", 
+			Name: 		  "shared-data",
+			MountPropagation: &hostToContainer,
+		},
+	}
+
+
+
 	pod := &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -156,13 +167,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 					Env:             envVars,
 					Command:         containerSettings.Command,
 					Args:            containerSettings.Args,
-					VolumeMounts:    []k8sv1.VolumeMount{
-						{
-							MountPath: 	  "/data", 
-							Name: 		  "shared-data",
-							MountPropagation: &hostToContainer,
-						},
-					},
+					VolumeMounts:    volumeMounts,
 					Resources: k8sv1.ResourceRequirements{
 						Limits: k8sv1.ResourceList{
 							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),
@@ -171,6 +176,18 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 						Requests: k8sv1.ResourceList{
 							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),
 							k8sv1.ResourceMemory: resource.MustParse(containerSettings.MemoryLimit),
+						},
+					},
+					Lifecycle: &k8sv1.Lifecycle{
+						PreStop: &k8sv1.Handler{
+							Exec: &k8sv1.ExecAction{
+								Command: containerSettings.LifecyclePreStop,
+							},
+						},
+						PostStart: &k8sv1.Handler{
+							Exec: &k8sv1.ExecAction{
+								Command: containerSettings.LifecyclePostStart,
+							},
 						},
 					},
 				},

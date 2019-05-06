@@ -19,6 +19,8 @@ type Container struct {
 	Command     []string          `json:"command"`
 	PathRewrite string            `json:"path-rewrite"`
 	UseTLS 		string            `json:"use-tls"`
+	LifecyclePreStop     []string `json:"lifecycle-pre-stop"`
+	LifecyclePostStart   []string `json:"lifecycle-post-start"`
 }
 
 type SidecarContainer struct {
