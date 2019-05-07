@@ -77,7 +77,7 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 		status.Status = "Stopped"
 		return &status, nil
 	default:
-		fmt.Printf("Unknown pod status for %s: %s", podName, string(pod.Status.Phase))
+		fmt.Printf("Unknown pod status for %s: %s\n", podName, string(pod.Status.Phase))
 	}
 
 	var allReady = true
@@ -96,7 +96,7 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 		status.Status = "Launching"
 		return &status, nil
 	}
-	
+
 }
 
 func deleteK8sPod(userName string) error {
@@ -168,8 +168,8 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 
 	var volumeMounts = []k8sv1.VolumeMount{
 		{
-			MountPath: 	  "/data", 
-			Name: 		  "shared-data",
+			MountPath:        "/data",
+			Name:             "shared-data",
 			MountPropagation: &hostToContainer,
 		},
 	}
@@ -222,23 +222,31 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 						},
 					},
 					Lifecycle: &lifeCycle,
+					ReadinessProbe: &k8sv1.Probe{
+						Handler: k8sv1.Handler{
+							HTTPGet: &k8sv1.HTTPGetAction{
+								Path: "/",
+								Port: intstr.FromInt(int(containerSettings.TargetPort)),
+							},
+						},
+					},
 				},
 				{
 					Name:  "fuse-container",
 					Image: Config.Config.Sidecar.Image,
 					SecurityContext: &k8sv1.SecurityContext{
 						Privileged: &trueVal,
-						RunAsUser: &runAsUser,
+						RunAsUser:  &runAsUser,
 						RunAsGroup: &runAsGroup,
 					},
 					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullIfNotPresent),
 					Env:             sidecarEnvVars,
 					Command:         Config.Config.Sidecar.Command,
 					Args:            Config.Config.Sidecar.Args,
-					VolumeMounts:    []k8sv1.VolumeMount{
+					VolumeMounts: []k8sv1.VolumeMount{
 						{
-							MountPath: 	  "/data", 
-							Name: 		  "shared-data",
+							MountPath:        "/data",
+							Name:             "shared-data",
 							MountPropagation: &bidirectional,
 						},
 					},
