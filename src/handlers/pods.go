@@ -21,7 +21,7 @@ var (
 const ambassadorYaml = `---
 apiVersion: ambassador/v1
 kind:  Mapping
-name:  hatchery_mapping
+name:  %s-mapping
 prefix: /
 headers:
   remote_user: %s
@@ -67,10 +67,6 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 	}
 
 	switch pod.Status.Phase {
-	case "Pending":
-	case "ContainerCreating":
-		status.Status = "Launching"
-		return &status, nil
 	case "Failed":
 	case "Succeeded":
 	case "Unknown":
@@ -82,10 +78,19 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 		fmt.Printf("Unknown pod status for %s: %s\n", podName, string(pod.Status.Phase))
 	}
 
+	if pod.DeletionTimestamp != nil {
+		status.Status = "Terminating"
+		return &status, nil
+	}
+
 	var allReady = true
 	for _, v := range pod.Status.Conditions {
 		fmt.Printf("Conditions are %s, %s\n", v.Type, v.Status)
 		if v.Type == "Ready" {
+			if v.Status != "True" {
+				allReady = false
+			}
+		} else if v.Type == "PodScheduled" {
 			if v.Status != "True" {
 				allReady = false
 			}
@@ -297,7 +302,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	labelsService := make(map[string]string)
 	labels["app"] = name
 	annotationsService := make(map[string]string)
-	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userName, safeUserName, Config.Config.UserNamespace, containerSettings.PathRewrite, containerSettings.UseTLS)
+	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, safeUserName, userName, safeUserName, Config.Config.UserNamespace, containerSettings.PathRewrite, containerSettings.UseTLS)
 	serviceName := fmt.Sprintf("h-%s-s", safeUserName)
 
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(serviceName, metav1.GetOptions{})
