@@ -85,7 +85,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 	hash := r.URL.Query().Get("hash")
     if hash == "" {
-        http.Error(w, "Missing hash argument", 400)
+        http.Error(w, "Missing ID argument", 400)
         return
     }
 

@@ -59,15 +59,44 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
 
 	podName := fmt.Sprintf("hatchery-%s", safeUserName)
-	_, err := podClient.Pods(Config.Config.UserNamespace).Get(podName, metav1.GetOptions{})
+	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(podName, metav1.GetOptions{})
 	if err != nil {
 		// not found
 		status.Status = "Not Found"
 		return &status, nil
 	}
-	status.Status = "Running"
 
-	return &status, nil
+	switch pod.Status.Phase {
+	case "Pending":
+	case "ContainerCreating":
+		status.Status = "Launching"
+		return &status, nil
+	case "Failed":
+	case "Succeeded":
+	case "Unknown":
+		status.Status = "Stopped"
+		return &status, nil
+	default:
+		fmt.Printf("Unknown pod status for %s: %s", podName, string(pod.Status.Phase))
+	}
+
+	var allReady = true
+	for _, v := range pod.Status.Conditions {
+		if v.Type == "Ready" {
+			if v.Status != "True" {
+				allReady = false
+			}
+		}
+	}
+
+	if allReady == true {
+		status.Status = "Running"
+		return &status, nil
+	} else {
+		status.Status = "Launching"
+		return &status, nil
+	}
+	
 }
 
 func deleteK8sPod(userName string) error {
@@ -145,7 +174,21 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		},
 	}
 
-
+	var lifeCycle = k8sv1.Lifecycle{}
+	if containerSettings.LifecyclePreStop != nil && len(containerSettings.LifecyclePreStop) > 0 {
+		lifeCycle.PreStop = &k8sv1.Handler{
+			Exec: &k8sv1.ExecAction{
+				Command: containerSettings.LifecyclePreStop,
+			},
+		}
+	}
+	if containerSettings.LifecyclePostStart != nil && len(containerSettings.LifecyclePostStart) > 0 {
+		lifeCycle.PostStart = &k8sv1.Handler{
+			Exec: &k8sv1.ExecAction{
+				Command: containerSettings.LifecyclePostStart,
+			},
+		}
+	}
 
 	pod := &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -178,18 +221,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 							k8sv1.ResourceMemory: resource.MustParse(containerSettings.MemoryLimit),
 						},
 					},
-					Lifecycle: &k8sv1.Lifecycle{
-						PreStop: &k8sv1.Handler{
-							Exec: &k8sv1.ExecAction{
-								Command: containerSettings.LifecyclePreStop,
-							},
-						},
-						PostStart: &k8sv1.Handler{
-							Exec: &k8sv1.ExecAction{
-								Command: containerSettings.LifecyclePostStart,
-							},
-						},
-					},
+					Lifecycle: &lifeCycle,
 				},
 				{
 					Name:  "fuse-container",
