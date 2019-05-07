@@ -19,6 +19,7 @@ type Container struct {
 	Command     []string          `json:"command"`
 	PathRewrite string            `json:"path-rewrite"`
 	UseTLS 		string            `json:"use-tls"`
+	ReadyProbe  string            `json:"ready-probe"`
 	LifecyclePreStop     []string `json:"lifecycle-pre-stop"`
 	LifecyclePostStart   []string `json:"lifecycle-post-start"`
 }
@@ -35,7 +36,6 @@ type SidecarContainer struct {
 
 // HatcheryConfig Struct to hold all the configuration
 type HatcheryConfig struct {
-	Name          string      		 `json:"name"`
 	UserNamespace string      	     `json:"user-namespace"`
 	SubDir        string      		 `json:"sub-dir"`
 	Containers    []Container 		 `json:"containers"`

@@ -233,7 +233,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 					ReadinessProbe: &k8sv1.Probe{
 						Handler: k8sv1.Handler{
 							HTTPGet: &k8sv1.HTTPGetAction{
-								Path: "/",
+								Path: containerSettings.ReadyProbe,
 								Port: intstr.FromInt(int(containerSettings.TargetPort)),
 							},
 						},
