@@ -22,6 +22,9 @@ type Container struct {
 	ReadyProbe  string            `json:"ready-probe"`
 	LifecyclePreStop     []string `json:"lifecycle-pre-stop"`
 	LifecyclePostStart   []string `json:"lifecycle-post-start"`
+	UserUID     int64             `json:"user-uid"`
+	GroupUID    int64             `json:"group-uid"`
+	FSGID       int64             `json:"fs-gid"`
 }
 
 type SidecarContainer struct {

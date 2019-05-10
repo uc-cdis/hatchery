@@ -72,6 +72,9 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 	case "Unknown":
 		status.Status = "Stopped"
 		return &status, nil
+	case "Pending":
+		status.Status = "Launching"
+		return &status, nil
 	case "Running":
 		break
 	default:
@@ -146,8 +149,8 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	labels["app"] = name
 	annotations := make(map[string]string)
 	annotations["gen3username"] = userName
-	var runAsUser int64 = 0
-	var runAsGroup int64 = 0
+	var sideCarRunAsUser int64 = 0
+	var sideCarRunAsGroup int64 = 0
 	var hostToContainer k8sv1.MountPropagationMode = k8sv1.MountPropagationHostToContainer
 	var bidirectional k8sv1.MountPropagationMode = k8sv1.MountPropagationBidirectional
 
@@ -198,6 +201,19 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		}
 	}
 
+	var securityContext = k8sv1.PodSecurityContext{}
+
+	if containerSettings.UserUID != 0 {
+		securityContext.RunAsUser = &containerSettings.UserUID
+	}
+	if containerSettings.UserUID != 0 {
+		securityContext.RunAsGroup = &containerSettings.GroupUID
+	}
+	if containerSettings.FSGID != 0 {
+		securityContext.FSGroup = &containerSettings.FSGID
+	}
+
+
 	pod := &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -206,6 +222,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 			Annotations: annotations,
 		},
 		Spec: k8sv1.PodSpec{
+			SecurityContext: &securityContext,
 			InitContainers: []k8sv1.Container{},
 			Containers: []k8sv1.Container{
 				{
@@ -244,8 +261,8 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 					Image: Config.Config.Sidecar.Image,
 					SecurityContext: &k8sv1.SecurityContext{
 						Privileged: &trueVal,
-						RunAsUser:  &runAsUser,
-						RunAsGroup: &runAsGroup,
+						RunAsUser:  &sideCarRunAsUser,
+						RunAsGroup: &sideCarRunAsGroup,
 					},
 					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullIfNotPresent),
 					Env:             sidecarEnvVars,
