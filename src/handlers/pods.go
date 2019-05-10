@@ -114,8 +114,10 @@ func deleteK8sPod(userName string) error {
 	podClient := getPodClient()
 
 	policy := metav1.DeletePropagationBackground
+	var grace int64 = 20
 	deleteOptions := &metav1.DeleteOptions{
 		PropagationPolicy: &policy,
+		GracePeriodSeconds: &grace,
 	}
 
 	safeUserName := escapism(userName)
