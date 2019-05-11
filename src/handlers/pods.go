@@ -266,7 +266,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 						RunAsUser:  &sideCarRunAsUser,
 						RunAsGroup: &sideCarRunAsGroup,
 					},
-					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullIfNotPresent),
+					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways),
 					Env:             sidecarEnvVars,
 					Command:         Config.Config.Sidecar.Command,
 					Args:            Config.Config.Sidecar.Args,
