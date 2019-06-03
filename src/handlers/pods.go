@@ -66,6 +66,11 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 		return &status, nil
 	}
 
+	if pod.DeletionTimestamp != nil {
+		status.Status = "Terminating"
+		return &status, nil
+	}
+
 	switch pod.Status.Phase {
 	case "Failed":
 	case "Succeeded":
@@ -79,11 +84,6 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 		break
 	default:
 		fmt.Printf("Unknown pod status for %s: %s\n", podName, string(pod.Status.Phase))
-	}
-
-	if pod.DeletionTimestamp != nil {
-		status.Status = "Terminating"
-		return &status, nil
 	}
 
 	var allReady = true
@@ -179,14 +179,6 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		sidecarEnvVars = append(sidecarEnvVars, envVar)
 	}
 
-	var volumeMounts = []k8sv1.VolumeMount{
-		{
-			MountPath:        "/data",
-			Name:             "shared-data",
-			MountPropagation: &hostToContainer,
-		},
-	}
-
 	var lifeCycle = k8sv1.Lifecycle{}
 	if containerSettings.LifecyclePreStop != nil && len(containerSettings.LifecyclePreStop) > 0 {
 		lifeCycle.PreStop = &k8sv1.Handler{
@@ -215,6 +207,64 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		securityContext.FSGroup = &containerSettings.FSGID
 	}
 
+	var volumes = []k8sv1.Volume{
+		{
+			Name:         "shared-data",
+			VolumeSource: k8sv1.VolumeSource{},
+		},
+	}
+
+	var volumeMounts = []k8sv1.VolumeMount{
+		{
+			MountPath:        "/data",
+			Name:             "shared-data",
+			MountPropagation: &hostToContainer,
+		},
+	}
+
+	if containerSettings.UserVolumeLocation != "" {
+		var claimName = fmt.Sprintf("claim-%s", safeUserName)
+
+		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(claimName, metav1.GetOptions{})
+		if err != nil {
+			fmt.Printf("Creating PersistentVolumeClaim %s.", claimName)
+			pvc := &k8sv1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: claimName,
+					Annotations: annotations,
+					Labels: labels,
+				},
+				Spec: k8sv1.PersistentVolumeClaimSpec{
+					AccessModes: []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteOnce},
+					Resources: k8sv1.ResourceRequirements{
+						Requests: k8sv1.ResourceList{
+							k8sv1.ResourceStorage: resource.MustParse("10Gi"),
+						},
+					},
+				},
+			}
+			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(pvc)
+			if err != nil {
+				fmt.Printf("Failed to create PVC %s. Error: %s\n", claimName, err)
+				return err
+			}
+		}
+
+		volumes = append(volumes, k8sv1.Volume{
+			Name: "user-data",
+			VolumeSource: k8sv1.VolumeSource{
+				PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+				},
+			},
+		})
+
+		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
+				MountPath:        containerSettings.UserVolumeLocation,
+				Name:             "user-data",
+		})
+		
+	}
 
 	pod := &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -302,12 +352,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 				"role": "jupyter",
 			},
 			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}},
-			Volumes: []k8sv1.Volume{
-				{
-					Name:         "shared-data",
-					VolumeSource: k8sv1.VolumeSource{},
-				},
-			},
+			Volumes: volumes,
 		},
 	}
 	_, err = podClient.Pods(Config.Config.UserNamespace).Create(pod)
