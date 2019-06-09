@@ -227,7 +227,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 
 		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(claimName, metav1.GetOptions{})
 		if err != nil {
-			fmt.Printf("Creating PersistentVolumeClaim %s.", claimName)
+			fmt.Printf("Creating PersistentVolumeClaim %s.\n", claimName)
 			pvc := &k8sv1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: claimName,
