@@ -50,6 +50,13 @@ An example manifest entry may look like
 * `user-namespace` is which namespace the pods will be deployed into.
 * `sub-dir` is the path to Hatchery off the host domain, i.e. if the full domain path is `https://nci-crdc-demo.datacommons.io/lw-workspace` then `sub-dir` is `/lw-workspace`.
 * `sidecar` is the sidecar container launched in the same pod as each workspace container. In Gen3 this is used for the FUSE mount system to the manifests that the user has loaded in.
+    * `cpu-limit` the CPU limit for the container matching Kubernetes resource spec.
+    * `memory-limit` the memory limit for the container matching Kubernetes resource spec.
+    * `image` the sidecar image path with tag.
+    * `env` a dictionary of additional environment variables to pass to the container.
+    * `args` the arguments to pass to the container.
+    * `command` a string array as the command to run in the container overriding the default.
+    * `lifecycle-pre-stop` a string array as the container prestop command.
 * `containers` is the list of workspaces available to be run by this instance of Hatchery. Each container must be a single image and expose a web server. 
     * `target-port` specifies the port that the container is exposing the webserver on. 
     * `cpu-limit` the CPU limit for the container matching Kubernetes resource spec.
@@ -65,7 +72,41 @@ An example manifest entry may look like
     * `user-uid` the UID for the user in this container.
     * `fs-gid` the GID for the filesystem mounts.
     * `user-volume-location` the location where the user persistant storage should be mounted in this container.
-    * `LifecyclePreStop` a string array as the container prestop command.
-    * `LifecyclePostStart` a string array as the container poststart command.
+    * `lifecycle-pre-stop` a string array as the container prestop command.
+    * `lifecycle-post-start` a string array as the container poststart command.
 
 
+### Configuration for R Studio
+
+When running R Studio workspaces we recommend using
+
+```
+"env": {"DISABLE_AUTH": "true"}
+```
+
+to disable authentication as this is a single user container when run with Hatchery.
+
+### Configuration for Jupyter Noteboboks
+
+When running Jupyter Notebook workspaces we recommend using
+
+```
+"args": ["--NotebookApp.base_url=/lw-workspace/proxy/","--NotebookApp.password=''","--NotebookApp.token=''"],
+"command": ["start-notebook.sh"],
+"path-rewrite": "/lw-workspace/proxy/",
+"ready-probe": "/lw-workspace/proxy/",
+"user-uid": 1000,
+"fs-gid": 100
+```
+
+to disable authentication as this is a single user container when run with Hatchery. This also sets the paths to be correct as well as the user IDs.
+
+### Configuration for Galaxy
+
+When running Galaxy workspaces we recommend using
+
+```
+"env": {"PROXY_PREFIX": "/lw-workspace/proxy/", "GALAXY_CONFIG_SINGLE_USER": "gen3@gen3.org"}
+```
+
+to disable authentication as this is a single user container when run with Hatchery.
