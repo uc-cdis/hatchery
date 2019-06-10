@@ -11,249 +11,58 @@ servers:
 tags:
 - name: workspace
   description: Operations about workspaces
-- name: CORS
-  description: Support CORS
 security:
   - bearerAuth: [] 
 paths:
   /launch:
     get:
       tags:
-      - user
-      summary: Get who I am
-      operationId: getWhoAmI
+      - workspace
+      summary: LaunchAWorkspace
+      operationId: launch
+      parameters:
+      - in: query
+        name: hash
+        schema:
+          type: string
+        description: The ID of the workspace to launch from the /options list.
       responses:
         200:
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/WhoAmI'
+          description: successfully started launching
         401:
           $ref: '#/components/responses/UnauthorizedError'
-      x-amazon-apigateway-integration:
-        responses:
-          default:
-            statusCode: "200"
-        uri: "arn:aws:apigateway:AWS_DEFAULT_REGION:lambda:path/2015-03-31/functions/arn:aws:lambda:AWS_DEFAULT_REGION:AWS_ACCOUNT_ID:function:WhoAmIGetFunction/invocations"
-        httpMethod: POST
-        type: aws_proxy
-        credentials: arn:aws:iam::AWS_ACCOUNT_ID:role/access-lambda-role
-    options:
-      summary: CORS support
-      description: |
-        Enable CORS by returning correct headers
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      tags:
-        - CORS
-      x-amazon-apigateway-integration:
-        type: mock
-        requestTemplates:
-          application/json: |
-            {
-              "statusCode" : 200
-            }
-        responses:
-          "default":
-            statusCode: "200"
-            responseParameters:
-              method.response.header.Access-Control-Allow-Headers : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
-              method.response.header.Access-Control-Allow-Methods : "'GET,POST,OPTIONS,PUT'"
-              method.response.header.Access-Control-Allow-Origin : "'*'"
-            responseTemplates:
-              application/json: |
-                {}
-      responses:
-        200:
-          description: Default response for CORS method
-          headers:
-            Access-Control-Allow-Headers:
-              type: "string"
-            Access-Control-Allow-Methods:
-              type: "string"
-            Access-Control-Allow-Origin:
-              type: "string"
   /terminate:
     get:
       tags:
-      - user
-      summary: Get list of users currently authorized by a PI
-      operationId: getUsersForPI
-      parameters:
-      - name: piusername
-        in: path
-        description: The username of the PI to fetch users for
-        required: true
-        schema:
-          type: string
+      - workspace
+      summary: Terminate the actively running workspace
+      operationId: terminate
       responses:
         200:
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/User'
+          description: successfully started terminating
         401:
           $ref: '#/components/responses/UnauthorizedError'
-      x-amazon-apigateway-integration:
-        responses:
-          default:
-            statusCode: "200"
-        uri: "arn:aws:apigateway:AWS_DEFAULT_REGION:lambda:path/2015-03-31/functions/arn:aws:lambda:AWS_DEFAULT_REGION:AWS_ACCOUNT_ID:function:UsersPIGetFunction/invocations"
-        httpMethod: POST
-        type: aws_proxy
-        credentials: arn:aws:iam::AWS_ACCOUNT_ID:role/access-lambda-role
-    post:
-      tags:
-      - user
-      summary: Create user for a PI
-      description: Create a new user who has access
-      operationId: createUserForPI
-      parameters:
-      - name: piusername
-        in: path
-        description: The username of the PI to create a user for
-        required: true
-        schema:
-          type: string
-      requestBody:
-        description: User to create
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/User'
-        required: true
-      responses:
-        200:
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-        401:
-          $ref: '#/components/responses/UnauthorizedError'
-        400:
-          $ref: '#/components/responses/UserError'
-      x-amazon-apigateway-integration:
-        responses:
-          default:
-            statusCode: "200"
-        uri: "arn:aws:apigateway:AWS_DEFAULT_REGION:lambda:path/2015-03-31/functions/arn:aws:lambda:AWS_DEFAULT_REGION:AWS_ACCOUNT_ID:function:UsersPIPostFunction/invocations"
-        httpMethod: POST
-        type: aws_proxy
-        credentials: arn:aws:iam::AWS_ACCOUNT_ID:role/access-lambda-role
-    options:
-      summary: CORS support
-      description: |
-        Enable CORS by returning correct headers
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      tags:
-        - CORS
-      x-amazon-apigateway-integration:
-        type: mock
-        requestTemplates:
-          application/json: |
-            {
-              "statusCode" : 200
-            }
-        responses:
-          "default":
-            statusCode: "200"
-            responseParameters:
-              method.response.header.Access-Control-Allow-Headers : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
-              method.response.header.Access-Control-Allow-Methods : "'GET,POST,OPTIONS,PUT'"
-              method.response.header.Access-Control-Allow-Origin : "'*'"
-            responseTemplates:
-              application/json: |
-                {}
-      responses:
-        200:
-          description: Default response for CORS method
-          headers:
-            Access-Control-Allow-Headers:
-              type: "string"
-            Access-Control-Allow-Methods:
-              type: "string"
-            Access-Control-Allow-Origin:
-              type: "string"
   /status:
     get:
       tags:
-      - user
-      summary: Create user
-      description: Create a new user who has access
-      operationId: createUser
-      requestBody:
-        description: User to create
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/User'
-        required: true
+      - workspace
+      summary: Get the current status of the workspace
+      operationId: status
       responses:
         200:
           description: successful operation
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/User'
+                $ref: '#/components/schemas/Status'
         401:
           $ref: '#/components/responses/UnauthorizedError'
-        400:
-          $ref: '#/components/responses/UserError'
-      x-amazon-apigateway-integration:
-        responses:
-          default:
-            statusCode: "200"
-        uri: "arn:aws:apigateway:AWS_DEFAULT_REGION:lambda:path/2015-03-31/functions/arn:aws:lambda:AWS_DEFAULT_REGION:AWS_ACCOUNT_ID:function:UsersPostFunction/invocations"
-        httpMethod: POST
-        type: aws_proxy
-        credentials: arn:aws:iam::AWS_ACCOUNT_ID:role/access-lambda-role
-    put:
-      tags:
-      - user
-      summary: Update user
-      description: This can only be done by the logged in user.
-      operationId: updateUser
-      requestBody:
-        description: Update user object
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/User'
-        required: true
-      responses:
-        200:
-          description: successful operation
-        401:
-          $ref: '#/components/responses/UnauthorizedError'
-        404:
-          $ref: '#/components/responses/UserNotFoundError'
-        400:
-          $ref: '#/components/responses/UserError'
-      x-amazon-apigateway-integration:
-        responses:
-          default:
-            statusCode: "200"
-        uri: "arn:aws:apigateway:AWS_DEFAULT_REGION:lambda:path/2015-03-31/functions/arn:aws:lambda:AWS_DEFAULT_REGION:AWS_ACCOUNT_ID:function:UsersPutFunction/invocations"
-        httpMethod: POST
-        type: aws_proxy
-        credentials: arn:aws:iam::AWS_ACCOUNT_ID:role/access-lambda-role
+  /options:
     get:
       tags:
-      - user
-      summary: Get list of users currently authorized
-      operationId: getUsers
+      - workspace
+      summary: Get the available workspace options that can be launched
+      operationId: options
       responses:
         200:
           description: successful operation
@@ -262,195 +71,38 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/User'
+                    $ref: '#/components/schemas/Container'
         401:
           $ref: '#/components/responses/UnauthorizedError'
-      x-amazon-apigateway-integration:
-        responses:
-          default:
-            statusCode: "200"
-        uri: "arn:aws:apigateway:AWS_DEFAULT_REGION:lambda:path/2015-03-31/functions/arn:aws:lambda:AWS_DEFAULT_REGION:AWS_ACCOUNT_ID:function:UsersGetFunction/invocations"
-        httpMethod: POST
-        type: aws_proxy
-        credentials: arn:aws:iam::AWS_ACCOUNT_ID:role/access-lambda-role
-    options:
-      summary: CORS support
-      description: |
-        Enable CORS by returning correct headers
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      tags:
-        - CORS
-      x-amazon-apigateway-integration:
-        type: mock
-        requestTemplates:
-          application/json: |
-            {
-              "statusCode" : 200
-            }
-        responses:
-          "default":
-            statusCode: "200"
-            responseParameters:
-              method.response.header.Access-Control-Allow-Headers : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
-              method.response.header.Access-Control-Allow-Methods : "'GET,POST,OPTIONS,PUT'"
-              method.response.header.Access-Control-Allow-Origin : "'*'"
-            responseTemplates:
-              application/json: |
-                {}
-      responses:
-        200:
-          description: Default response for CORS method
-          headers:
-            Access-Control-Allow-Headers:
-              type: "string"
-            Access-Control-Allow-Methods:
-              type: "string"
-            Access-Control-Allow-Origin:
-              type: "string"
-  /options:
-    get:
-      tags:
-      - user
-      summary: Get user by contact email
-      operationId: getUserByName
-      parameters:
-      - name: username
-        in: path
-        description: The username of the user to fetch
-        required: true
-        schema:
-          type: string
-      responses:
-        200:
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-        401:
-          $ref: '#/components/responses/UnauthorizedError'
-        404:
-          $ref: '#/components/responses/UserNotFoundError'
-      x-amazon-apigateway-integration:
-        responses:
-          default:
-            statusCode: "200"
-        uri: "arn:aws:apigateway:AWS_DEFAULT_REGION:lambda:path/2015-03-31/functions/arn:aws:lambda:AWS_DEFAULT_REGION:AWS_ACCOUNT_ID:function:UserGetFunction/invocations"
-        httpMethod: POST
-        type: aws_proxy
-        credentials: arn:aws:iam::AWS_ACCOUNT_ID:role/access-lambda-role
-    options:
-      summary: CORS support
-      description: |
-        Enable CORS by returning correct headers
-      consumes:
-        - application/json
-      produces:
-        - application/json
-      tags:
-        - CORS
-      x-amazon-apigateway-integration:
-        type: mock
-        requestTemplates:
-          application/json: |
-            {
-              "statusCode" : 200
-            }
-        responses:
-          "default":
-            statusCode: "200"
-            responseParameters:
-              method.response.header.Access-Control-Allow-Headers : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
-              method.response.header.Access-Control-Allow-Methods : "'DELETE,GET,POST,OPTIONS,PUT'"
-              method.response.header.Access-Control-Allow-Origin : "'*'"
-            responseTemplates:
-              application/json: |
-                {}
-      responses:
-        200:
-          description: Default response for CORS method
-          headers:
-            Access-Control-Allow-Headers:
-              type: "string"
-            Access-Control-Allow-Methods:
-              type: "string"
-            Access-Control-Allow-Origin:
-              type: "string"
 components:
   schemas:
-    DataSet:
+    Status:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [Terminating, Stopped, Launching, Running]
+          description: >
+            Value:
+             * `Terminating` - The workspace is shutting down
+             * `Launching` - The workspace is starting up
+             * `Stopped` - The workspace is in a failed state and must be terminated
+             * `Running` - The workspace is running and ready to be used
+    Container:
       type: object
       properties:
         name:
           type: string
-        phsid:
+          description: The display name for the container
+        cpu-limit:
           type: string
-        authid:
+          description: The CPU limit for the container
+        memory-limit:
           type: string
-        program:
+          description: The memory limit for the container
+        id:
           type: string
-        project:
-          type: string
-    User:
-      type: object
-      properties:
-        eracommons:
-          type: string
-        orcid:
-          type: string
-        organization:
-          type: string
-        name:
-          type: string
-        contact_email:
-          type: string
-        google_email:
-          type: string
-        username:
-          type: string
-        expiration:
-          type: string
-          format: date
-        datasets:
-          type: array
-          items:
-            $ref: '#/components/schemas/DataSet'
-    WhoAmI:
-      type: object
-      properties:
-        eracommons:
-          type: string
-        orcid:
-          type: string
-        organization:
-          type: string
-        name:
-          type: string
-        contact_email:
-          type: string
-        google_email:
-          type: string
-        username:
-          type: string
-        expiration:
-          type: string
-          format: date
-        datasets:
-          type: array
-          items:
-            $ref: '#/components/schemas/DataSet'
+          description: The hash of the container, passed to /launch
   responses:
     UnauthorizedError:
       description: Access token is missing or invalid
-    UserNotFoundError:
-      description: The specified user was not found
-    UserError:
-      description: Invalid request
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
