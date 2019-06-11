@@ -43,6 +43,7 @@ type HatcheryConfig struct {
 	UserNamespace string           `json:"user-namespace"`
 	SubDir        string           `json:"sub-dir"`
 	Containers    []Container      `json:"containers"`
+	UserVolumeSize string          `json:"user-volume-size"`
 	Sidecar       SidecarContainer `json:"sidecar"`
 }
 

@@ -49,6 +49,7 @@ An example manifest entry may look like
 
 * `user-namespace` is which namespace the pods will be deployed into.
 * `sub-dir` is the path to Hatchery off the host domain, i.e. if the full domain path is `https://nci-crdc-demo.datacommons.io/lw-workspace` then `sub-dir` is `/lw-workspace`.
+* `user-volume-size` the size of the user volume to be created. Applies to all containers because the user storage is the same across all of them.
 * `sidecar` is the sidecar container launched in the same pod as each workspace container. In Gen3 this is used for the FUSE mount system to the manifests that the user has loaded in.
     * `cpu-limit` the CPU limit for the container matching Kubernetes resource spec.
     * `memory-limit` the memory limit for the container matching Kubernetes resource spec.

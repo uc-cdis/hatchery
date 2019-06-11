@@ -238,7 +238,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 					AccessModes: []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteOnce},
 					Resources: k8sv1.ResourceRequirements{
 						Requests: k8sv1.ResourceList{
-							k8sv1.ResourceStorage: resource.MustParse("10Gi"),
+							k8sv1.ResourceStorage: resource.MustParse(Config.Config.UserVolumeSize),
 						},
 					},
 				},
