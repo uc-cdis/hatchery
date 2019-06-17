@@ -15,14 +15,14 @@ security:
   - bearerAuth: [] 
 paths:
   /launch:
-    get:
+    post:
       tags:
       - workspace
       summary: LaunchAWorkspace
       operationId: launch
       parameters:
       - in: query
-        name: hash
+        name: id
         schema:
           type: string
         description: The ID of the workspace to launch from the /options list.
@@ -32,7 +32,7 @@ paths:
         401:
           $ref: '#/components/responses/UnauthorizedError'
   /terminate:
-    get:
+    post:
       tags:
       - workspace
       summary: Terminate the actively running workspace

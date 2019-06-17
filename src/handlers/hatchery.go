@@ -81,9 +81,13 @@ func options(w http.ResponseWriter, r *http.Request) {
 }
 
 func launch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Not Found", 404)
+		return
+	}
 	accessToken := getBearerToken(r)
 
-	hash := r.URL.Query().Get("hash")
+	hash := r.URL.Query().Get("id")
     if hash == "" {
         http.Error(w, "Missing ID argument", 400)
         return
@@ -101,6 +105,10 @@ func launch(w http.ResponseWriter, r *http.Request) {
 }
 
 func terminate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Not Found", 404)
+		return
+	}
 	userName := r.Header.Get("REMOTE_USER")
 
 	err := deleteK8sPod(userName)
