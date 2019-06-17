@@ -88,7 +88,6 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 
 	var allReady = true
 	for _, v := range pod.Status.Conditions {
-		fmt.Printf("Conditions are %s, %s\n", v.Type, v.Status)
 		if v.Type == "Ready" {
 			if v.Status != "True" {
 				allReady = false
