@@ -270,9 +270,9 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	case "IfNotPresent":
 		pullPolicy = k8sv1.PullPolicy(k8sv1.PullIfNotPresent)
 	case "Always":
-		pullPolicy = k8sv1.PullPolicy(k8sv1.Always)
+		pullPolicy = k8sv1.PullPolicy(k8sv1.PullAlways)
 	case "Never":
-		pullPolicy = k8sv1.PullPolicy(k8sv1.Never)
+		pullPolicy = k8sv1.PullPolicy(k8sv1.PullNever)
 	default:
 		pullPolicy = k8sv1.PullPolicy(k8sv1.PullIfNotPresent)
 	}
