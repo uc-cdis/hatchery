@@ -262,7 +262,19 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 				MountPath:        containerSettings.UserVolumeLocation,
 				Name:             "user-data",
 		})
-		
+
+	}
+
+	var pullPolicy k8sv1.PullPolicy
+	switch containerSettings.PullPolicy {
+	case "IfNotPresent":
+		pullPolicy = k8sv1.PullPolicy(k8sv1.PullIfNotPresent)
+	case "Always":
+		pullPolicy = k8sv1.PullPolicy(k8sv1.PullAlways)
+	case "Never":
+		pullPolicy = k8sv1.PullPolicy(k8sv1.PullNever)
+	default:
+		pullPolicy = k8sv1.PullPolicy(k8sv1.PullIfNotPresent)
 	}
 
 	pod := &k8sv1.Pod{
@@ -282,7 +294,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 					SecurityContext: &k8sv1.SecurityContext{
 						Privileged: &falseVal,
 					},
-					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullIfNotPresent),
+					ImagePullPolicy: pullPolicy,
 					Env:             envVars,
 					Command:         containerSettings.Command,
 					Args:            containerSettings.Args,

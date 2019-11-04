@@ -3,6 +3,8 @@ FROM golang:1.12 as build-deps
 WORKDIR /hatchery
 ENV GOPATH=/hatchery
 
+RUN go get k8s.io/klog && cd $GOPATH/src/k8s.io/klog && git checkout v0.4.0
+
 RUN go get -tags k8s.io/client-go/kubernetes \
     k8s.io/apimachinery/pkg/apis/meta/v1 \
     k8s.io/api/core/v1 \

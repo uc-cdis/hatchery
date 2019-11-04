@@ -13,6 +13,7 @@ type Container struct {
 	CPULimit           string            `json:"cpu-limit"`
 	MemoryLimit        string            `json:"memory-limit"`
 	Image              string            `json:"image"`
+	PullPolicy         string            `json:"pull_policy"`
 	Env                map[string]string `json:"env"`
 	TargetPort         int32             `json:"target-port"`
 	Args               []string          `json:"args"`
