@@ -1,4 +1,4 @@
-package handlers
+package hatchery
 
 import (
 	"crypto/md5"
@@ -41,11 +41,11 @@ type SidecarContainer struct {
 
 // HatcheryConfig Struct to hold all the configuration
 type HatcheryConfig struct {
-	UserNamespace string           `json:"user-namespace"`
-	SubDir        string           `json:"sub-dir"`
-	Containers    []Container      `json:"containers"`
-	UserVolumeSize string          `json:"user-volume-size"`
-	Sidecar       SidecarContainer `json:"sidecar"`
+	UserNamespace  string           `json:"user-namespace"`
+	SubDir         string           `json:"sub-dir"`
+	Containers     []Container      `json:"containers"`
+	UserVolumeSize string           `json:"user-volume-size"`
+	Sidecar        SidecarContainer `json:"sidecar"`
 }
 
 type FullHatcheryConfig struct {

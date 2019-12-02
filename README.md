@@ -9,6 +9,25 @@ Hatchery creates Kubernetes Pods for workspace services. Workspace services must
 YAML file for the OpenAPI documentation is found in the `openapis` folder (in
 the root directory); see the README in that folder for more details.
 
+## Build and Test
+
+See the [Dockerfile](./Dockerfile):
+
+(
+  GOPATH="${GOPATH:$HOME/go}"
+  go get k8s.io/klog && (cd $GOPATH/src/k8s.io/klog && git checkout v0.4.0)
+
+  go get -tags k8s.io/client-go/kubernetes \
+    k8s.io/apimachinery/pkg/apis/meta/v1 \
+    k8s.io/api/core/v1 \
+    k8s.io/api/batch/v1 \
+    k8s.io/client-go/tools/clientcmd \
+    k8s.io/client-go/rest \
+    github.com/golang/protobuf/proto \
+    github.com/googleapis/gnostic/OpenAPIv2
+
+  go build
+)
 ## Configuration
 
 Hatchery is configured via the manifest file for the commons you are running. Hatchery contains two levels of configuration, one for the Hatchery service itself, and then an additional layer for each workspace.
