@@ -1,6 +1,8 @@
 package hatchery
 
 import (
+	k8sv1 "k8s.io/api/core/v1"
+
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -29,6 +31,7 @@ type Container struct {
 	GroupUID           int64             `json:"group-uid"`
 	FSGID              int64             `json:"fs-gid"`
 	UserVolumeLocation string            `json:"user-volume-location"`
+	Friends            []k8sv1.Container `json:"friends"`
 }
 
 type SidecarContainer struct {
