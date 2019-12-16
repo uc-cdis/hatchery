@@ -4,6 +4,8 @@ Hatchery creates Kubernetes Pods for workspace services. Workspace services must
 
 ## Documentation TOC
 
+See [this bLog](https://www.divio.com/blog/documentation/) for an introduction to the different types of documentation (explanation, how-to, tutorial, reference).
+
 ### Explanation
 * [hatchery overview](doc/explain/hatcheryOverview.md)
 * [api](doc/explain/hatcheryApi.md)
