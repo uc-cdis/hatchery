@@ -58,94 +58,125 @@
       "user-volume-location": "/home/jovyan/pd"
     },
     {
-        "target-port": 8000,
-        "cpu-limit": "1.0",
-        "memory-limit": "256Mi",
-        "name": "Test MultiContainer App",
-        "image": "ubuntu:18.04",
-        "env": {},
-        "args": ["-c", "cd /tmp; echo '<html><body>Hello!</body></html>' > index.html; /usr/bin/python3 -m http.server 8000"],
-        "command": ["/bin/bash"],
-        "path-rewrite": "/lw-workspace/proxy/",
-        "use-tls": "false",
-        "ready-probe": "/index.html",
-        "lifecycle-post-start": ["/bin/sh","-c","echo 'hello';"],
-        "user-uid": 1000,
-        "fs-gid": 100,
-        "user-volume-location": "/tmp",
-        "friends": [
-          {
-            "name": "friend1",
-            "env": [
-              {
-                "name": "bla",
-                "value": "friend1"
-              }
-            ],
-            "resources": {
-              "requests": {
-                "cpu": 0.25
-              },
-              "limits": {
-                "cpu": 2,
-                "memory": "250Mi"
-              }
+      "target-port": 8000,
+      "cpu-limit": "0.8",
+      "memory-limit": "256Mi",
+      "name": "Test MultiContainer App",
+      "image": "python:3.8-buster",
+      "env": {},
+      "args": [
+        "-c",
+        "cd /tmp; echo '<html><body>Hello!</body></html>' > index.html; /usr/bin/python3 -m http.server 8000"
+      ],
+      "command": [
+        "/bin/bash"
+      ],
+      "path-rewrite": "/lw-workspace/proxy/",
+      "use-tls": "false",
+      "ready-probe": "/index.html",
+      "lifecycle-post-start": [
+        "/bin/sh",
+        "-c",
+        "echo 'hello';"
+      ],
+      "user-uid": 1000,
+      "fs-gid": 100,
+      "user-volume-location": "/tmp",
+      "friends": [
+        {
+          "name": "friend1",
+          "env": [
+            {
+              "name": "bla",
+              "value": "friend1"
+            }
+          ],
+          "resources": {
+            "requests": {
+              "cpu": 0.25
             },
-            "readinessProbe": {
-              "exec": {
-                "command": ["cat", "/tmp/healthy"],
-                "initialDelaySeconds": 5,
-                "periodSeconds": 10
-              }
-            },
-            "livenessProbe": {
-              "exec": {
-                "command": ["cat", "/tmp/healthy"],
-                "initialDelaySeconds": 5,
-                "periodSeconds": 10
-              }
-            },
-            "args": ["-c", "while true; do echo $bla; touch /tmp/healthy; sleep 30; done"],
-            "command": ["/bin/bash"],
-            "image": "ubuntu:18.04"
+            "limits": {
+              "cpu": 2,
+              "memory": "250Mi"
+            }
           },
-          {
-            "name": "friend2",
-            "env": [
-              {
-                "name": "bla",
-                "value": "friend2"
-              }
-            ],
-            "resources": {
-              "requests": {
-                "cpu": 0.25
-              },
-              "limits": {
-                "cpu": 2,
-                "memory": "250Mi"
-              }
+          "readinessProbe": {
+            "exec": {
+              "command": [
+                "cat",
+                "/tmp/healthy"
+              ],
+              "initialDelaySeconds": 5,
+              "periodSeconds": 10
+            }
+          },
+          "livenessProbe": {
+            "exec": {
+              "command": [
+                "cat",
+                "/tmp/healthy"
+              ],
+              "initialDelaySeconds": 5,
+              "periodSeconds": 10
+            }
+          },
+          "args": [
+            "-c",
+            "while true; do echo $bla; touch /tmp/healthy; sleep 30; done"
+          ],
+          "command": [
+            "/bin/bash"
+          ],
+          "image": "ubuntu:18.04"
+        },
+        {
+          "name": "friend2",
+          "env": [
+            {
+              "name": "bla",
+              "value": "friend2"
+            }
+          ],
+          "resources": {
+            "requests": {
+              "cpu": 0.25
             },
-            "readinessProbe": {
-              "exec": {
-                "command": ["cat", "/tmp/healthy"],
-                "initialDelaySeconds": 5,
-                "periodSeconds": 10
-              }
-            },
-            "livenessProbe": {
-              "exec": {
-                "command": ["cat", "/tmp/healthy"],
-                "initialDelaySeconds": 5,
-                "periodSeconds": 10
-              }
-            },
-            "args": ["-c", "while true; do echo $bla; touch /tmp/healthy; sleep 30; done"],
-            "command": ["/bin/bash"],
-            "image": "ubuntu:18.04"
-          }
-        ]
-    }
+            "limits": {
+              "cpu": 2,
+              "memory": "250Mi"
+            }
+          },
+          "readinessProbe": {
+            "exec": {
+              "command": [
+                "cat",
+                "/tmp/healthy"
+              ],
+              "initialDelaySeconds": 5,
+              "periodSeconds": 10
+            }
+          },
+          "livenessProbe": {
+            "exec": {
+              "command": [
+                "cat",
+                "/tmp/healthy"
+              ],
+              "initialDelaySeconds": 5,
+              "periodSeconds": 10
+            }
+          },
+          "args": [
+            "-c",
+            "while true; do echo $bla; touch /tmp/healthy; sleep 30; done"
+          ],
+          "command": [
+            "/bin/bash"
+          ],
+          "image": "ubuntu:18.04"
+        }
+      ]
+    }    
   ]
 }
 
