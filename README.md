@@ -2,7 +2,7 @@
 
 Hatchery creates Kubernetes Pods for workspace services. Workspace services must expose HTTP servers. Ambassador is used to proxy user traffic through to their container workspace once it is launched by Hatchery.
 
-## Documentation Index
+## Documentation TOC
 
 ### Explanation
 * [hatchery overview](doc/explain/hatcheryOverview.md)
@@ -10,6 +10,7 @@ Hatchery creates Kubernetes Pods for workspace services. Workspace services must
 
 ### How-to
 * [dev-test](doc/howto/devTest.md)
+* [gen3-fuse](doc/howto/fuseSidecar.md)
 * [Jupyter Notebook](doc/howto/jupyterNotebook.md)
 * [R Studio](doc/howto/rStudio.md)
 * [Galaxy](doc/howto/galaxy.md)
