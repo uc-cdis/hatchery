@@ -1,10 +1,14 @@
-package handlers
+package hatchery
 
 import (
+	k8sv1 "k8s.io/api/core/v1"
+
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
+	"os"
 )
 
 // Container Struct to hold the configuration for Pod Container
@@ -27,6 +31,7 @@ type Container struct {
 	GroupUID           int64             `json:"group-uid"`
 	FSGID              int64             `json:"fs-gid"`
 	UserVolumeLocation string            `json:"user-volume-location"`
+	Friends            []k8sv1.Container `json:"friends"`
 }
 
 type SidecarContainer struct {
@@ -41,21 +46,38 @@ type SidecarContainer struct {
 
 // HatcheryConfig Struct to hold all the configuration
 type HatcheryConfig struct {
-	UserNamespace string           `json:"user-namespace"`
-	SubDir        string           `json:"sub-dir"`
-	Containers    []Container      `json:"containers"`
-	UserVolumeSize string          `json:"user-volume-size"`
-	Sidecar       SidecarContainer `json:"sidecar"`
+	UserNamespace  string           `json:"user-namespace"`
+	SubDir         string           `json:"sub-dir"`
+	Containers     []Container      `json:"containers"`
+	UserVolumeSize string           `json:"user-volume-size"`
+	Sidecar        SidecarContainer `json:"sidecar"`
 }
 
+// FullHatcheryConfig bucket result from loadConfig
 type FullHatcheryConfig struct {
 	Config        HatcheryConfig
 	ContainersMap map[string]Container
+	Logger        *log.Logger
 }
 
-func loadConfig(config string) FullHatcheryConfig {
-	plan, _ := ioutil.ReadFile(config)
-	var data FullHatcheryConfig
+// LoadConfig from a json file
+func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatcheryConfig, err error) {
+	logger := loggerIn
+	if nil == loggerIn {
+		logger = log.New(os.Stdout, "", log.LstdFlags)
+	}
+	plan, err := ioutil.ReadFile(configFilePath)
+
+	data := &FullHatcheryConfig{
+		Logger: logger,
+	}
+
+	if nil != err {
+		cwd, _ := os.Getwd()
+		data.Logger.Printf("failed to load %v from cwd %v got - %v", configFilePath, cwd, err)
+		return data, err
+	}
+	data.Logger.Printf("loaded config: %v", string(plan))
 	data.ContainersMap = make(map[string]Container)
 	_ = json.Unmarshal(plan, &data.Config)
 	for _, container := range data.Config.Containers {
@@ -63,5 +85,5 @@ func loadConfig(config string) FullHatcheryConfig {
 		hash := fmt.Sprintf("%x", md5.Sum([]byte(toHash)))
 		data.ContainersMap[hash] = container
 	}
-	return data
+	return data, nil
 }

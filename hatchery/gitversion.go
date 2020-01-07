@@ -1,4 +1,4 @@
-package handlers
+package hatchery
 
 const (
     gitcommit = "Test1"

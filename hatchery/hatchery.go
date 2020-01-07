@@ -1,4 +1,4 @@
-package handlers
+package hatchery
 
 import (
 	"encoding/json"
@@ -7,8 +7,10 @@ import (
 	"strings"
 )
 
-var Config = loadConfig("/hatchery.json")
+// Config package-global shared hatchery config
+var Config *FullHatcheryConfig
 
+// RegisterHatchery setup endpoints with the http engine
 func RegisterHatchery() {
 	http.HandleFunc("/", home)
 	http.HandleFunc("/launch", launch)
@@ -23,7 +25,7 @@ func home(w http.ResponseWriter, r *http.Request) {
 	<body>`
 	fmt.Fprintf(w, htmlHeader)
 
-	for k, v := range Config.ContainersMap { 
+	for k, v := range Config.ContainersMap {
 		fmt.Fprintf(w, "<h1><a href=\"%s/launch?hash=%s\">Launch %s - %s CPU - %s Memory</a></h1>", Config.Config.SubDir, k, v.Name, v.CPULimit, v.MemoryLimit)
 	}
 
@@ -44,8 +46,8 @@ func status(w http.ResponseWriter, r *http.Request) {
 
 	out, err := json.Marshal(result)
 	if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
+		http.Error(w, err.Error(), 500)
+		return
 	}
 
 	fmt.Fprintf(w, string(out))
@@ -54,26 +56,26 @@ func status(w http.ResponseWriter, r *http.Request) {
 
 func options(w http.ResponseWriter, r *http.Request) {
 	type container struct {
-		Name        string            `json:"name"`
-		CPULimit    string            `json:"cpu-limit"`
-		MemoryLimit string            `json:"memory-limit"`
-		ID 			string            `json:"id"`
+		Name        string `json:"name"`
+		CPULimit    string `json:"cpu-limit"`
+		MemoryLimit string `json:"memory-limit"`
+		ID          string `json:"id"`
 	}
 	var options []container
 	for k, v := range Config.ContainersMap {
 		c := container{
-			Name: v.Name,
-			CPULimit: v.CPULimit,
+			Name:        v.Name,
+			CPULimit:    v.CPULimit,
 			MemoryLimit: v.MemoryLimit,
-			ID: k,
+			ID:          k,
 		}
 		options = append(options, c)
 	}
 
 	out, err := json.Marshal(options)
 	if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
+		http.Error(w, err.Error(), 500)
+		return
 	}
 
 	fmt.Fprintf(w, string(out))
@@ -88,10 +90,10 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	accessToken := getBearerToken(r)
 
 	hash := r.URL.Query().Get("id")
-    if hash == "" {
-        http.Error(w, "Missing ID argument", 400)
-        return
-    }
+	if hash == "" {
+		http.Error(w, "Missing ID argument", 400)
+		return
+	}
 
 	userName := r.Header.Get("REMOTE_USER")
 

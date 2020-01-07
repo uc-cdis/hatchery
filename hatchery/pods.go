@@ -1,4 +1,4 @@
-package handlers
+package hatchery
 
 import (
 	"fmt"
@@ -21,11 +21,11 @@ var (
 const ambassadorYaml = `---
 apiVersion: ambassador/v1
 kind:  Mapping
-name:  %s-mapping
+name:  %s
 prefix: /
 headers:
   remote_user: %s
-service: h-%s-s.%s.svc.cluster.local:80
+service: %s.%s.svc.cluster.local:80
 bypass_auth: true
 timeout_ms: 300000
 use_websocket: true
@@ -115,7 +115,7 @@ func deleteK8sPod(userName string) error {
 	policy := metav1.DeletePropagationBackground
 	var grace int64 = 20
 	deleteOptions := &metav1.DeleteOptions{
-		PropagationPolicy: &policy,
+		PropagationPolicy:  &policy,
 		GracePeriodSeconds: &grace,
 	}
 
@@ -140,28 +140,42 @@ func deleteK8sPod(userName string) error {
 	return nil
 }
 
-func createK8sPod(hash string, accessToken string, userName string) error {
-	containerSettings := Config.ContainersMap[hash]
-
-	podClient := getPodClient()
+// userToResourceName is a helper for generating names for
+// different types of kubernetes resources given a user name
+// and a resource type
+func userToResourceName(userName string, resourceType string) string {
 	safeUserName := escapism(userName)
-	name := fmt.Sprintf("hatchery-%s", safeUserName)
+	if resourceType == "pod" {
+		return fmt.Sprintf("hatchery-%s", safeUserName)
+	}
+	if resourceType == "service" {
+		return fmt.Sprintf("h-%s-s", safeUserName)
+	}
+	if resourceType == "mapping" { // ambassador mapping
+		return fmt.Sprintf("%s-mapping", safeUserName)
+	}
+
+	return fmt.Sprintf("%s-%s", resourceType, safeUserName)
+}
+
+// buildPod returns a pod ready to pass to the k8s API given
+// a hatchery Container instance, and the name of the user
+// launching the app
+func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName string) (pod *k8sv1.Pod, err error) {
+	podName := userToResourceName(userName, "pod")
 	labels := make(map[string]string)
-	labels["app"] = name
+	labels["app"] = podName
 	annotations := make(map[string]string)
 	annotations["gen3username"] = userName
 	var sideCarRunAsUser int64 = 0
 	var sideCarRunAsGroup int64 = 0
-	var hostToContainer k8sv1.MountPropagationMode = k8sv1.MountPropagationHostToContainer
-	var bidirectional k8sv1.MountPropagationMode = k8sv1.MountPropagationBidirectional
-
-	_, err := podClient.Pods(Config.Config.UserNamespace).Get(name, metav1.GetOptions{})
-	if err == nil {
-		return fmt.Errorf("A workspace is already running")
-	}
-
+	var hostToContainer = k8sv1.MountPropagationHostToContainer
+	var bidirectional = k8sv1.MountPropagationBidirectional
 	var envVars []k8sv1.EnvVar
-	for key, value := range containerSettings.Env {
+
+	hatchConfig.Logger.Printf("building pod %v for %v", hatchApp.Name, userName)
+
+	for key, value := range hatchApp.Env {
 		envVar := k8sv1.EnvVar{
 			Name:  key,
 			Value: value,
@@ -169,8 +183,10 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		envVars = append(envVars, envVar)
 	}
 
+	//hatchConfig.Logger.Printf("environment configured")
+
 	var sidecarEnvVars []k8sv1.EnvVar
-	for key, value := range Config.Config.Sidecar.Env {
+	for key, value := range hatchConfig.Config.Sidecar.Env {
 		envVar := k8sv1.EnvVar{
 			Name:  key,
 			Value: value,
@@ -178,32 +194,36 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		sidecarEnvVars = append(sidecarEnvVars, envVar)
 	}
 
+	//hatchConfig.Logger.Printf("sidecar configured")
+
 	var lifeCycle = k8sv1.Lifecycle{}
-	if containerSettings.LifecyclePreStop != nil && len(containerSettings.LifecyclePreStop) > 0 {
+	if hatchApp.LifecyclePreStop != nil && len(hatchApp.LifecyclePreStop) > 0 {
 		lifeCycle.PreStop = &k8sv1.Handler{
 			Exec: &k8sv1.ExecAction{
-				Command: containerSettings.LifecyclePreStop,
+				Command: hatchApp.LifecyclePreStop,
 			},
 		}
 	}
-	if containerSettings.LifecyclePostStart != nil && len(containerSettings.LifecyclePostStart) > 0 {
+	if hatchApp.LifecyclePostStart != nil && len(hatchApp.LifecyclePostStart) > 0 {
 		lifeCycle.PostStart = &k8sv1.Handler{
 			Exec: &k8sv1.ExecAction{
-				Command: containerSettings.LifecyclePostStart,
+				Command: hatchApp.LifecyclePostStart,
 			},
 		}
 	}
+
+	//hatchConfig.Logger.Printf("lifecycle configured")
 
 	var securityContext = k8sv1.PodSecurityContext{}
 
-	if containerSettings.UserUID != 0 {
-		securityContext.RunAsUser = &containerSettings.UserUID
+	if hatchApp.UserUID != 0 {
+		securityContext.RunAsUser = &hatchApp.UserUID
 	}
-	if containerSettings.UserUID != 0 {
-		securityContext.RunAsGroup = &containerSettings.GroupUID
+	if hatchApp.GroupUID != 0 {
+		securityContext.RunAsGroup = &hatchApp.GroupUID
 	}
-	if containerSettings.FSGID != 0 {
-		securityContext.FSGroup = &containerSettings.FSGID
+	if hatchApp.FSGID != 0 {
+		securityContext.FSGroup = &hatchApp.FSGID
 	}
 
 	var volumes = []k8sv1.Volume{
@@ -221,17 +241,155 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		},
 	}
 
-	if containerSettings.UserVolumeLocation != "" {
-		var claimName = fmt.Sprintf("claim-%s", safeUserName)
+	if hatchApp.UserVolumeLocation != "" {
+		claimName := userToResourceName(userName, "claim")
+		volumes = append(volumes, k8sv1.Volume{
+			Name: "user-data",
+			VolumeSource: k8sv1.VolumeSource{
+				PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+				},
+			},
+		})
+
+		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
+			MountPath: hatchApp.UserVolumeLocation,
+			Name:      "user-data",
+		})
+
+	}
+
+	//hatchConfig.Logger.Printf("volumes configured")
+
+	var pullPolicy k8sv1.PullPolicy
+	switch hatchApp.PullPolicy {
+	case "IfNotPresent":
+		pullPolicy = k8sv1.PullPolicy(k8sv1.PullIfNotPresent)
+	case "Always":
+		pullPolicy = k8sv1.PullPolicy(k8sv1.PullAlways)
+	case "Never":
+		pullPolicy = k8sv1.PullPolicy(k8sv1.PullNever)
+	default:
+		pullPolicy = k8sv1.PullPolicy(k8sv1.PullIfNotPresent)
+	}
+
+	pod = &k8sv1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        podName,
+			Namespace:   hatchConfig.Config.UserNamespace,
+			Labels:      labels,
+			Annotations: annotations,
+		},
+		Spec: k8sv1.PodSpec{
+			SecurityContext: &securityContext,
+			InitContainers:  []k8sv1.Container{},
+			Containers: []k8sv1.Container{
+				{
+					Name:  "hatchery-container",
+					Image: hatchApp.Image,
+					SecurityContext: &k8sv1.SecurityContext{
+						Privileged: &falseVal,
+					},
+					ImagePullPolicy: pullPolicy,
+					Env:             envVars,
+					Command:         hatchApp.Command,
+					Args:            hatchApp.Args,
+					VolumeMounts:    volumeMounts,
+					Resources: k8sv1.ResourceRequirements{
+						Limits: k8sv1.ResourceList{
+							k8sv1.ResourceCPU:    resource.MustParse(hatchApp.CPULimit),
+							k8sv1.ResourceMemory: resource.MustParse(hatchApp.MemoryLimit),
+						},
+						Requests: k8sv1.ResourceList{
+							k8sv1.ResourceCPU:    resource.MustParse(hatchApp.CPULimit),
+							k8sv1.ResourceMemory: resource.MustParse(hatchApp.MemoryLimit),
+						},
+					},
+					Lifecycle: &lifeCycle,
+					ReadinessProbe: &k8sv1.Probe{
+						Handler: k8sv1.Handler{
+							HTTPGet: &k8sv1.HTTPGetAction{
+								Path: hatchApp.ReadyProbe,
+								Port: intstr.FromInt(int(hatchApp.TargetPort)),
+							},
+						},
+					},
+				},
+				{
+					Name:  "fuse-container",
+					Image: hatchConfig.Config.Sidecar.Image,
+					SecurityContext: &k8sv1.SecurityContext{
+						Privileged: &trueVal,
+						RunAsUser:  &sideCarRunAsUser,
+						RunAsGroup: &sideCarRunAsGroup,
+					},
+					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways),
+					Env:             sidecarEnvVars,
+					Command:         hatchConfig.Config.Sidecar.Command,
+					Args:            hatchConfig.Config.Sidecar.Args,
+					VolumeMounts: []k8sv1.VolumeMount{
+						{
+							MountPath:        "/data",
+							Name:             "shared-data",
+							MountPropagation: &bidirectional,
+						},
+					},
+					Resources: k8sv1.ResourceRequirements{
+						Limits: k8sv1.ResourceList{
+							k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),
+							k8sv1.ResourceMemory: resource.MustParse(hatchConfig.Config.Sidecar.MemoryLimit),
+						},
+						Requests: k8sv1.ResourceList{
+							k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),
+							k8sv1.ResourceMemory: resource.MustParse(hatchConfig.Config.Sidecar.MemoryLimit),
+						},
+					},
+					Lifecycle: &k8sv1.Lifecycle{
+						PreStop: &k8sv1.Handler{
+							Exec: &k8sv1.ExecAction{
+								Command: hatchConfig.Config.Sidecar.LifecyclePreStop,
+							},
+						},
+					},
+				},
+			},
+			RestartPolicy:    k8sv1.RestartPolicyNever,
+			ImagePullSecrets: []k8sv1.LocalObjectReference{},
+			NodeSelector: map[string]string{
+				"role": "jupyter",
+			},
+			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}},
+			Volumes:     volumes,
+		},
+	}
+
+	//hatchConfig.Logger.Printf("pod configured")
+
+	pod.Spec.Containers = append(pod.Spec.Containers[:], hatchApp.Friends...)
+	//hatchConfig.Logger.Printf("friends added")
+	return pod, nil
+}
+
+func createK8sPod(hash string, accessToken string, userName string) error {
+	hatchApp := Config.ContainersMap[hash]
+	pod, err := buildPod(Config, &hatchApp, userName)
+	if err != nil {
+		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
+		return err
+	}
+	podName := userToResourceName(userName, "pod")
+	podClient := getPodClient()
+	if hatchApp.UserVolumeLocation != "" {
+		claimName := userToResourceName(userName, "claim")
 
 		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(claimName, metav1.GetOptions{})
 		if err != nil {
-			fmt.Printf("Creating PersistentVolumeClaim %s.\n", claimName)
+			Config.Logger.Printf("Creating PersistentVolumeClaim %s.\n", claimName)
 			pvc := &k8sv1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: claimName,
-					Annotations: annotations,
-					Labels: labels,
+					Name:        claimName,
+					Annotations: pod.Annotations,
+					Labels:      pod.Labels,
 				},
 				Spec: k8sv1.PersistentVolumeClaimSpec{
 					AccessModes: []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteOnce},
@@ -244,141 +402,25 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 			}
 			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(pvc)
 			if err != nil {
-				fmt.Printf("Failed to create PVC %s. Error: %s\n", claimName, err)
+				Config.Logger.Printf("Failed to create PVC %s. Error: %s\n", claimName, err)
 				return err
 			}
 		}
-
-		volumes = append(volumes, k8sv1.Volume{
-			Name: "user-data",
-			VolumeSource: k8sv1.VolumeSource{
-				PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
-					ClaimName: claimName,
-				},
-			},
-		})
-
-		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
-				MountPath:        containerSettings.UserVolumeLocation,
-				Name:             "user-data",
-		})
-
 	}
 
-	var pullPolicy k8sv1.PullPolicy
-	switch containerSettings.PullPolicy {
-	case "IfNotPresent":
-		pullPolicy = k8sv1.PullPolicy(k8sv1.PullIfNotPresent)
-	case "Always":
-		pullPolicy = k8sv1.PullPolicy(k8sv1.PullAlways)
-	case "Never":
-		pullPolicy = k8sv1.PullPolicy(k8sv1.PullNever)
-	default:
-		pullPolicy = k8sv1.PullPolicy(k8sv1.PullIfNotPresent)
-	}
-
-	pod := &k8sv1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
-			Namespace:   Config.Config.UserNamespace,
-			Labels:      labels,
-			Annotations: annotations,
-		},
-		Spec: k8sv1.PodSpec{
-			SecurityContext: &securityContext,
-			InitContainers: []k8sv1.Container{},
-			Containers: []k8sv1.Container{
-				{
-					Name:  "hatchery-container",
-					Image: containerSettings.Image,
-					SecurityContext: &k8sv1.SecurityContext{
-						Privileged: &falseVal,
-					},
-					ImagePullPolicy: pullPolicy,
-					Env:             envVars,
-					Command:         containerSettings.Command,
-					Args:            containerSettings.Args,
-					VolumeMounts:    volumeMounts,
-					Resources: k8sv1.ResourceRequirements{
-						Limits: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(containerSettings.MemoryLimit),
-						},
-						Requests: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(containerSettings.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(containerSettings.MemoryLimit),
-						},
-					},
-					Lifecycle: &lifeCycle,
-					ReadinessProbe: &k8sv1.Probe{
-						Handler: k8sv1.Handler{
-							HTTPGet: &k8sv1.HTTPGetAction{
-								Path: containerSettings.ReadyProbe,
-								Port: intstr.FromInt(int(containerSettings.TargetPort)),
-							},
-						},
-					},
-				},
-				{
-					Name:  "fuse-container",
-					Image: Config.Config.Sidecar.Image,
-					SecurityContext: &k8sv1.SecurityContext{
-						Privileged: &trueVal,
-						RunAsUser:  &sideCarRunAsUser,
-						RunAsGroup: &sideCarRunAsGroup,
-					},
-					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways),
-					Env:             sidecarEnvVars,
-					Command:         Config.Config.Sidecar.Command,
-					Args:            Config.Config.Sidecar.Args,
-					VolumeMounts: []k8sv1.VolumeMount{
-						{
-							MountPath:        "/data",
-							Name:             "shared-data",
-							MountPropagation: &bidirectional,
-						},
-					},
-					Resources: k8sv1.ResourceRequirements{
-						Limits: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(Config.Config.Sidecar.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(Config.Config.Sidecar.MemoryLimit),
-						},
-						Requests: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(Config.Config.Sidecar.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(Config.Config.Sidecar.MemoryLimit),
-						},
-					},
-					Lifecycle: &k8sv1.Lifecycle{
-						PreStop: &k8sv1.Handler{
-							Exec: &k8sv1.ExecAction{
-								Command: Config.Config.Sidecar.LifecyclePreStop,
-							},
-						},
-					},
-				},
-			},
-			RestartPolicy:    k8sv1.RestartPolicyNever,
-			ImagePullSecrets: []k8sv1.LocalObjectReference{},
-			NodeSelector: map[string]string{
-				"role": "jupyter",
-			},
-			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}},
-			Volumes: volumes,
-		},
-	}
 	_, err = podClient.Pods(Config.Config.UserNamespace).Create(pod)
 	if err != nil {
-		fmt.Printf("Failed to launch pod %s for user %s. Image: %s, CPU %s, Memory %s. Error: %s\n", name, userName, containerSettings.Image, containerSettings.CPULimit, containerSettings.MemoryLimit, err)
+		Config.Logger.Printf("Failed to launch pod %s for user %s. Image: %s, CPU %s, Memory %s. Error: %s\n", hatchApp.Name, userName, hatchApp.Image, hatchApp.CPULimit, hatchApp.MemoryLimit, err)
 		return err
 	}
 
-	fmt.Printf("Launched pod %s for user %s. Image: %s, CPU %s, Memory %s\n", name, userName, containerSettings.Image, containerSettings.CPULimit, containerSettings.MemoryLimit)
+	Config.Logger.Printf("Launched pod %s for user %s. Image: %s, CPU %s, Memory %s\n", hatchApp.Name, userName, hatchApp.Image, hatchApp.CPULimit, hatchApp.MemoryLimit)
 
+	serviceName := userToResourceName(userName, "service")
 	labelsService := make(map[string]string)
-	labels["app"] = name
+	labelsService["app"] = podName
 	annotationsService := make(map[string]string)
-	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, safeUserName, userName, safeUserName, Config.Config.UserNamespace, containerSettings.PathRewrite, containerSettings.UseTLS)
-	serviceName := fmt.Sprintf("h-%s-s", safeUserName)
+	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userToResourceName(userName, "mapping"), userName, serviceName, Config.Config.UserNamespace, hatchApp.PathRewrite, hatchApp.UseTLS)
 
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(serviceName, metav1.GetOptions{})
 	if err == nil {
@@ -400,15 +442,15 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		},
 		Spec: k8sv1.ServiceSpec{
 			Type:     k8sv1.ServiceTypeClusterIP,
-			Selector: map[string]string{"app": name},
+			Selector: map[string]string{"app": podName},
 			Ports: []k8sv1.ServicePort{
 				{
-					Name:     name,
+					Name:     podName,
 					Protocol: k8sv1.ProtocolTCP,
 					Port:     80,
 					TargetPort: intstr.IntOrString{
 						Type:   intstr.Int,
-						IntVal: containerSettings.TargetPort,
+						IntVal: hatchApp.TargetPort,
 					},
 				},
 			},
@@ -417,11 +459,11 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 
 	_, err = podClient.Services(Config.Config.UserNamespace).Create(service)
 	if err != nil {
-		fmt.Printf("Failed to launch service %s for user %s forwarding port %d. Error: %s\n", serviceName, userName, containerSettings.TargetPort, err)
+		fmt.Printf("Failed to launch service %s for user %s forwarding port %d. Error: %s\n", serviceName, userName, hatchApp.TargetPort, err)
 		return err
 	}
 
-	fmt.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, containerSettings.TargetPort)
+	fmt.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
 	return nil
 }
