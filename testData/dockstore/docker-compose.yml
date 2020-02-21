@@ -1,0 +1,80 @@
+version: '3'
+services:
+
+   cloudtop:
+      image: heliumdatastage/renci-guacamole-vnc:use-all-defaults
+      container_name: cloudtop
+      volumes:
+         - data-volume/data:/usr/local/renci/data
+      entrypoint: [ /init ]
+      ports: 
+         - 8080:8080
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost"]
+        interval: 1m30s
+        timeout: 10s
+        retries: 3
+        start_period: 40s
+
+   viewer:
+      image: ohif/viewer:v1.1.14.3708
+      container_name: viewer
+      volumes:
+         - user-volume/config/nginx-with-proxy.conf:/etc/nginx/conf.d/default.conf
+      environment:
+         - MONGO_URL=mongodb://localhost:27017/ohif
+         - APP_CONFIG=/usr/share/nginx/html/app-config.js
+      depends_on:
+         - mongo
+         - orthanc
+      deploy:
+        resources:
+          limits:
+            cpus: '0.50'
+            memory: 50M
+          reservations:
+            cpus: '0.25'
+            memory: 20M
+      ports:
+         - "3000:80"
+
+   orthanc:
+      image: jodogne/orthanc-plugins:latest
+      container_name: orthanc
+      depends_on:
+         - postgres
+      volumes:
+         - user-volume/orthanc/orthanc.json:/etc/orthanc/orthanc.json
+      ports:
+         - "8042:8042"
+         - "4242:4242"
+
+   mongo:
+      image: mongo:latest
+      container_name: mongo
+      ports:
+         - "27017:27017"
+      volumes:
+        - user-volume/mongo/data:/data/db
+      deploy:
+        resources:
+          limits:
+            cpus: '0.50'
+            memory: 50M
+          reservations:
+            cpus: '0.25'
+            memory: 20M
+
+   postgres:
+      image: postgres:11
+      container_name: postgres
+      volumes:
+        - user-volume/orthadb/postgresql/data/pgdata:/var/lib/postgresql/data
+      environment:
+        - POSTGRES_USER=postgres
+        - POSTGRES_PASSWORD=postgres-orthanc
+        - PGDATA=/var/lib/postgresql/data
+        - POSTGRES_DB=orthanc
+      ports:
+         - "5432:5432"
+     

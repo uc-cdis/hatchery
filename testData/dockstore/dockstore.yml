@@ -1,0 +1,65 @@
+# The .dockstore.yml version; 1.1 is required for services
+version: 1.1
+
+# A required key named service
+service:
+  # The type is required, and can be docker-compose, kubernetes, or helm.
+  type:
+  name:
+  author:
+  description:
+
+  # These are files the Dockstore will index. They will be directly downloadable from Dockstore. Wildcards are not supported.
+  files:
+
+  # The service launcher will execute the scripts in the following order. All steps other than start are optional,
+  # and if they are missing or have no value specified, will be ignored.
+  #
+  # 1. preprovision -- Invoked before any data has been downloaded and some initialization is required. Not sure if we need this one.
+  # 2. prestart -- Executed after data has been downloaded locally, but before service has started (see the data section).
+  # 3. start -- Starts up the service.
+  # 4. postprovision -- After the service has been started. This might be invoked multiple times, e.g., if the user decides to load multiple sets of data.
+
+  # In addition, the following scripts, if present and with a value, are for use by the launcher:
+  # 1. port - Which port the service is exposing. This provides a generic way for the tool to know which port is being exposed, e.g., to reverse proxy it.
+  # 2. healthcheck - exit code of 0 if service is running normally, non-0 otherwise.
+  # 3. stop - stops the service
+  scripts:
+    start:
+    postprovision:
+    port:
+    stop:
+      
+  # These are environment variables that the launcher is responsible for passing to any scripts that it invokes.
+  # The names must be valid environment variable names.
+  # Users can specify the values of the parameters in the input parameter JSON (see below).
+  # These variables are service-specific, i.e., the service creator decides what values, if any, to
+  # expose as environment variables.
+  # There are three parts to the environment variable
+  #    - The name
+  #    - An optional default value, which will be used if the user does not specify in the input file
+  #    - An optional description, which can be used by the service launcher as a prompt
+  environment:
+    httpPort:
+        default:
+        description:
+
+  # This section describes data that should be provisioned locally for use by
+  # the service. The service launcher is responsible for provisioning the data.
+  #
+  # Each key in this section is the name of a dataset. Each dataset can have
+  # 1 to n files.
+  #
+  # Each dataset has the following properties:
+  #   - targetDirectory -- required, indicates where the files in the dataset should be downloaded to. Paths are relative.
+  #   - files -- required, 1 to n files, where each file has the following attributes:
+  #           - description -- a description of the file
+  #           - targetDirectory -- optionally override the dataset's targetDirectory if this file needs to go in a different location.
+  data:
+    dataset_1:
+        targetDirectory:
+        files:
+            tsv:
+                description:
+            metadata:
+                description:

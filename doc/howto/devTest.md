@@ -9,8 +9,6 @@ See the [Dockerfile](../../Dockerfile):
 
 ```
 (
-  go build -o bin/hatchery
-  go test -v ./hatchery/
+go build -o bin/hatchery && go test -v ./hatchery/
 )
-
 ```
