@@ -34,6 +34,7 @@ type Container struct {
 	Friends            []k8sv1.Container `json:"friends"`
 }
 
+// SidecarContainer holds fuse sidecar configuration
 type SidecarContainer struct {
 	CPULimit         string            `json:"cpu-limit"`
 	MemoryLimit      string            `json:"memory-limit"`
@@ -44,7 +45,7 @@ type SidecarContainer struct {
 	LifecyclePreStop []string          `json:"lifecycle-pre-stop"`
 }
 
-// HatcheryConfig Struct to hold all the configuration
+// HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace  string           `json:"user-namespace"`
 	SubDir         string           `json:"sub-dir"`

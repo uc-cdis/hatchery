@@ -55,3 +55,23 @@ func TestDockstoreComposeLoad(t *testing.T) {
 		t.Error(fmt.Sprintf("expected viewer root service, got %v", composeModel.RootService))
 	}
 }
+
+func TestDockstoreComposeTranslate(t *testing.T) {
+	path := "../testData/dockstore/docker-compose.yml"
+	composeModel, err := DockstoreComposeFromFile(path)
+	if nil != err {
+		t.Error(fmt.Sprintf("failed to load config from %v, got: %v", path, err))
+		return
+	}
+	if nil == composeModel {
+		t.Error("nil model from DockstoreComposeFromFile?")
+		return
+	}
+	hatchApp, err := DockstoreComposeTranslate(composeModel)
+	if nil != err {
+		t.Error(fmt.Sprintf("failed to translate app, got: %v", err))
+		return
+	}
+	hatchAppBytes, _ := yaml.Marshal(hatchApp)
+	dslog.Printf("translated hatchery app: %v", string(hatchAppBytes))
+}
