@@ -42,6 +42,9 @@ func TestDockstoreComposeLoad(t *testing.T) {
 	if "" == service.Deploy.Resources.Requests.Memory || "" == service.Deploy.Resources.Requests.CPU {
 		t.Error("mongo service failed to load resource limits")
 	}
+	if "mongo" != service.Name {
+		t.Error(fmt.Sprintf("mongo service has wrong name: %v", service.Name))
+	}
 
 	service, ok = composeModel.Services["cloudtop"]
 	if !ok {
@@ -67,7 +70,7 @@ func TestDockstoreComposeTranslate(t *testing.T) {
 		t.Error("nil model from DockstoreComposeFromFile?")
 		return
 	}
-	hatchApp, err := DockstoreComposeTranslate(composeModel)
+	hatchApp, err := composeModel.BuildHatchApp()
 	if nil != err {
 		t.Error(fmt.Sprintf("failed to translate app, got: %v", err))
 		return

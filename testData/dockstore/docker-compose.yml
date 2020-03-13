@@ -7,6 +7,9 @@ services:
       volumes:
          - data-volume/data:/usr/local/renci/data
       entrypoint: [ /init ]
+      command:
+        - go
+        - fast
       ports: 
          - 8080:8080
       healthcheck:
@@ -27,6 +30,8 @@ services:
       depends_on:
          - mongo
          - orthanc
+      entrypoint: [ /bin/bash ]
+      command: [ -c, "echo hello there!" ]
       deploy:
         resources:
           limits:
