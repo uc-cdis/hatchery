@@ -177,6 +177,13 @@
         }
       ]
     }    
+  ],
+  "more-configs": [
+    {
+      "type": "dockstore-compose:1.0.0",
+      "path": "../testData/dockstore/docker-compose.yml",
+      "name": "DockstoreTest"
+    }
   ]
 }
 

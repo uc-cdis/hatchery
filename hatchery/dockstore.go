@@ -70,7 +70,7 @@ const dataVolumePrefix = "data-volume/"
 
 // DockstoreComposeFromFile loads a hatchery application (container)
 // config from a compose.yaml file
-func DockstoreComposeFromFile(filePath string) (composeModel *ComposeFull, err error) {
+func DockstoreComposeFromFile(filePath string) (model *ComposeFull, err error) {
 	fileBytes, err := ioutil.ReadFile(filePath)
 
 	if nil != err {
@@ -81,14 +81,14 @@ func DockstoreComposeFromFile(filePath string) (composeModel *ComposeFull, err e
 
 // DockstoreComposeFromStr load and sanitize a compose app
 // from a given yaml string
-func DockstoreComposeFromStr(composeYaml string) (composeModel *ComposeFull, err error) {
+func DockstoreComposeFromStr(composeYaml string) (model *ComposeFull, err error) {
 	return DockstoreComposeFromBytes([]byte(composeYaml))
 }
 
 // DockstoreComposeFromBytes load and sanitize a compose app
 // from given yaml bytes
-func DockstoreComposeFromBytes(yamlBytes []byte) (composeModel *ComposeFull, err error) {
-	model := &ComposeFull{}
+func DockstoreComposeFromBytes(yamlBytes []byte) (model *ComposeFull, err error) {
+	model = &ComposeFull{}
 	err = yaml.Unmarshal(yamlBytes, model)
 	if nil != err {
 		return nil, err
@@ -240,9 +240,9 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) error {
 
 // BuildHatchApp generates a hatchery container config
 // from a dockstore compose application config
-func (composeModel *ComposeFull) BuildHatchApp() (*Container, error) {
+func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 	hatchApp := &Container{}
-	service := composeModel.Services[composeModel.RootService]
+	service := model.Services[model.RootService]
 	hatchApp.Name = service.Name
 	hatchApp.CPULimit = service.Deploy.Resources.Limits.CPU
 	hatchApp.MemoryLimit = service.Deploy.Resources.Limits.Memory
@@ -267,13 +267,13 @@ func (composeModel *ComposeFull) BuildHatchApp() (*Container, error) {
 	hatchApp.ReadyProbe = "/lw-workspace/proxy/"
 	hatchApp.UseTLS = "false"
 
-	numServices := len(composeModel.Services)
+	numServices := len(model.Services)
 	if numServices < 1 {
 		return nil, fmt.Errorf("no services found in compose model")
 	}
 	hatchApp.Friends = make([]k8sv1.Container, numServices)
 	friendIndex := 0
-	for _, service := range composeModel.Services {
+	for _, service := range model.Services {
 		service.ToK8sContainer(&hatchApp.Friends[friendIndex])
 		friendIndex++
 	}

@@ -45,6 +45,13 @@ type SidecarContainer struct {
 	LifecyclePreStop []string          `json:"lifecycle-pre-stop"`
 }
 
+// AppConfigInfo provides the type and path of a supplementary config path
+type AppConfigInfo struct {
+	AppType string `json:"type"`
+	Path    string
+	Name    string
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace  string           `json:"user-namespace"`
@@ -52,6 +59,7 @@ type HatcheryConfig struct {
 	Containers     []Container      `json:"containers"`
 	UserVolumeSize string           `json:"user-volume-size"`
 	Sidecar        SidecarContainer `json:"sidecar"`
+	MoreConfigs    []AppConfigInfo  `json:"more-configs"`
 }
 
 // FullHatcheryConfig bucket result from loadConfig
@@ -81,8 +89,32 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	data.Logger.Printf("loaded config: %v", string(plan))
 	data.ContainersMap = make(map[string]Container)
 	_ = json.Unmarshal(plan, &data.Config)
+	if nil != data.Config.MoreConfigs && 0 < len(data.Config.MoreConfigs) {
+		for _, info := range data.Config.MoreConfigs {
+			if info.AppType == "dockstore-compose:1.0.0" {
+				if "" == info.Name {
+					return nil, fmt.Errorf("Empty name for more-configs app at: %v", info.Path)
+				}
+				data.Logger.Printf("loading config from %v", info.Path)
+				composeModel, err := DockstoreComposeFromFile(info.Path)
+				if nil != err {
+					data.Logger.Printf("failed to load config from %v, got: %v", info.Path, err)
+					return nil, err
+				}
+				hatchApp, err := composeModel.BuildHatchApp()
+				hatchApp.Name = info.Name
+				if nil != err {
+					data.Logger.Printf("failed to translate app, got: %v", err)
+					return nil, err
+				}
+				data.Config.Containers = append(data.Config.Containers, *hatchApp)
+			} else {
+				data.Logger.Printf("ignoring config of unsupported type: %v", info.AppType)
+			}
+		}
+	}
 	for _, container := range data.Config.Containers {
-		toHash := container.Image + "-" + container.CPULimit + "-" + container.MemoryLimit
+		toHash := container.Name + "-" + container.Image + "-" + container.CPULimit + "-" + container.MemoryLimit
 		hash := fmt.Sprintf("%x", md5.Sum([]byte(toHash)))
 		data.ContainersMap[hash] = container
 	}
