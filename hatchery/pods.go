@@ -172,6 +172,8 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	var hostToContainer = k8sv1.MountPropagationHostToContainer
 	var bidirectional = k8sv1.MountPropagationBidirectional
 	var envVars []k8sv1.EnvVar
+	// a null image indicates a dockstore app - always mount user volume
+	mountUserVolume := hatchApp.UserVolumeLocation != "" || hatchApp.Image == ""
 
 	hatchConfig.Logger.Printf("building pod %v for %v", hatchApp.Name, userName)
 
@@ -233,15 +235,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		},
 	}
 
-	var volumeMounts = []k8sv1.VolumeMount{
-		{
-			MountPath:        "/data",
-			Name:             "shared-data",
-			MountPropagation: &hostToContainer,
-		},
-	}
-
-	if hatchApp.UserVolumeLocation != "" {
+	if mountUserVolume {
 		claimName := userToResourceName(userName, "claim")
 		volumes = append(volumes, k8sv1.Volume{
 			Name: "user-data",
@@ -251,12 +245,6 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 				},
 			},
 		})
-
-		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
-			MountPath: hatchApp.UserVolumeLocation,
-			Name:      "user-data",
-		})
-
 	}
 
 	//hatchConfig.Logger.Printf("volumes configured")
@@ -334,6 +322,21 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 
 	// some pods (ex - dockstore apps) only have "Friend" containers
 	if "" != hatchApp.Image {
+		var volumeMounts = []k8sv1.VolumeMount{
+			{
+				MountPath:        "/data",
+				Name:             "shared-data",
+				MountPropagation: &hostToContainer,
+			},
+		}
+
+		if mountUserVolume {
+			volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
+				MountPath: hatchApp.UserVolumeLocation,
+				Name:      "user-data",
+			})
+		}
+
 		pod.Spec.Containers = append(pod.Spec.Containers, k8sv1.Container{
 			Name:  "hatchery-container",
 			Image: hatchApp.Image,
@@ -381,7 +384,10 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	}
 	podName := userToResourceName(userName, "pod")
 	podClient := getPodClient()
-	if hatchApp.UserVolumeLocation != "" {
+	// a null image indicates a dockstore app - always mount user volume
+	mountUserVolume := hatchApp.UserVolumeLocation != "" || hatchApp.Image == ""
+
+	if mountUserVolume {
 		claimName := userToResourceName(userName, "claim")
 
 		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(claimName, metav1.GetOptions{})
