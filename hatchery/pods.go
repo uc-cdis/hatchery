@@ -330,7 +330,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			},
 		}
 
-		if mountUserVolume {
+		if "" != hatchApp.UserVolumeLocation {
 			volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
 				MountPath: hatchApp.UserVolumeLocation,
 				Name:      "user-data",

@@ -150,6 +150,18 @@ func (model *ComposeFull) Sanitize() error {
 	return nil
 }
 
+// BuildK8sResource from a compose resource spec
+func (rspec *ComposeResourceSpec) BuildK8sResource() map[k8sv1.ResourceName]resource.Quantity {
+	result := make(map[k8sv1.ResourceName]resource.Quantity)
+	if "" != rspec.CPU {
+		result[k8sv1.ResourceCPU] = resource.MustParse(rspec.CPU)
+	}
+	if "" != rspec.Memory {
+		result[k8sv1.ResourceMemory] = resource.MustParse(rspec.Memory)
+	}
+	return result
+}
+
 // ToK8sContainer copies data from the given service to the container friend
 func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) error {
 	friend.Name = service.Name
@@ -210,16 +222,9 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) error {
 		copy(friend.Args, service.Command)
 	}
 
-	friend.Resources.Limits = make(map[k8sv1.ResourceName]resource.Quantity)
-	friend.Resources.Requests = make(map[k8sv1.ResourceName]resource.Quantity)
-	if "" != service.Deploy.Resources.Limits.CPU {
-		friend.Resources.Limits[k8sv1.ResourceCPU] = resource.MustParse(service.Deploy.Resources.Limits.CPU)
-		friend.Resources.Requests[k8sv1.ResourceCPU] = resource.MustParse(service.Deploy.Resources.Limits.CPU)
-	}
-	if "" != service.Deploy.Resources.Limits.Memory {
-		friend.Resources.Limits[k8sv1.ResourceMemory] = resource.MustParse(service.Deploy.Resources.Requests.Memory)
-		friend.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse(service.Deploy.Resources.Requests.Memory)
-	}
+	friend.Resources.Limits = service.Deploy.Resources.Limits.BuildK8sResource()
+	friend.Resources.Requests = service.Deploy.Resources.Requests.BuildK8sResource()
+
 	if 1 < len(service.Healthcheck.Test) && service.Healthcheck.Test[0] == "CMD" {
 		friend.ReadinessProbe = &k8sv1.Probe{
 			Handler: k8sv1.Handler{
