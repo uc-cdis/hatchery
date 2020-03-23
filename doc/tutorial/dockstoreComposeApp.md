@@ -16,10 +16,17 @@ To load the following application definition into hatchery:
     "type": "dockstore-compose:1.0.0",
     "path": "/hatchery-more-configs/test-app.yaml",
     "name": "DockstoreTest"
+  },
+  {
+    "type": "dockstore-compose:1.0.0",
+    "path": "/hatchery-more-configs/notebook-app.yaml",
+    "name": "DockstoreNotebook"
   }
 ]
 ```
 
+
+### Example 1 - hello, world!
 
 ```
 version: '3'
@@ -31,11 +38,11 @@ services:
       entrypoint: [ /bin/bash ]
       command:
         - "-c"
-        - "cd /tmp; echo '<html><body>Hello!</body></html>' > index.html; /usr/bin/python3 -m http.server 8000"
+        - "cd /tmp && mkdir -p lw-workspace/proxy; echo '<html><body>Hello!</body></html>' > lw-workspace/proxy/index.html; /usr/bin/python3 -m http.server 8000"
       ports: 
          - 8000:80
       healthcheck:
-        test: ["CMD", "curl", "-f", "http://localhost:8000"]
+        test: ["CMD", "curl", "-f", "http://localhost:8000/lw-workspace/proxy/index.html"]
         interval: 1m30s
         timeout: 10s
         retries: 3
@@ -61,12 +68,59 @@ services:
             memory: 20M
 ```
 
-## Mounting Workspace Volumes
+
+### Example 2 - jupyter notebook
+
+```
+version: '3'
+services:
+   webapp:
+      image: "quay.io/occ_data/jupyternotebook:1.7.4"
+      volumes:
+         - data-volume/data:/data
+      entrypoint:
+        - "start-notebook.sh"
+      command:
+        - "--NotebookApp.base_url=/lw-workspace/proxy"
+        - "--NotebookApp.password=''"
+        - "--NotebookApp.token=''"
+      ports: 
+         - 8888:80
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8888/lw-workspace/proxy/"]
+        interval: 1m30s
+        timeout: 10s
+        retries: 3
+        start_period: 40s
+      deploy:
+        resources:
+          limits:
+            cpus: '0.50'
+            memory: 256M
+          reservations:
+            cpus: '0.25'
+            memory: 128M
+```
+
+## Idiosynchrasies
+
+### Mounting Workspace Volumes
 
 We use reserved path prefixes to support mounting user and data (fuse) data in a container's `volumes` block.
 
 * `user-volume/` mounts the per-user persistent storage folder
 * `data-volume/` mounts the read-only `gen3-fuse` proxy to the commons objects referenced by the workspace manifest
+
+### Networking
+
+* one service must include a `port` mapping to port 80 - ex: '8000:80' - all internal traffic is routed to that port
+* the URL path of every HTTP request into an app has a prefix of `/lw-workspace/proxy/`
+* the containers share the same `localhost` networking space, so two containers cannot 
+bind the same port, and different containers communicate with each other via `localhost:service-port`
+
+### Container resources
+
+Hatchery deploys an app as a kubernetes pod, so every container runs on the same host node.  The sum of the resources requested by every container in an app may not exceed the resources available on a single worker node.
 
 
 ## Resources
