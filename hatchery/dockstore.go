@@ -276,7 +276,7 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 	// nginx removes the /lw-workspace/proxy prefix,
 	// this rewrite puts it back in
 	//
-	hatchApp.PathRewrite = "/lw-workspace/proxy"
+	hatchApp.PathRewrite = "/lw-workspace/proxy/"
 	hatchApp.ReadyProbe = "" // "/lw-workspace/proxy/"
 	hatchApp.UseTLS = "false"
 
