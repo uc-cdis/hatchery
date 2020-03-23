@@ -75,6 +75,10 @@ func TestDockstoreComposeTranslate(t *testing.T) {
 		t.Error(fmt.Sprintf("failed to translate app, got: %v", err))
 		return
 	}
+	if "" == hatchApp.UserVolumeLocation {
+		t.Error(fmt.Sprintf("dockstore hatchApp should set UserVolumeLocation property"))
+		return
+	}
 	hatchAppBytes, _ := yaml.Marshal(hatchApp)
 	dslog.Printf("translated hatchery app: %v", string(hatchAppBytes))
 }

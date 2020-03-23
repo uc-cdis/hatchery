@@ -167,14 +167,13 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	labels["app"] = podName
 	annotations := make(map[string]string)
 	annotations["gen3username"] = userName
-	var sideCarRunAsUser int64 = 0
-	var sideCarRunAsGroup int64 = 0
+	var sideCarRunAsUser int64
+	var sideCarRunAsGroup int64
 	var hostToContainer = k8sv1.MountPropagationHostToContainer
 	var bidirectional = k8sv1.MountPropagationBidirectional
 	var envVars []k8sv1.EnvVar
 	// a null image indicates a dockstore app - always mount user volume
-	mountUserVolume := hatchApp.UserVolumeLocation != "" || hatchApp.Image == ""
-
+	mountUserVolume := hatchApp.UserVolumeLocation != ""
 	hatchConfig.Logger.Printf("building pod %v for %v", hatchApp.Name, userName)
 
 	for key, value := range hatchApp.Env {
@@ -385,8 +384,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	podName := userToResourceName(userName, "pod")
 	podClient := getPodClient()
 	// a null image indicates a dockstore app - always mount user volume
-	mountUserVolume := hatchApp.UserVolumeLocation != "" || hatchApp.Image == ""
-
+	mountUserVolume := hatchApp.UserVolumeLocation != ""
 	if mountUserVolume {
 		claimName := userToResourceName(userName, "claim")
 

@@ -163,12 +163,15 @@ func (rspec *ComposeResourceSpec) BuildK8sResource() map[k8sv1.ResourceName]reso
 }
 
 // ToK8sContainer copies data from the given service to the container friend
-func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) error {
+// Returns true if this container mounts the user volume.  We try to avoid
+// mounting that thing if possible while it's still EBS based.
+func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUserVolume bool, err error) {
 	friend.Name = service.Name
 	//friend.CPULimit = service.Deploy.Resources.Limits.CPU
 	//friend.MemoryLimit = service.Deploy.Resources.Limits.Memory
 	friend.Image = service.Image
 	friend.ImagePullPolicy = "Always"
+	mountUserVolume = false
 	{
 		numVolumes := len(service.Volumes)
 		if 0 < numVolumes {
@@ -179,6 +182,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) error {
 				mountSplit := strings.SplitN(source, ":", 2)
 				sourceDrive := mountSplit[0]
 				if strings.HasPrefix(sourceDrive, userVolumePrefix) {
+					mountUserVolume = true
 					dest.MountPath = mountSplit[1]
 					if sourceDrive != userVolumePrefix {
 						dest.SubPath = sourceDrive[len(userVolumePrefix):]
@@ -194,7 +198,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) error {
 					dest.ReadOnly = true
 					dest.MountPropagation = &fuseDataPropogation
 				} else {
-					return fmt.Errorf("Unknown mount point: %v", source)
+					return mountUserVolume, fmt.Errorf("Unknown mount point: %v", source)
 				}
 			}
 		}
@@ -205,7 +209,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) error {
 		for idx, envEntry := range service.Environment {
 			kvSlice := strings.SplitN(envEntry, "=", 2)
 			if len(kvSlice) != 2 {
-				return fmt.Errorf("Could not parse environment entry: %v", envEntry)
+				return mountUserVolume, fmt.Errorf("Could not parse environment entry: %v", envEntry)
 			}
 			friend.Env[idx].Name = kvSlice[0]
 			friend.Env[idx].Value = kvSlice[1]
@@ -240,7 +244,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) error {
 		friend.LivenessProbe = friend.ReadinessProbe
 	}
 
-	return nil
+	return mountUserVolume, nil
 }
 
 // BuildHatchApp generates a hatchery container config
@@ -278,10 +282,18 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 	}
 	hatchApp.Friends = make([]k8sv1.Container, numServices)
 	friendIndex := 0
+	mountUserVolume := false // does this app mount the user volume?
 	for _, service := range model.Services {
-		service.ToK8sContainer(&hatchApp.Friends[friendIndex])
+		usesUserVolume, err := service.ToK8sContainer(&hatchApp.Friends[friendIndex])
+		if nil != err {
+			return nil, err
+		}
+		mountUserVolume = mountUserVolume || usesUserVolume
 		friendIndex++
 	}
-
+	if mountUserVolume {
+		// pods.go defines the k8s volume for the user space if this variable is set ...
+		hatchApp.UserVolumeLocation = "/dockstore/paceholder"
+	}
 	return hatchApp, nil
 }
