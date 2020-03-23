@@ -272,8 +272,12 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 		}
 	}
 
-	hatchApp.PathRewrite = "" // accessed from revproxy via "/lw-workspace/proxy/"
-	hatchApp.ReadyProbe = ""  // "/lw-workspace/proxy/"
+	//
+	// nginx removes the /lw-workspace/proxy prefix,
+	// this rewrite puts it back in
+	//
+	hatchApp.PathRewrite = "/lw-workspace/proxy"
+	hatchApp.ReadyProbe = "" // "/lw-workspace/proxy/"
 	hatchApp.UseTLS = "false"
 
 	numServices := len(model.Services)
