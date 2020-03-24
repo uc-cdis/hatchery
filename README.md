@@ -8,8 +8,8 @@ See [this bLog](https://www.divio.com/blog/documentation/) for an introduction t
 
 ### Explanation
 * [hatchery overview](doc/explanation/hatcheryOverview.md)
-* [api](doc/explain/hatcheryApi.md)
-* [dockstore apps](doc/explain/dockstore.md)
+* [api](doc/explanation/hatcheryApi.md)
+* [dockstore apps](doc/explanation/dockstore.md)
 
 ### How-to
 * [dev-test](doc/howto/devTest.md)
