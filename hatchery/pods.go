@@ -167,12 +167,13 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	labels["app"] = podName
 	annotations := make(map[string]string)
 	annotations["gen3username"] = userName
-	var sideCarRunAsUser int64 = 0
-	var sideCarRunAsGroup int64 = 0
+	var sideCarRunAsUser int64
+	var sideCarRunAsGroup int64
 	var hostToContainer = k8sv1.MountPropagationHostToContainer
 	var bidirectional = k8sv1.MountPropagationBidirectional
 	var envVars []k8sv1.EnvVar
-
+	// a null image indicates a dockstore app - always mount user volume
+	mountUserVolume := hatchApp.UserVolumeLocation != ""
 	hatchConfig.Logger.Printf("building pod %v for %v", hatchApp.Name, userName)
 
 	for key, value := range hatchApp.Env {
@@ -233,15 +234,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		},
 	}
 
-	var volumeMounts = []k8sv1.VolumeMount{
-		{
-			MountPath:        "/data",
-			Name:             "shared-data",
-			MountPropagation: &hostToContainer,
-		},
-	}
-
-	if hatchApp.UserVolumeLocation != "" {
+	if mountUserVolume {
 		claimName := userToResourceName(userName, "claim")
 		volumes = append(volumes, k8sv1.Volume{
 			Name: "user-data",
@@ -251,12 +244,6 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 				},
 			},
 		})
-
-		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
-			MountPath: hatchApp.UserVolumeLocation,
-			Name:      "user-data",
-		})
-
 	}
 
 	//hatchConfig.Logger.Printf("volumes configured")
@@ -284,37 +271,6 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			SecurityContext: &securityContext,
 			InitContainers:  []k8sv1.Container{},
 			Containers: []k8sv1.Container{
-				{
-					Name:  "hatchery-container",
-					Image: hatchApp.Image,
-					SecurityContext: &k8sv1.SecurityContext{
-						Privileged: &falseVal,
-					},
-					ImagePullPolicy: pullPolicy,
-					Env:             envVars,
-					Command:         hatchApp.Command,
-					Args:            hatchApp.Args,
-					VolumeMounts:    volumeMounts,
-					Resources: k8sv1.ResourceRequirements{
-						Limits: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(hatchApp.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(hatchApp.MemoryLimit),
-						},
-						Requests: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(hatchApp.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(hatchApp.MemoryLimit),
-						},
-					},
-					Lifecycle: &lifeCycle,
-					ReadinessProbe: &k8sv1.Probe{
-						Handler: k8sv1.Handler{
-							HTTPGet: &k8sv1.HTTPGetAction{
-								Path: hatchApp.ReadyProbe,
-								Port: intstr.FromInt(int(hatchApp.TargetPort)),
-							},
-						},
-					},
-				},
 				{
 					Name:  "fuse-container",
 					Image: hatchConfig.Config.Sidecar.Image,
@@ -363,9 +319,57 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		},
 	}
 
-	//hatchConfig.Logger.Printf("pod configured")
+	// some pods (ex - dockstore apps) only have "Friend" containers
+	if "" != hatchApp.Image {
+		var volumeMounts = []k8sv1.VolumeMount{
+			{
+				MountPath:        "/data",
+				Name:             "shared-data",
+				MountPropagation: &hostToContainer,
+			},
+		}
 
-	pod.Spec.Containers = append(pod.Spec.Containers[:], hatchApp.Friends...)
+		if "" != hatchApp.UserVolumeLocation {
+			volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
+				MountPath: hatchApp.UserVolumeLocation,
+				Name:      "user-data",
+			})
+		}
+
+		pod.Spec.Containers = append(pod.Spec.Containers, k8sv1.Container{
+			Name:  "hatchery-container",
+			Image: hatchApp.Image,
+			SecurityContext: &k8sv1.SecurityContext{
+				Privileged: &falseVal,
+			},
+			ImagePullPolicy: pullPolicy,
+			Env:             envVars,
+			Command:         hatchApp.Command,
+			Args:            hatchApp.Args,
+			VolumeMounts:    volumeMounts,
+			Resources: k8sv1.ResourceRequirements{
+				Limits: k8sv1.ResourceList{
+					k8sv1.ResourceCPU:    resource.MustParse(hatchApp.CPULimit),
+					k8sv1.ResourceMemory: resource.MustParse(hatchApp.MemoryLimit),
+				},
+				Requests: k8sv1.ResourceList{
+					k8sv1.ResourceCPU:    resource.MustParse(hatchApp.CPULimit),
+					k8sv1.ResourceMemory: resource.MustParse(hatchApp.MemoryLimit),
+				},
+			},
+			Lifecycle: &lifeCycle,
+			ReadinessProbe: &k8sv1.Probe{
+				Handler: k8sv1.Handler{
+					HTTPGet: &k8sv1.HTTPGetAction{
+						Path: hatchApp.ReadyProbe,
+						Port: intstr.FromInt(int(hatchApp.TargetPort)),
+					},
+				},
+			},
+		})
+	}
+
+	pod.Spec.Containers = append(pod.Spec.Containers, hatchApp.Friends...)
 	//hatchConfig.Logger.Printf("friends added")
 	return pod, nil
 }
@@ -379,7 +383,9 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	}
 	podName := userToResourceName(userName, "pod")
 	podClient := getPodClient()
-	if hatchApp.UserVolumeLocation != "" {
+	// a null image indicates a dockstore app - always mount user volume
+	mountUserVolume := hatchApp.UserVolumeLocation != ""
+	if mountUserVolume {
 		claimName := userToResourceName(userName, "claim")
 
 		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(claimName, metav1.GetOptions{})

@@ -12,7 +12,11 @@ func TestBuildPod(t *testing.T) {
 		t.Error(fmt.Sprintf("failed to load config, got: %v", err))
 	}
 	numApps := len(config.Config.Containers)
-	app := &config.Config.Containers[numApps-1]
+	if 5 != numApps {
+		t.Error(fmt.Sprintf("did not load 5 apps, got: %v", numApps))
+		return
+	}
+	app := &config.Config.Containers[numApps-2]
 	pod, err := buildPod(config, app, "frickjack")
 
 	if nil != err {
@@ -23,7 +27,7 @@ func TestBuildPod(t *testing.T) {
 	if numContainers != len(app.Friends)+2 { // +2 b/c sidecar + main
 		t.Error(fmt.Sprintf("unexpected number of containers in pod - %v", numContainers))
 	}
-	jsBytes, err := json.Marshal(pod)
+	jsBytes, err := json.MarshalIndent(pod, "", "  ")
 
 	config.Logger.Printf("pod_test marshalled pod: %v", string(jsBytes))
 }
