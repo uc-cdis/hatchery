@@ -10,6 +10,7 @@ func TestBuildPod(t *testing.T) {
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
 		t.Error(fmt.Sprintf("failed to load config, got: %v", err))
+		return
 	}
 	numApps := len(config.Config.Containers)
 	if 5 != numApps {

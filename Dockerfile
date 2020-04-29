@@ -1,4 +1,4 @@
-FROM golang:1.13 as build-deps
+FROM golang:1.14 as build-deps
 
 WORKDIR /hatchery
 
@@ -9,7 +9,6 @@ RUN echo "package hatchery\n\nconst (" >hatchery/gitversion.go \
     && COMMIT=`git rev-parse HEAD` && echo "    gitcommit=\"${COMMIT}\"" >>hatchery/gitversion.go \
     && VERSION=`git describe --always --tags` && echo "    gitversion=\"${VERSION}\"" >>hatchery/gitversion.go \
     && echo ")" >>hatchery/gitversion.go
-
 
 RUN echo $SHELL && ls -al && ls -al hatchery/
 RUN go build -ldflags "-linkmode external -extldflags -static" -o bin/hatchery

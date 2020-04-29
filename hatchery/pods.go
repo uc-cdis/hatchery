@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 
@@ -59,7 +60,7 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
 
 	podName := fmt.Sprintf("hatchery-%s", safeUserName)
-	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(podName, metav1.GetOptions{})
+	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	if err != nil {
 		// not found
 		status.Status = "Not Found"
@@ -114,7 +115,7 @@ func deleteK8sPod(userName string) error {
 
 	policy := metav1.DeletePropagationBackground
 	var grace int64 = 20
-	deleteOptions := &metav1.DeleteOptions{
+	deleteOptions := metav1.DeleteOptions{
 		PropagationPolicy:  &policy,
 		GracePeriodSeconds: &grace,
 	}
@@ -122,20 +123,20 @@ func deleteK8sPod(userName string) error {
 	safeUserName := escapism(userName)
 
 	podName := fmt.Sprintf("hatchery-%s", safeUserName)
-	_, err := podClient.Pods(Config.Config.UserNamespace).Get(podName, metav1.GetOptions{})
+	_, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace pod was not found: %s", err)
 	}
 	fmt.Printf("Attempting to delete pod %s for user %s\n", podName, userName)
-	podClient.Pods(Config.Config.UserNamespace).Delete(podName, deleteOptions)
+	podClient.Pods(Config.Config.UserNamespace).Delete(context.TODO(), podName, deleteOptions)
 
 	serviceName := fmt.Sprintf("h-%s-s", safeUserName)
-	_, err = podClient.Services(Config.Config.UserNamespace).Get(serviceName, metav1.GetOptions{})
+	_, err = podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace service was not found: %s", err)
 	}
 	fmt.Printf("Attempting to delete service %s for user %s\n", serviceName, userName)
-	podClient.Services(Config.Config.UserNamespace).Delete(serviceName, deleteOptions)
+	podClient.Services(Config.Config.UserNamespace).Delete(context.TODO(), serviceName, deleteOptions)
 
 	return nil
 }
@@ -388,7 +389,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	if mountUserVolume {
 		claimName := userToResourceName(userName, "claim")
 
-		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(claimName, metav1.GetOptions{})
+		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(context.TODO(), claimName, metav1.GetOptions{})
 		if err != nil {
 			Config.Logger.Printf("Creating PersistentVolumeClaim %s.\n", claimName)
 			pvc := &k8sv1.PersistentVolumeClaim{
@@ -406,7 +407,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 					},
 				},
 			}
-			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(pvc)
+			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(context.TODO(), pvc, metav1.CreateOptions{})
 			if err != nil {
 				Config.Logger.Printf("Failed to create PVC %s. Error: %s\n", claimName, err)
 				return err
@@ -414,7 +415,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		}
 	}
 
-	_, err = podClient.Pods(Config.Config.UserNamespace).Create(pod)
+	_, err = podClient.Pods(Config.Config.UserNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 	if err != nil {
 		Config.Logger.Printf("Failed to launch pod %s for user %s. Image: %s, CPU %s, Memory %s. Error: %s\n", hatchApp.Name, userName, hatchApp.Image, hatchApp.CPULimit, hatchApp.MemoryLimit, err)
 		return err
@@ -428,15 +429,15 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	annotationsService := make(map[string]string)
 	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userToResourceName(userName, "mapping"), userName, serviceName, Config.Config.UserNamespace, hatchApp.PathRewrite, hatchApp.UseTLS)
 
-	_, err = podClient.Services(Config.Config.UserNamespace).Get(serviceName, metav1.GetOptions{})
+	_, err = podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err == nil {
 		// This probably happened as the result of some error... there was no pod but was a service
 		// Lets just clean it up and proceed
 		policy := metav1.DeletePropagationBackground
-		deleteOptions := &metav1.DeleteOptions{
+		deleteOptions := metav1.DeleteOptions{
 			PropagationPolicy: &policy,
 		}
-		podClient.Services(Config.Config.UserNamespace).Delete(serviceName, deleteOptions)
+		podClient.Services(Config.Config.UserNamespace).Delete(context.TODO(), serviceName, deleteOptions)
 	}
 
 	service := &k8sv1.Service{
@@ -463,7 +464,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		},
 	}
 
-	_, err = podClient.Services(Config.Config.UserNamespace).Create(service)
+	_, err = podClient.Services(Config.Config.UserNamespace).Create(context.TODO(), service, metav1.CreateOptions{})
 	if err != nil {
 		fmt.Printf("Failed to launch service %s for user %s forwarding port %d. Error: %s\n", serviceName, userName, hatchApp.TargetPort, err)
 		return err

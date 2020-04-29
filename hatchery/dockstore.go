@@ -136,7 +136,7 @@ func (model *ComposeFull) Sanitize() error {
 		}
 		if model.RootService == "" {
 			for _, portMap := range service.Ports {
-				if strings.HasSuffix(portMap, ":80") {
+				if strings.HasPrefix(portMap, "80:") {
 					model.RootService = key
 				}
 			}
@@ -145,7 +145,7 @@ func (model *ComposeFull) Sanitize() error {
 	}
 	model.Services = cleanServices
 	if len(model.RootService) == 0 {
-		return fmt.Errorf("must map exactly one service to port :80")
+		return fmt.Errorf("must map exactly one service to port 80")
 	}
 	return nil
 }
@@ -262,8 +262,8 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 		if len(portSlice) != 2 {
 			return nil, fmt.Errorf("Could not parse port entry: %v", portEntry)
 		}
-		if portSlice[1] == "80" {
-			portNum, err := strconv.Atoi(portSlice[0])
+		if portSlice[0] == "80" {
+			portNum, err := strconv.Atoi(portSlice[1])
 			if nil != err {
 				return nil, fmt.Errorf("failed to parse port source as number: %v", portEntry)
 			}
