@@ -58,15 +58,16 @@ type ComposeService struct {
 // ComposeFull holds all the data harvested from
 // a docker-compose.yaml file
 type ComposeFull struct {
-	// name of the root service mapped to port 80
+	// name of the root service mapped to the magic port
 	RootService string `yaml:"-"`
 	Services    map[string]ComposeService
 }
 
 var dslog = log.New(os.Stdout, "hatchery/dockstore", log.LstdFlags)
 
-const userVolumePrefix = "user-volume/"
-const dataVolumePrefix = "data-volume/"
+const userVolumePrefix = "./user-volume/"
+const dataVolumePrefix = "./data-volume/"
+const magicPort = "9880" // make it easy to test locally
 
 // DockstoreComposeFromFile loads a hatchery application (container)
 // config from a compose.yaml file
@@ -107,7 +108,7 @@ func (model *ComposeFull) Sanitize() error {
 		}
 		for _, mount := range service.Volumes {
 			if !strings.HasPrefix(mount, userVolumePrefix) && !strings.HasPrefix(mount, dataVolumePrefix) {
-				return fmt.Errorf("illegal volume mount - only support user-volume/ and data-volume/ mounts: %v", mount)
+				return fmt.Errorf("illegal volume mount - only support %s and %s mounts: %v", userVolumePrefix, dataVolumePrefix, mount)
 			}
 			mountSlice := strings.SplitN(mount, ":", 2)
 			if len(mountSlice) != 2 {
@@ -136,7 +137,7 @@ func (model *ComposeFull) Sanitize() error {
 		}
 		if model.RootService == "" {
 			for _, portMap := range service.Ports {
-				if strings.HasPrefix(portMap, "80:") {
+				if strings.HasPrefix(portMap, magicPort+":") {
 					model.RootService = key
 				}
 			}
@@ -145,7 +146,7 @@ func (model *ComposeFull) Sanitize() error {
 	}
 	model.Services = cleanServices
 	if len(model.RootService) == 0 {
-		return fmt.Errorf("must map exactly one service to port 80")
+		return fmt.Errorf("must map exactly one service to port %s", magicPort)
 	}
 	return nil
 }
@@ -216,7 +217,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 		}
 	}
 
-	// ignore service.Ports - only port 80 is mapped at the pod level
+	// ignore service.Ports - only the magic port is mapped at the pod level
 	if len(service.Entrypoint) > 0 {
 		friend.Command = make([]string, len(service.Entrypoint))
 		copy(friend.Command, service.Entrypoint)
@@ -262,7 +263,7 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 		if len(portSlice) != 2 {
 			return nil, fmt.Errorf("Could not parse port entry: %v", portEntry)
 		}
-		if portSlice[0] == "80" {
+		if portSlice[0] == magicPort {
 			portNum, err := strconv.Atoi(portSlice[1])
 			if nil != err {
 				return nil, fmt.Errorf("failed to parse port source as number: %v", portEntry)

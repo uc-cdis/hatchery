@@ -5,7 +5,7 @@ services:
       image: heliumdatastage/renci-guacamole-vnc:use-all-defaults
       container_name: cloudtop
       volumes:
-         - data-volume/data:/usr/local/renci/data
+         - ./data-volume/data:/usr/local/renci/data
       entrypoint: [ /init ]
       command:
         - go
@@ -23,7 +23,7 @@ services:
       image: ohif/viewer:v1.1.14.3708
       container_name: viewer
       volumes:
-         - user-volume/config/nginx-with-proxy.conf:/etc/nginx/conf.d/default.conf
+         - ./user-volume/config/nginx-with-proxy.conf:/etc/nginx/conf.d/default.conf
       environment:
          - MONGO_URL=mongodb://localhost:27017/ohif
          - APP_CONFIG=/usr/share/nginx/html/app-config.js
@@ -41,7 +41,7 @@ services:
             cpus: '0.25'
             memory: 20M
       ports:
-         - "80:80"
+         - "9880:80"
 
    orthanc:
       image: jodogne/orthanc-plugins:latest
@@ -49,7 +49,7 @@ services:
       depends_on:
          - postgres
       volumes:
-         - user-volume/orthanc/orthanc.json:/etc/orthanc/orthanc.json
+         - ./user-volume/orthanc/orthanc.json:/etc/orthanc/orthanc.json
       ports:
          - "8042:8042"
          - "4242:4242"
@@ -60,7 +60,7 @@ services:
       ports:
          - "27017:27017"
       volumes:
-        - user-volume/mongo/data:/data/db
+        - ./user-volume/mongo/data:/data/db
       deploy:
         resources:
           limits:
@@ -74,7 +74,7 @@ services:
       image: postgres:11
       container_name: postgres
       volumes:
-        - user-volume/orthadb/postgresql/data/pgdata:/var/lib/postgresql/data
+        - ./user-volume/orthadb/postgresql/data/pgdata:/var/lib/postgresql/data
       environment:
         - POSTGRES_USER=postgres
         - POSTGRES_PASSWORD=postgres-orthanc
@@ -82,8 +82,3 @@ services:
         - POSTGRES_DB=orthanc
       ports:
          - "5432:5432"
-
-volumes:
-  data-volume:
-  user-volume:
-
