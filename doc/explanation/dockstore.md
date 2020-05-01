@@ -9,10 +9,10 @@ Hatchery has basic support for consuming apps specified in [dockstore docker-com
 
 ## Limiting Assumptions
 
-* the compose service with a port `9880` mapping is the one published to the load balancer
+* the compose service with a port `${SERVICE_PORT}` mapping is the one published to the load balancer
 * volume mappings `source:destination` recognize 2 source volumes
-    - `./user-volume/:` persists across reboots
-    - `./data-volume/:` is the gen3-fuse volume
+    - `${USER_VOLUME}` persists across reboots
+    - `${DATA_VOLUME}` is the gen3-fuse volume
 * we assume `entrypoint` and `command` are both lists
 * we assume `healthcheck` is a list, and require that the first entry is either `CMD` or `HTTP` where CMD has the normal docker-compose healthcheck CMD semantics, and HTTP emulates the [kubernetes liveness probe](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) semantics and treats the second entry as the path to test, and the optional third entry as a port
 
@@ -47,13 +47,13 @@ services:
    webapp:
       image: "python:3.8-buster"
       volumes:
-         - ./data-volume/data:/usr/local/renci/data
+         - ${DATA_VOLUME}/data:/usr/local/renci/data
       entrypoint: [ /bin/bash ]
       command:
         - "-c"
         - "cd /tmp && mkdir -p lw-workspace/proxy; echo '<html><body>Hello!</body></html>' > lw-workspace/proxy/index.html; /usr/bin/python3 -m http.server 8000"
       ports: 
-         - "9880:8000"
+         - "${SERVICE_PORT}:8000"
       healthcheck:
         test: ["CMD", "curl", "-f", "http://localhost:8000/lw-workspace/proxy/index.html"]
         interval: 1m30s
@@ -64,7 +64,7 @@ services:
       image: "ubuntu:18.04"
       # avoid user-volume mount if not necessary
       volumes:
-         - ./user-volume/config/nginx-with-proxy.conf:/etc/nginx/conf.d/default.conf
+         - ${USER_VOLUME}/config/nginx-with-proxy.conf:/etc/nginx/conf.d/default.conf
       environment:
          - MONGO_URL=mongodb://localhost:27017/ohif
          - APP_CONFIG=/usr/share/nginx/html/app-config.js
@@ -89,7 +89,7 @@ services:
    webapp:
       image: "quay.io/occ_data/jupyternotebook:1.7.4"
       volumes:
-         - ./data-volume/data:/data
+         - ${DATA_VOLUME}/data:/data
       entrypoint:
         - "start-notebook.sh"
       command:
@@ -97,7 +97,7 @@ services:
         - "--NotebookApp.password=''"
         - "--NotebookApp.token=''"
       ports: 
-         - "9880:8888"
+         - "${SERVICE_PORT}:8888"
       healthcheck:
         test: ["CMD", "curl", "-f", "http://localhost:8888/lw-workspace/proxy/"]
         interval: 1m30s
@@ -119,12 +119,12 @@ services:
 
 We use reserved path prefixes to support mounting user and data (fuse) data in a container's `volumes` block.
 
-* `./user-volume/:` mounts the per-user persistent storage folder
-* `./data-volume/:` mounts the read-only `gen3-fuse` proxy to the commons objects referenced by the workspace manifest
+* `${USER_VOLUME}` mounts the per-user persistent storage folder
+* `${DATA_VOLUME}` mounts the read-only `gen3-fuse` proxy to the commons objects referenced by the workspace manifest
 
 ### Networking
 
-* one service must include a `port` mapping to port 9880 - ex: `9880:8000` - all internal traffic is routed to that port
+* one service must include a `port` mapping to port `${SERVICE_PORT}` - ex: `${SERVICE_PORT}:8000` - all internal traffic is routed to that port
 * the URL path of every HTTP request into an app has a prefix of `/lw-workspace/proxy/`
 * the containers share the same `localhost` networking space, so two containers cannot 
 bind the same port, and different containers communicate with each other via `localhost:service-port`

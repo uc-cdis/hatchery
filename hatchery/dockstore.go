@@ -65,9 +65,9 @@ type ComposeFull struct {
 
 var dslog = log.New(os.Stdout, "hatchery/dockstore", log.LstdFlags)
 
-const userVolumePrefix = "./user-volume/"
-const dataVolumePrefix = "./data-volume/"
-const magicPort = "9880" // make it easy to test locally
+const userVolumePrefix = "${USER_VOLUME}"
+const dataVolumePrefix = "${DATA_VOLUME}"
+const magicPort = "${SERVICE_PORT}" // make it easy to test locally
 
 // DockstoreComposeFromFile loads a hatchery application (container)
 // config from a compose.yaml file
@@ -190,14 +190,16 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 					mountUserVolume = true
 					dest.MountPath = mountSplit[1]
 					if sourceDrive != userVolumePrefix {
-						dest.SubPath = sourceDrive[len(userVolumePrefix):]
+						// +1 to trim leading /
+						dest.SubPath = sourceDrive[len(userVolumePrefix)+1:]
 					}
 					dest.Name = "user-data"
 					dest.ReadOnly = false
 				} else if strings.HasPrefix(sourceDrive, dataVolumePrefix) {
 					dest.MountPath = mountSplit[1]
 					if sourceDrive != dataVolumePrefix {
-						dest.SubPath = sourceDrive[len(dataVolumePrefix):]
+						// +1 to trim leading /
+						dest.SubPath = sourceDrive[len(dataVolumePrefix)+1:]
 					}
 					dest.Name = "shared-data"
 					dest.ReadOnly = true
