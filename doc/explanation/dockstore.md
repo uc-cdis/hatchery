@@ -7,14 +7,6 @@ Hatchery has basic support for consuming apps specified in [dockstore docker-com
 
 [Dockstore](https://dockstore.org/) is a repository for sharing CWL and WDL workflow definitions as well as definitions (in various formats) for deploying scientific applications packages as docker images.
 
-## Limiting Assumptions
-
-* the compose service with a port `${SERVICE_PORT}` mapping is the one published to the load balancer
-* volume mappings `source:destination` recognize 2 source volumes
-    - `${USER_VOLUME}` persists across reboots
-    - `${DATA_VOLUME}` is the gen3-fuse volume
-* we assume `entrypoint` and `command` are both lists
-* we assume `healthcheck` is a list, and require that the first entry is either `CMD` or `HTTP` where CMD has the normal docker-compose healthcheck CMD semantics, and HTTP emulates the [kubernetes liveness probe](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) semantics and treats the second entry as the path to test, and the optional third entry as a port
 
 ## Loading a Sample App
 
@@ -115,16 +107,21 @@ services:
 
 ## Idiosynchrasies
 
+### Format limitations
+
+* we assume `entrypoint` and `command` are both lists
+* we assume `healthcheck` is a list, and require that the first entry is either `CMD` or `HTTP` where CMD has the normal docker-compose healthcheck CMD semantics, and HTTP emulates the [kubernetes liveness probe](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/) semantics and treats the second entry as the path to test, and the optional third entry as a port
+
 ### Mounting Workspace Volumes
 
-We use reserved path prefixes to support mounting user and data (fuse) data in a container's `volumes` block.
+We reserve path prefixes to support mounting user and data (fuse, read-only) data in a container's `volumes` block.
 
 * `${USER_VOLUME}` mounts the per-user persistent storage folder
 * `${DATA_VOLUME}` mounts the read-only `gen3-fuse` proxy to the commons objects referenced by the workspace manifest
 
 ### Networking
 
-* one service must include a `port` mapping to port `${SERVICE_PORT}` - ex: `${SERVICE_PORT}:8000` - all internal traffic is routed to that port
+* one service must include a `port` mapping to port `${SERVICE_PORT}` - ex: `${SERVICE_PORT}:8000` - all external traffic is routed to that port
 * the URL path of every HTTP request into an app has a prefix of `/lw-workspace/proxy/`
 * the containers share the same `localhost` networking space, so two containers cannot 
 bind the same port, and different containers communicate with each other via `localhost:service-port`
@@ -132,7 +129,6 @@ bind the same port, and different containers communicate with each other via `lo
 ### Container resources
 
 Hatchery deploys an app as a kubernetes pod, so every container runs on the same host node.  The sum of the resources requested by every container in an app may not exceed the resources available on a single worker node.
-
 
 ## Resources
 
