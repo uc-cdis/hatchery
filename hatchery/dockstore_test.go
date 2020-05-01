@@ -32,18 +32,19 @@ func TestDockstoreComposeLoad(t *testing.T) {
 		t.Error(fmt.Sprintf("viewer does not have expected environment: %v", service.Environment))
 	}
 
-	service, ok = composeModel.Services["mongo"]
+	service, ok = composeModel.Services["mon_Go"]
 	if !ok {
-		t.Error("mongo service not loaded")
+		t.Error("mon_Go service not loaded")
+		return
 	}
 	if "" == service.Deploy.Resources.Limits.Memory || "" == service.Deploy.Resources.Limits.CPU {
-		t.Error("mongo service failed to load resource limits")
+		t.Error("mon_Go service failed to load resource limits")
 	}
 	if "" == service.Deploy.Resources.Requests.Memory || "" == service.Deploy.Resources.Requests.CPU {
-		t.Error("mongo service failed to load resource limits")
+		t.Error("mon_Go service failed to load resource limits")
 	}
-	if "mongo" != service.Name {
-		t.Error(fmt.Sprintf("mongo service has wrong name: %v", service.Name))
+	if "mon-go" != service.Name { // DNS safe name
+		t.Error(fmt.Sprintf("mon_Go service has wrong name: %v", service.Name))
 	}
 
 	service, ok = composeModel.Services["cloudtop"]

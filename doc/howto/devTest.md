@@ -15,6 +15,6 @@ go get -u
 Build and test with:
 ```
 (
-go build -o bin/hatchery && go test -v ./hatchery/
+go build -o bin/hatchery && go test -v ./hatchery/ -failfast
 )
 ```

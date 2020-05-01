@@ -54,7 +54,7 @@ services:
          - "8042:8042"
          - "4242:4242"
 
-   mongo:
+   mon_Go:
       image: mongo:latest
       container_name: mongo
       ports:

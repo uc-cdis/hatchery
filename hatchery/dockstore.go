@@ -101,7 +101,11 @@ func DockstoreComposeFromBytes(yamlBytes []byte) (model *ComposeFull, err error)
 func (model *ComposeFull) Sanitize() error {
 	cleanServices := make(map[string]ComposeService, len(model.Services))
 	for key, service := range model.Services {
-		service.Name = key
+		// k8s wants DNS-safe container names - let's just do that here
+		service.Name = strings.ToLower(key)
+		for _, badChar := range [...]string{"_", "/", " "} {
+			service.Name = strings.ReplaceAll(service.Name, badChar, "-")
+		}
 		// some basic validation ...
 		if len(service.Image) == 0 {
 			return fmt.Errorf("must specify an Image for service %v", key)
