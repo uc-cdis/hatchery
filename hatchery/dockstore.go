@@ -58,15 +58,16 @@ type ComposeService struct {
 // ComposeFull holds all the data harvested from
 // a docker-compose.yaml file
 type ComposeFull struct {
-	// name of the root service mapped to port 80
+	// name of the root service mapped to the magic port
 	RootService string `yaml:"-"`
 	Services    map[string]ComposeService
 }
 
 var dslog = log.New(os.Stdout, "hatchery/dockstore", log.LstdFlags)
 
-const userVolumePrefix = "user-volume/"
-const dataVolumePrefix = "data-volume/"
+const userVolumePrefix = "${USER_VOLUME}"
+const dataVolumePrefix = "${DATA_VOLUME}"
+const magicPort = "${SERVICE_PORT}" // make it easy to test locally
 
 // DockstoreComposeFromFile loads a hatchery application (container)
 // config from a compose.yaml file
@@ -100,14 +101,18 @@ func DockstoreComposeFromBytes(yamlBytes []byte) (model *ComposeFull, err error)
 func (model *ComposeFull) Sanitize() error {
 	cleanServices := make(map[string]ComposeService, len(model.Services))
 	for key, service := range model.Services {
-		service.Name = key
+		// k8s wants DNS-safe container names - let's just do that here
+		service.Name = strings.ToLower(key)
+		for _, badChar := range [...]string{"_", "/", " "} {
+			service.Name = strings.ReplaceAll(service.Name, badChar, "-")
+		}
 		// some basic validation ...
 		if len(service.Image) == 0 {
 			return fmt.Errorf("must specify an Image for service %v", key)
 		}
 		for _, mount := range service.Volumes {
 			if !strings.HasPrefix(mount, userVolumePrefix) && !strings.HasPrefix(mount, dataVolumePrefix) {
-				return fmt.Errorf("illegal volume mount - only support user-volume/ and data-volume/ mounts: %v", mount)
+				return fmt.Errorf("illegal volume mount - only support %s and %s mounts: %v", userVolumePrefix, dataVolumePrefix, mount)
 			}
 			mountSlice := strings.SplitN(mount, ":", 2)
 			if len(mountSlice) != 2 {
@@ -136,7 +141,7 @@ func (model *ComposeFull) Sanitize() error {
 		}
 		if model.RootService == "" {
 			for _, portMap := range service.Ports {
-				if strings.HasSuffix(portMap, ":80") {
+				if strings.HasPrefix(portMap, magicPort+":") {
 					model.RootService = key
 				}
 			}
@@ -145,7 +150,7 @@ func (model *ComposeFull) Sanitize() error {
 	}
 	model.Services = cleanServices
 	if len(model.RootService) == 0 {
-		return fmt.Errorf("must map exactly one service to port :80")
+		return fmt.Errorf("must map exactly one service to port %s", magicPort)
 	}
 	return nil
 }
@@ -185,14 +190,16 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 					mountUserVolume = true
 					dest.MountPath = mountSplit[1]
 					if sourceDrive != userVolumePrefix {
-						dest.SubPath = sourceDrive[len(userVolumePrefix):]
+						// +1 to trim leading /
+						dest.SubPath = sourceDrive[len(userVolumePrefix)+1:]
 					}
 					dest.Name = "user-data"
 					dest.ReadOnly = false
 				} else if strings.HasPrefix(sourceDrive, dataVolumePrefix) {
 					dest.MountPath = mountSplit[1]
 					if sourceDrive != dataVolumePrefix {
-						dest.SubPath = sourceDrive[len(dataVolumePrefix):]
+						// +1 to trim leading /
+						dest.SubPath = sourceDrive[len(dataVolumePrefix)+1:]
 					}
 					dest.Name = "shared-data"
 					dest.ReadOnly = true
@@ -216,7 +223,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 		}
 	}
 
-	// ignore service.Ports - only port 80 is mapped at the pod level
+	// ignore service.Ports - only the magic port is mapped at the pod level
 	if len(service.Entrypoint) > 0 {
 		friend.Command = make([]string, len(service.Entrypoint))
 		copy(friend.Command, service.Entrypoint)
@@ -262,8 +269,8 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 		if len(portSlice) != 2 {
 			return nil, fmt.Errorf("Could not parse port entry: %v", portEntry)
 		}
-		if portSlice[1] == "80" {
-			portNum, err := strconv.Atoi(portSlice[0])
+		if portSlice[0] == magicPort {
+			portNum, err := strconv.Atoi(portSlice[1])
 			if nil != err {
 				return nil, fmt.Errorf("failed to parse port source as number: %v", portEntry)
 			}
