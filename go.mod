@@ -20,17 +20,16 @@ require (
 	github.com/onsi/gomega v1.7.0 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/stretchr/testify v1.4.0 // indirect
 	golang.org/x/crypto v0.0.0-20201016220609-9e8e0b390897 // indirect
-	golang.org/x/net v0.0.0-20201016165138-7b1cca2348c0 // indirect
+	golang.org/x/net v0.0.0-20201020065357-d65d470038a5 // indirect
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43 // indirect
 	golang.org/x/sys v0.0.0-20201018230417-eeed37f84f13 // indirect
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.3.0
-	k8s.io/api v0.19.2
-	k8s.io/apimachinery v0.19.2
+	k8s.io/api v0.19.3
+	k8s.io/apimachinery v0.19.3
 	k8s.io/client-go v1.5.1
 	k8s.io/klog v1.0.0 // indirect
 	k8s.io/klog/v2 v2.3.0 // indirect
@@ -41,7 +40,7 @@ require (
 
 replace (
 	// lateest gnostic has some API changes that break things
-	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.3.1
+	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.5.2
 	// versioning is screwed up in the clinet-go module
 	k8s.io/client-go => k8s.io/client-go v0.19.2
 )
