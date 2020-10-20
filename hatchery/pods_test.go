@@ -13,7 +13,7 @@ func TestBuildPod(t *testing.T) {
 		return
 	}
 	numApps := len(config.Config.Containers)
-	if 5 != numApps {
+	if 6 != numApps {
 		t.Error(fmt.Sprintf("did not load 5 apps, got: %v", numApps))
 		return
 	}
