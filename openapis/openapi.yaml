@@ -12,7 +12,7 @@ tags:
 - name: workspace
   description: Operations about workspaces
 security:
-  - bearerAuth: [] 
+  - bearerAuth: []
 paths:
   /launch:
     post:

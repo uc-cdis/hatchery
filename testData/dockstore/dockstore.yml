@@ -29,7 +29,7 @@ service:
     postprovision:
     port:
     stop:
-      
+
   # These are environment variables that the launcher is responsible for passing to any scripts that it invokes.
   # The names must be valid environment variable names.
   # Users can specify the values of the parameters in the input parameter JSON (see below).

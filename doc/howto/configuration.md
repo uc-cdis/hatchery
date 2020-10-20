@@ -5,7 +5,7 @@ Hatchery is configured via the manifest file for the commons you are running. Ha
 
 ## Example
 
-An example manifest entry may look like 
+An example manifest entry may look like
 
 ```
   "hatchery": {
@@ -51,8 +51,8 @@ An example manifest entry may look like
     * `args` the arguments to pass to the container.
     * `command` a string array as the command to run in the container overriding the default.
     * `lifecycle-pre-stop` a string array as the container prestop command.
-* `containers` is the list of workspaces available to be run by this instance of Hatchery. Each container must be a single image and expose a web server. 
-    * `target-port` specifies the port that the container is exposing the webserver on. 
+* `containers` is the list of workspaces available to be run by this instance of Hatchery. Each container must be a single image and expose a web server.
+    * `target-port` specifies the port that the container is exposing the webserver on.
     * `cpu-limit` the CPU limit for the container matching Kubernetes resource spec.
     * `memory-limit` the memory limit for the container matching Kubernetes resource spec.
     * `name` the display name for the workspace.
@@ -69,4 +69,3 @@ An example manifest entry may look like
     * `lifecycle-pre-stop` a string array as the container prestop command.
     * `lifecycle-post-start` a string array as the container poststart command.
     * `friends` is a list of kubernetes containers to deploy alongside the main container and the sidecar in the kubernetes pod
-    
