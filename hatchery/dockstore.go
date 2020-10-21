@@ -67,6 +67,7 @@ var dslog = log.New(os.Stdout, "hatchery/dockstore", log.LstdFlags)
 
 const userVolumePrefix = "${USER_VOLUME}"
 const dataVolumePrefix = "${DATA_VOLUME}"
+const sharedMemoryVolumePrefix = "${SHARED_MEMORY_VOLUME}"
 const magicPort = "${SERVICE_PORT}" // make it easy to test locally
 
 // DockstoreComposeFromFile loads a hatchery application (container)
@@ -111,11 +112,11 @@ func (model *ComposeFull) Sanitize() error {
 			return fmt.Errorf("must specify an Image for service %v", key)
 		}
 		for _, mount := range service.Volumes {
-			if !strings.HasPrefix(mount, userVolumePrefix) && !strings.HasPrefix(mount, dataVolumePrefix) {
-				return fmt.Errorf("illegal volume mount - only support %s and %s mounts: %v", userVolumePrefix, dataVolumePrefix, mount)
+			if !strings.HasPrefix(mount, userVolumePrefix) && !strings.HasPrefix(mount, dataVolumePrefix) && !strings.HasPrefix(mount, sharedMemoryVolumePrefix) {
+				return fmt.Errorf("illegal volume mount - only support %s, %s and %s mounts: %v", userVolumePrefix, dataVolumePrefix, sharedMemoryVolumePrefix, mount)
 			}
 			mountSlice := strings.SplitN(mount, ":", 2)
-			if len(mountSlice) != 2 {
+			if len(mountSlice) != 2 && !strings.HasPrefix(mount, sharedMemoryVolumePrefix) {
 				return fmt.Errorf("illegal volume mount: %v", mount)
 			}
 		}
@@ -170,20 +171,22 @@ func (rspec *ComposeResourceSpec) BuildK8sResource() map[k8sv1.ResourceName]reso
 // ToK8sContainer copies data from the given service to the container friend
 // Returns true if this container mounts the user volume.  We try to avoid
 // mounting that thing if possible while it's still EBS based.
-func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUserVolume bool, err error) {
+func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUserVolume bool, mountSharedMemory bool, err error) {
 	friend.Name = service.Name
 	//friend.CPULimit = service.Deploy.Resources.Limits.CPU
 	//friend.MemoryLimit = service.Deploy.Resources.Limits.Memory
 	friend.Image = service.Image
 	friend.ImagePullPolicy = "Always"
 	mountUserVolume = false
+	mountSharedMemory = false
 	{
 		numVolumes := len(service.Volumes)
 		if 0 < numVolumes {
-			fuseDataPropogation := k8sv1.MountPropagationHostToContainer
+			fuseDataPropagation := k8sv1.MountPropagationHostToContainer
 			friend.VolumeMounts = make([]k8sv1.VolumeMount, numVolumes)
-			for idx, source := range service.Volumes {
-				dest := &friend.VolumeMounts[idx]
+			volumeMountsIndex := 0
+			for _, source := range service.Volumes {
+				dest := &friend.VolumeMounts[volumeMountsIndex]
 				mountSplit := strings.SplitN(source, ":", 2)
 				sourceDrive := mountSplit[0]
 				if strings.HasPrefix(sourceDrive, userVolumePrefix) {
@@ -195,6 +198,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 					}
 					dest.Name = "user-data"
 					dest.ReadOnly = false
+					volumeMountsIndex++
 				} else if strings.HasPrefix(sourceDrive, dataVolumePrefix) {
 					dest.MountPath = mountSplit[1]
 					if sourceDrive != dataVolumePrefix {
@@ -203,11 +207,15 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 					}
 					dest.Name = "shared-data"
 					dest.ReadOnly = true
-					dest.MountPropagation = &fuseDataPropogation
+					dest.MountPropagation = &fuseDataPropagation
+					volumeMountsIndex++
+				} else if strings.HasPrefix(sourceDrive, sharedMemoryVolumePrefix) {
+					mountSharedMemory = true
 				} else {
-					return mountUserVolume, fmt.Errorf("Unknown mount point: %v", source)
+					return mountUserVolume, mountSharedMemory, fmt.Errorf("Unknown mount point: %v", source)
 				}
 			}
+			friend.VolumeMounts = friend.VolumeMounts[:volumeMountsIndex]
 		}
 	}
 
@@ -216,7 +224,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 		for idx, envEntry := range service.Environment {
 			kvSlice := strings.SplitN(envEntry, "=", 2)
 			if len(kvSlice) != 2 {
-				return mountUserVolume, fmt.Errorf("Could not parse environment entry: %v", envEntry)
+				return mountUserVolume, mountSharedMemory, fmt.Errorf("Could not parse environment entry: %v", envEntry)
 			}
 			friend.Env[idx].Name = kvSlice[0]
 			friend.Env[idx].Value = kvSlice[1]
@@ -251,7 +259,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 		friend.LivenessProbe = friend.ReadinessProbe
 	}
 
-	return mountUserVolume, nil
+	return mountUserVolume, mountSharedMemory, nil
 }
 
 // BuildHatchApp generates a hatchery container config
@@ -294,17 +302,22 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 	hatchApp.Friends = make([]k8sv1.Container, numServices)
 	friendIndex := 0
 	mountUserVolume := false // does this app mount the user volume?
+	mountSharedMemory := false
 	for _, service := range model.Services {
-		usesUserVolume, err := service.ToK8sContainer(&hatchApp.Friends[friendIndex])
+		usesUserVolume, useSharedMemory, err := service.ToK8sContainer(&hatchApp.Friends[friendIndex])
 		if nil != err {
 			return nil, err
 		}
 		mountUserVolume = mountUserVolume || usesUserVolume
+		mountSharedMemory = mountSharedMemory || useSharedMemory
 		friendIndex++
 	}
 	if mountUserVolume {
 		// pods.go defines the k8s volume for the user space if this variable is set ...
 		hatchApp.UserVolumeLocation = "/dockstore/paceholder"
+	}
+	if mountSharedMemory {
+		hatchApp.UseSharedMemory = "true"
 	}
 	return hatchApp, nil
 }

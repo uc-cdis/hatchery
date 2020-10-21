@@ -1,0 +1,33 @@
+version: '3'
+services:
+
+   hatchery-container:
+      image: quay.io/cdis/docker-firefox:master
+      container_name: hatchery-container
+      volumes:
+         - ${DATA_VOLUME}:/data
+         - ${SHARED_MEMORY_VOLUME}
+      environment:
+         - LANDING_URL=http://localhost:8787/
+      depends_on:
+         - rstudio
+      deploy:
+        resources:
+          limits:
+            cpus: '1.00'
+            memory: 1Gi
+      ports:
+         - "${SERVICE_PORT}:5800"
+
+   rstudio:
+      image: heliumdatastage/rstudio-server:1
+      container_name: rstudio
+      environment:
+         - DISABLE_AUTH=true
+      deploy:
+        resources:
+          limits:
+            cpus: '1.0'
+            memory: 512Mi
+      ports:
+         - "8787:8787"

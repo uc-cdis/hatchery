@@ -219,6 +219,11 @@
   "more-configs": [
     {
       "type": "dockstore-compose:1.0.0",
+      "path": "../testData/dockstore/firefox-app.yml",
+      "name": "DockstoreFirefox"
+    },
+    {
+      "type": "dockstore-compose:1.0.0",
       "path": "../testData/dockstore/docker-compose.yml",
       "name": "DockstoreTest"
     }
