@@ -62,6 +62,7 @@ An example manifest entry may look like
     * `command` a string array as the command to run in the container overriding the default.
     * `path-rewrite` the `rewrite` flag to be added as an annotation for Ambassador.
     * `use-tls` the `tls` flag to be added as an annotation for Ambassador.
+    * `use-shared-memory` a boolean flag to mount a shared memory volume (for FireFox and noVNC)
     * `ready-probe` the path to use for the Kubernetes readiness probe.
     * `user-uid` the UID for the user in this container.
     * `fs-gid` the GID for the filesystem mounts.
