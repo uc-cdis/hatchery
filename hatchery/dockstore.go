@@ -44,15 +44,16 @@ type ComposeHealthCheck struct {
 // ComposeService is an entry in the services
 // block of docker-compose
 type ComposeService struct {
-	Image       string
-	Name        string
-	Environment []string
-	Entrypoint  []string
-	Command     []string
-	Volumes     []string
-	Ports       []string
-	Deploy      ComposeDeployDetails
-	Healthcheck ComposeHealthCheck
+	Image           string
+	Name            string
+	Environment     []string
+	Entrypoint      []string
+	Command         []string
+	Volumes         []string
+	Ports           []string
+	SecurityContext []string `yaml:"security_context"`
+	Deploy          ComposeDeployDetails
+	Healthcheck     ComposeHealthCheck
 }
 
 // ComposeFull holds all the data harvested from
@@ -132,6 +133,12 @@ func (model *ComposeFull) Sanitize() error {
 			kvSlice := strings.SplitN(envEntry, "=", 2)
 			if len(kvSlice) != 2 {
 				return fmt.Errorf("Could not parse environment entry: %v", envEntry)
+			}
+		}
+		for _, securityContextEntry := range service.SecurityContext {
+			kvSlice := strings.SplitN(securityContextEntry, "=", 2)
+			if len(kvSlice) != 2 {
+				return fmt.Errorf("Could not parse security_context entry: %v", securityContextEntry)
 			}
 		}
 		for _, portEntry := range service.Ports {
@@ -228,6 +235,23 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 			}
 			friend.Env[idx].Name = kvSlice[0]
 			friend.Env[idx].Value = kvSlice[1]
+		}
+	}
+
+	if nil != service.SecurityContext {
+		friend.SecurityContext = &k8sv1.SecurityContext{}
+		for _, securityContextEntry := range service.SecurityContext {
+			kvSlice := strings.SplitN(securityContextEntry, "=", 2)
+			if len(kvSlice) != 2 {
+				return mountUserVolume, mountSharedMemory, fmt.Errorf("Could not parse security_context entry: %v", securityContextEntry)
+			}
+			if kvSlice[0] == "privileged" {
+				priv := false
+				if kvSlice[1] == "true" {
+					priv = true
+				}
+				friend.SecurityContext.Privileged = &priv
+			}
 		}
 	}
 

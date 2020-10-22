@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestBuildPod(t *testing.T) {
+func TestBuildPodFromJSON(t *testing.T) {
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
 		t.Error(fmt.Sprintf("failed to load config, got: %v", err))
@@ -44,7 +44,7 @@ func TestBuildPodFromDockstore(t *testing.T) {
 		t.Error(fmt.Sprintf("did not load 7 apps, got: %v", numApps))
 		return
 	}
-	app := &config.Config.Containers[numApps-1]
+	app := &config.Config.Containers[numApps-2]
 	pod, err := buildPod(config, app, "frickjack")
 
 	if nil != err {

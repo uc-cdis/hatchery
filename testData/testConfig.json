@@ -1,58 +1,63 @@
 {
-    "user-namespace": "jupyter-pods",
-    "sub-dir": "/lw-workspace",
-    "user-volume-size": "10Gi",
-    "sidecar": {
-      "cpu-limit": "1.0",
-      "memory-limit": "256Mi",
-      "image": "quay.io/cdis/gen3fuse-sidecar:chore_sidecar",
-      "env": {"NAMESPACE":"default", "HOSTNAME": "niaid.bionimbus.org"},
-      "args": [],
-      "command": ["/bin/bash", "/sidecarDockerrun.sh"],
-      "lifecycle-pre-stop": ["su", "-c", "echo test", "-s", "/bin/sh", "root"]
+  "user-namespace": "jupyter-pods",
+  "sub-dir": "/lw-workspace",
+  "user-volume-size": "10Gi",
+  "sidecar": {
+    "cpu-limit": "1.0",
+    "memory-limit": "256Mi",
+    "image": "quay.io/cdis/gen3fuse-sidecar:chore_sidecar",
+    "env": {
+      "NAMESPACE": "default",
+      "HOSTNAME": "niaid.bionimbus.org"
     },
-    "containers": [{
+    "args": [],
+    "command": ["/bin/bash", "/sidecarDockerrun.sh"],
+    "lifecycle-pre-stop": ["su", "-c", "echo test", "-s", "/bin/sh", "root"]
+  },
+  "containers": [{
       "target-port": 8787,
       "cpu-limit": "1.0",
       "memory-limit": "1024Mi",
       "name": "R Studio",
       "image": "quay.io/cdis/rstudio:master",
-      "env": {"DISABLE_AUTH": "true"},
+      "env": {
+        "DISABLE_AUTH": "true"
+      },
       "args": [],
       "path-rewrite": "/",
       "use-tls": "false",
       "ready-probe": "/",
       "user-volume-location": "/home/rstudio/pd",
       "fs-gid": 100
-    },{
+    }, {
       "target-port": 8888,
       "cpu-limit": "1.0",
       "memory-limit": "1024Mi",
       "name": "Jupyter - Python/R",
       "image": "quay.io/occ_data/jupyternotebook:1.7.2",
       "env": {},
-      "args": ["--NotebookApp.base_url=/lw-workspace/proxy/","--NotebookApp.password=''","--NotebookApp.token=''"],
+      "args": ["--NotebookApp.base_url=/lw-workspace/proxy/", "--NotebookApp.password=''", "--NotebookApp.token=''"],
       "command": ["start-notebook.sh"],
       "path-rewrite": "/lw-workspace/proxy/",
       "use-tls": "false",
       "ready-probe": "/lw-workspace/proxy/",
-      "lifecycle-post-start": ["/bin/sh","-c","export IAM=`whoami`; rm -rf /home/$IAM/pd/dockerHome; ln -s $(pwd) /home/$IAM/pd/dockerHome; mkdir -p /home/$IAM/.jupyter/custom; echo \"define(['base/js/namespace'], function(Jupyter){Jupyter._target = '_self';})\" >/home/$IAM/.jupyter/custom/custom.js; ln -s /data /home/$IAM/pd/; true"],
+      "lifecycle-post-start": ["/bin/sh", "-c", "export IAM=`whoami`; rm -rf /home/$IAM/pd/dockerHome; ln -s $(pwd) /home/$IAM/pd/dockerHome; mkdir -p /home/$IAM/.jupyter/custom; echo \"define(['base/js/namespace'], function(Jupyter){Jupyter._target = '_self';})\" >/home/$IAM/.jupyter/custom/custom.js; ln -s /data /home/$IAM/pd/; true"],
       "user-uid": 1000,
       "fs-gid": 100,
       "user-volume-location": "/home/jovyan/pd"
-    },{
+    }, {
       "target-port": 8888,
       "cpu-limit": "1.0",
       "memory-limit": "15512Mi",
       "name": "Jupyter - Ariba and Mykrobe",
       "image": "quay.io/cdis/niaid-jupyterhub:0.1.2",
       "env": {},
-      "args": ["--NotebookApp.base_url=/lw-workspace/proxy/","--NotebookApp.password=''","--NotebookApp.token=''"],
+      "args": ["--NotebookApp.base_url=/lw-workspace/proxy/", "--NotebookApp.password=''", "--NotebookApp.token=''"],
       "command": ["start-notebook.sh"],
       "path-rewrite": "/lw-workspace/proxy/",
       "use-tls": "false",
       "ready-probe": "/lw-workspace/proxy/",
-      "lifecycle-post-start": ["/bin/sh","-c","export IAM=`whoami`; rm -rf /home/$IAM/pd/dockerHome; ln -s $(pwd) /home/$IAM/pd/dockerHome; mkdir -p /home/$IAM/.jupyter/custom; echo \"define(['base/js/namespace'], function(Jupyter){Jupyter._target = '_self';})\" >/home/$IAM/.jupyter/custom/custom.js; ln -s /data /home/$IAM/pd/; true"],
+      "lifecycle-post-start": ["/bin/sh", "-c", "export IAM=`whoami`; rm -rf /home/$IAM/pd/dockerHome; ln -s $(pwd) /home/$IAM/pd/dockerHome; mkdir -p /home/$IAM/.jupyter/custom; echo \"define(['base/js/namespace'], function(Jupyter){Jupyter._target = '_self';})\" >/home/$IAM/.jupyter/custom/custom.js; ln -s /data /home/$IAM/pd/; true"],
       "user-uid": 1000,
       "fs-gid": 100,
       "user-volume-location": "/home/jovyan/pd"
@@ -82,15 +87,12 @@
       "user-uid": 1000,
       "fs-gid": 100,
       "user-volume-location": "/tmp",
-      "friends": [
-        {
+      "friends": [{
           "name": "friend1",
-          "env": [
-            {
-              "name": "bla",
-              "value": "friend1"
-            }
-          ],
+          "env": [{
+            "name": "bla",
+            "value": "friend1"
+          }],
           "resources": {
             "requests": {
               "cpu": 0.25
@@ -131,12 +133,10 @@
         },
         {
           "name": "friend2",
-          "env": [
-            {
-              "name": "bla",
-              "value": "friend2"
-            }
-          ],
+          "env": [{
+            "name": "bla",
+            "value": "friend2"
+          }],
           "resources": {
             "requests": {
               "cpu": 0.25
@@ -178,46 +178,42 @@
       ]
     },
     {
-      "target-port": 5800,
+      "target-port": 8787,
       "cpu-limit": "1.0",
       "memory-limit": "1024Mi",
-      "name": "Test VNC App with Shared Mem",
-      "image": "quay.io/cdis/docker-firefox:master",
+      "name": "TEST R Studio thru VNC",
+      "image": "heliumdatastage/rstudio-server:1",
       "env": {
-        "LANDING_URL": "http://localhost:8787/"
+        "DISABLE_AUTH": "true"
       },
       "args": [],
       "path-rewrite": "/",
       "use-tls": "false",
       "ready-probe": "/",
       "use-shared-memory": "true",
-      "friends": [
-        {
-          "name": "rstudio",
-          "image": "heliumdatastage/rstudio-server:1",
-          "env": [
-            {
-              "name": "DISABLE_AUTH",
-              "value": "true"
-            }
-          ],
-          "resources": {
-            "limits": {
-              "cpu": "1.0",
-              "memory": "512Mi"
-            }
-          },
-          "ports": [
-            {
-              "containerPort": 8787
-            }
-          ]
-        }
-      ]
+      "friends": [{
+        "name": "firefox",
+        "image": "quay.io/cdis/docker-firefox:master",
+        "securityContext": {
+          "privileged": true
+        },
+        "env": [{
+          "name": "LANDING_URL",
+          "value": "http://localhost:8787/"
+        }],
+        "resources": {
+          "limits": {
+            "cpu": "1.0",
+            "memory": "512Mi"
+          }
+        },
+        "ports": [{
+          "containerPort": 5800
+        }]
+      }]
     }
   ],
-  "more-configs": [
-    {
+  "more-configs": [{
       "type": "dockstore-compose:1.0.0",
       "path": "../testData/dockstore/firefox-app.yml",
       "name": "DockstoreFirefox"
