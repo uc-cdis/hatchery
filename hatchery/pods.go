@@ -228,11 +228,23 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		securityContext.FSGroup = &hatchApp.FSGID
 	}
 
+	var mountSharedMemory = hatchApp.UseSharedMemory == "true"
 	var volumes = []k8sv1.Volume{
 		{
 			Name:         "shared-data",
 			VolumeSource: k8sv1.VolumeSource{},
 		},
+	}
+
+	if mountSharedMemory {
+		volumes = append(volumes, k8sv1.Volume{
+			Name: "dshm",
+			VolumeSource: k8sv1.VolumeSource{
+				EmptyDir: &k8sv1.EmptyDirVolumeSource{
+					Medium: "Memory",
+				},
+			},
+		})
 	}
 
 	if mountUserVolume {
@@ -261,6 +273,21 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		pullPolicy = k8sv1.PullPolicy(k8sv1.PullIfNotPresent)
 	}
 
+	var volumeMounts = []k8sv1.VolumeMount{
+		{
+			MountPath:        "/data",
+			Name:             "shared-data",
+			MountPropagation: &bidirectional,
+		},
+	}
+
+	if mountSharedMemory {
+		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
+			MountPath: "/dev/shm",
+			Name:      "dshm",
+		})
+	}
+
 	pod = &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        podName,
@@ -284,13 +311,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 					Env:             sidecarEnvVars,
 					Command:         hatchConfig.Config.Sidecar.Command,
 					Args:            hatchConfig.Config.Sidecar.Args,
-					VolumeMounts: []k8sv1.VolumeMount{
-						{
-							MountPath:        "/data",
-							Name:             "shared-data",
-							MountPropagation: &bidirectional,
-						},
-					},
+					VolumeMounts:    volumeMounts,
 					Resources: k8sv1.ResourceRequirements{
 						Limits: k8sv1.ResourceList{
 							k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),

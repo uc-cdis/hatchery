@@ -11,7 +11,7 @@ The fuse sidecar exposes commons objects as files via the magic of a user space 
 
 ex:
 ```
-$ jq -r .sidecar < hatchery.json 
+$ jq -r .sidecar < hatchery.json
 {
   "cpu-limit": "0.8",
   "memory-limit": "256Mi",

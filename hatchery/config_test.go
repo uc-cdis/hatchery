@@ -13,15 +13,15 @@ func TestLoadConfig(t *testing.T) {
 		return
 	}
 	numContainers := len(config.Config.Containers)
-	if numContainers != 5 {
-		t.Error(fmt.Sprintf("config did not load the expected number of containers: %v != %v", numContainers, 5))
+	if numContainers != 7 {
+		t.Error(fmt.Sprintf("config did not load the expected number of containers: %v != %v", numContainers, 7))
 		return
 	}
 	jsBytes, err2 := json.MarshalIndent(config.Config, "", "  ")
 	if nil != err2 {
 		t.Error(fmt.Sprintf("failed to re-marshall config to json: %v", err2))
 	}
-	numFriends := len(config.Config.Containers[numContainers-2].Friends)
+	numFriends := len(config.Config.Containers[numContainers-4].Friends)
 	if numFriends != 2 {
 		t.Error(fmt.Sprintf("config did not load the expected number of friends: %v != %v", numFriends, 2))
 	}

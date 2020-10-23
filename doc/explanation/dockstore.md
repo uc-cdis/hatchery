@@ -12,10 +12,10 @@ Hatchery has basic support for consuming apps specified in [dockstore docker-com
 
 To load an application definition into hatchery:
 
-* save the app in the commons manifest folder as `mannifests/hatchery/name.yaml` - alongside `hatchery.json`
+* save the app in the commons manifest folder as `manifests/hatchery/name.yaml` - alongside `hatchery.json`
 * add the application's metadata to the `more-configs` block in `hatchery.json`:
 ```
- jq -r '."more-configs"' < hatchery.json 
+ jq -r '."more-configs"' < hatchery.json
 [
   {
     "type": "dockstore-compose:1.0.0",
@@ -44,7 +44,7 @@ services:
       command:
         - "-c"
         - "cd /tmp && mkdir -p lw-workspace/proxy; echo '<html><body>Hello!</body></html>' > lw-workspace/proxy/index.html; /usr/bin/python3 -m http.server 8000"
-      ports: 
+      ports:
          - "${SERVICE_PORT}:8000"
       healthcheck:
         test: ["CMD", "curl", "-f", "http://localhost:8000/lw-workspace/proxy/index.html"]
@@ -88,7 +88,7 @@ services:
         - "--NotebookApp.base_url=/lw-workspace/proxy"
         - "--NotebookApp.password=''"
         - "--NotebookApp.token=''"
-      ports: 
+      ports:
          - "${SERVICE_PORT}:8888"
       healthcheck:
         test: ["CMD", "curl", "-f", "http://localhost:8888/lw-workspace/proxy/"]
@@ -119,11 +119,17 @@ We reserve path prefixes to support mounting user and data (fuse, read-only) dat
 * `${USER_VOLUME}` mounts the per-user persistent storage folder
 * `${DATA_VOLUME}` mounts the read-only `gen3-fuse` proxy to the commons objects referenced by the workspace manifest
 
+### Mounting Shared Memory Volume
+
+There is also a reserved path prefixes to support mounting shared memory location in a container's `volumes` block.
+
+* `${SHARED_MEMORY_VOLUME}` mounts the shared memory folder
+
 ### Networking
 
 * one service must include a `port` mapping to port `${SERVICE_PORT}` - ex: `${SERVICE_PORT}:8000` - all external traffic is routed to that port
 * the URL path of every HTTP request into an app has a prefix of `/lw-workspace/proxy/`
-* the containers share the same `localhost` networking space, so two containers cannot 
+* the containers share the same `localhost` networking space, so two containers cannot
 bind the same port, and different containers communicate with each other via `localhost:service-port`
 
 ### Container resources

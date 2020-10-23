@@ -83,3 +83,27 @@ func TestDockstoreComposeTranslate(t *testing.T) {
 	hatchAppBytes, _ := yaml.Marshal(hatchApp)
 	dslog.Printf("translated hatchery app: %v", string(hatchAppBytes))
 }
+
+func TestFirefoxAppTranslate(t *testing.T) {
+	path := "../testData/dockstore/firefox-app.yml"
+	composeModel, err := DockstoreComposeFromFile(path)
+	if nil != err {
+		t.Error(fmt.Sprintf("failed to load config from %v, got: %v", path, err))
+		return
+	}
+	if nil == composeModel {
+		t.Error("nil model from DockstoreComposeFromFile?")
+		return
+	}
+	hatchApp, err := composeModel.BuildHatchApp()
+	if nil != err {
+		t.Error(fmt.Sprintf("failed to translate app, got: %v", err))
+		return
+	}
+	if "true" != hatchApp.UseSharedMemory {
+		t.Error(fmt.Sprintf("dockstore Firefox hatchApp should set UseSharedMemory property to \"true\""))
+		return
+	}
+	hatchAppBytes, _ := yaml.Marshal(hatchApp)
+	dslog.Printf("translated hatchery app: %v", string(hatchAppBytes))
+}

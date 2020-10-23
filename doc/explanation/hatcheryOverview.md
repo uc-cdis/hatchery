@@ -38,4 +38,3 @@ EBS storage
 * Indexd - for resolving manifest entries
 
 TODO - abstract underlying services from workspace.  Applications interact with the commons primarily through its public endpoint.
-
