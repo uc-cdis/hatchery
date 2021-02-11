@@ -1,5 +1,8 @@
 FROM golang:1.14 as build-deps
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    vim
+
 WORKDIR /hatchery
 
 COPY . /hatchery

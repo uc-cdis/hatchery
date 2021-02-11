@@ -102,6 +102,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 					data.Logger.Printf("failed to load config from %v, got: %v", info.Path, err)
 					return nil, err
 				}
+				data.Logger.Printf("%v", composeModel)
 				hatchApp, err := composeModel.BuildHatchApp()
 				hatchApp.Name = info.Name
 				if nil != err {
