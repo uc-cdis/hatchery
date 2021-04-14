@@ -1,4 +1,4 @@
-FROM golang:1.14 as build-deps
+FROM quay.io/cdis/golang:1.14 as build-deps
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     vim
