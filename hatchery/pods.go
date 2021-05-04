@@ -34,8 +34,22 @@ rewrite: %s
 tls: %s
 `
 
+type PodConditions struct {
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+type ContainerStates struct {
+	Name  string               `json:"name"`
+	State k8sv1.ContainerState `json:"state"`
+	Ready bool                 `json:"ready"`
+}
+
 type WorkspaceStatus struct {
-	Status string `json:"status"`
+	Status          string            `json:"status"`
+	Conditions      []PodConditions   `json:"conditions"`
+	ContainerStates []ContainerStates `json:"containerStates"`
 }
 
 func getPodClient() corev1.CoreV1Interface {
@@ -47,7 +61,7 @@ func getPodClient() corev1.CoreV1Interface {
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	// Access jobs. We can't do it all in one line, since we need to receive the
-	// errors and manage thgem appropriately
+	// errors and manage them appropriately
 	podClient := clientset.CoreV1()
 	return podClient
 }
@@ -80,6 +94,20 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 		return &status, nil
 	case "Pending":
 		status.Status = "Launching"
+		conditions := make([]PodConditions, len(pod.Status.Conditions))
+		for i, cond := range pod.Status.Conditions {
+			conditions[i].Status = string(cond.Status)
+			conditions[i].Type = string(cond.Type)
+			conditions[i].Message = cond.Message
+		}
+		status.Conditions = conditions
+		containerStates := make([]ContainerStates, len(pod.Status.ContainerStatuses))
+		for i, cs := range pod.Status.ContainerStatuses {
+			containerStates[i].State = cs.State
+			containerStates[i].Name = cs.Name
+			containerStates[i].Ready = cs.Ready
+		}
+		status.ContainerStates = containerStates
 		return &status, nil
 	case "Running":
 		break
