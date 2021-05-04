@@ -35,9 +35,8 @@ tls: %s
 `
 
 type PodConditions struct {
-	Type    string `json:"type"`
-	Status  string `json:"status"`
-	Message string `json:"message"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
 }
 
 type ContainerStates struct {
@@ -98,7 +97,6 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 		for i, cond := range pod.Status.Conditions {
 			conditions[i].Status = string(cond.Status)
 			conditions[i].Type = string(cond.Type)
-			conditions[i].Message = cond.Message
 		}
 		status.Conditions = conditions
 		containerStates := make([]ContainerStates, len(pod.Status.ContainerStatuses))
@@ -133,6 +131,19 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 		return &status, nil
 	} else {
 		status.Status = "Launching"
+		conditions := make([]PodConditions, len(pod.Status.Conditions))
+		for i, cond := range pod.Status.Conditions {
+			conditions[i].Status = string(cond.Status)
+			conditions[i].Type = string(cond.Type)
+		}
+		status.Conditions = conditions
+		containerStates := make([]ContainerStates, len(pod.Status.ContainerStatuses))
+		for i, cs := range pod.Status.ContainerStatuses {
+			containerStates[i].State = cs.State
+			containerStates[i].Name = cs.Name
+			containerStates[i].Ready = cs.Ready
+		}
+		status.ContainerStates = containerStates
 		return &status, nil
 	}
 
