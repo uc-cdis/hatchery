@@ -88,6 +88,10 @@ components:
              * `Launching` - The workspace is starting up
              * `Stopped` - The workspace is in a failed state and must be terminated
              * `Running` - The workspace is running and ready to be used
+        conditions:
+          type: array
+        containerStates:
+          type: array
     Container:
       type: object
       properties:
