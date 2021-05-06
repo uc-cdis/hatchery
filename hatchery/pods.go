@@ -65,6 +65,18 @@ func getPodClient() corev1.CoreV1Interface {
 	return podClient
 }
 
+func checkPodReadiness(pod *k8sv1.Pod) bool {
+	if pod.Status.Phase == "Pending" {
+		return false
+	}
+	for _, v := range pod.Status.Conditions {
+		if (v.Type == "Ready" || v.Type == "PodScheduled") && v.Status != "True" {
+			return false
+		}
+	}
+	return true
+}
+
 func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 	podClient := getPodClient()
 
@@ -95,23 +107,7 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 	case "Pending":
 		fallthrough
 	case "Running":
-		var allReady = true
-		if pod.Status.Phase == "Pending" {
-			allReady = false
-		} else {
-			for _, v := range pod.Status.Conditions {
-				if v.Type == "Ready" {
-					if v.Status != "True" {
-						allReady = false
-					}
-				} else if v.Type == "PodScheduled" {
-					if v.Status != "True" {
-						allReady = false
-					}
-				}
-			}
-		}
-
+		allReady := checkPodReadiness(pod)
 		if allReady == true {
 			status.Status = "Running"
 		} else {
