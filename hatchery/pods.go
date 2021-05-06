@@ -87,11 +87,13 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 
 	switch pod.Status.Phase {
 	case "Failed":
+		fallthrough
 	case "Succeeded":
+		fallthrough
 	case "Unknown":
 		status.Status = "Stopped"
-		return &status, nil
 	case "Pending":
+		fallthrough
 	case "Running":
 		var allReady = true
 		if pod.Status.Phase == "Pending" {
@@ -112,7 +114,6 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 
 		if allReady == true {
 			status.Status = "Running"
-			return &status, nil
 		} else {
 			status.Status = "Launching"
 			conditions := make([]PodConditions, len(pod.Status.Conditions))
@@ -128,11 +129,9 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 				containerStates[i].Ready = cs.Ready
 			}
 			status.ContainerStates = containerStates
-			return &status, nil
 		}
 	default:
 		fmt.Printf("Unknown pod status for %s: %s\n", podName, string(pod.Status.Phase))
-
 	}
 	return &status, nil
 }
