@@ -92,61 +92,49 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 		status.Status = "Stopped"
 		return &status, nil
 	case "Pending":
-		status.Status = "Launching"
-		conditions := make([]PodConditions, len(pod.Status.Conditions))
-		for i, cond := range pod.Status.Conditions {
-			conditions[i].Status = string(cond.Status)
-			conditions[i].Type = string(cond.Type)
-		}
-		status.Conditions = conditions
-		containerStates := make([]ContainerStates, len(pod.Status.ContainerStatuses))
-		for i, cs := range pod.Status.ContainerStatuses {
-			containerStates[i].State = cs.State
-			containerStates[i].Name = cs.Name
-			containerStates[i].Ready = cs.Ready
-		}
-		status.ContainerStates = containerStates
-		return &status, nil
 	case "Running":
-		break
+		var allReady = true
+		if pod.Status.Phase == "Pending" {
+			allReady = false
+		} else {
+			for _, v := range pod.Status.Conditions {
+				if v.Type == "Ready" {
+					if v.Status != "True" {
+						allReady = false
+					}
+				} else if v.Type == "PodScheduled" {
+					if v.Status != "True" {
+						allReady = false
+					}
+				}
+			}
+		}
+
+		if allReady == true {
+			status.Status = "Running"
+			return &status, nil
+		} else {
+			status.Status = "Launching"
+			conditions := make([]PodConditions, len(pod.Status.Conditions))
+			for i, cond := range pod.Status.Conditions {
+				conditions[i].Status = string(cond.Status)
+				conditions[i].Type = string(cond.Type)
+			}
+			status.Conditions = conditions
+			containerStates := make([]ContainerStates, len(pod.Status.ContainerStatuses))
+			for i, cs := range pod.Status.ContainerStatuses {
+				containerStates[i].State = cs.State
+				containerStates[i].Name = cs.Name
+				containerStates[i].Ready = cs.Ready
+			}
+			status.ContainerStates = containerStates
+			return &status, nil
+		}
 	default:
 		fmt.Printf("Unknown pod status for %s: %s\n", podName, string(pod.Status.Phase))
-	}
 
-	var allReady = true
-	for _, v := range pod.Status.Conditions {
-		if v.Type == "Ready" {
-			if v.Status != "True" {
-				allReady = false
-			}
-		} else if v.Type == "PodScheduled" {
-			if v.Status != "True" {
-				allReady = false
-			}
-		}
 	}
-
-	if allReady == true {
-		status.Status = "Running"
-		return &status, nil
-	} else {
-		status.Status = "Launching"
-		conditions := make([]PodConditions, len(pod.Status.Conditions))
-		for i, cond := range pod.Status.Conditions {
-			conditions[i].Status = string(cond.Status)
-			conditions[i].Type = string(cond.Type)
-		}
-		status.Conditions = conditions
-		containerStates := make([]ContainerStates, len(pod.Status.ContainerStatuses))
-		for i, cs := range pod.Status.ContainerStatuses {
-			containerStates[i].State = cs.State
-			containerStates[i].Name = cs.Name
-			containerStates[i].Ready = cs.Ready
-		}
-		status.ContainerStates = containerStates
-		return &status, nil
-	}
-
+	return &status, nil
 }
 
 func deleteK8sPod(userName string) error {
