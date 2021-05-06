@@ -34,8 +34,21 @@ rewrite: %s
 tls: %s
 `
 
-type WorkspaceStatus struct {
+type PodConditions struct {
+	Type   string `json:"type"`
 	Status string `json:"status"`
+}
+
+type ContainerStates struct {
+	Name  string               `json:"name"`
+	State k8sv1.ContainerState `json:"state"`
+	Ready bool                 `json:"ready"`
+}
+
+type WorkspaceStatus struct {
+	Status          string            `json:"status"`
+	Conditions      []PodConditions   `json:"conditions"`
+	ContainerStates []ContainerStates `json:"containerStates"`
 }
 
 func getPodClient() corev1.CoreV1Interface {
@@ -47,9 +60,21 @@ func getPodClient() corev1.CoreV1Interface {
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	// Access jobs. We can't do it all in one line, since we need to receive the
-	// errors and manage thgem appropriately
+	// errors and manage them appropriately
 	podClient := clientset.CoreV1()
 	return podClient
+}
+
+func checkPodReadiness(pod *k8sv1.Pod) bool {
+	if pod.Status.Phase == "Pending" {
+		return false
+	}
+	for _, v := range pod.Status.Conditions {
+		if (v.Type == "Ready" || v.Type == "PodScheduled") && v.Status != "True" {
+			return false
+		}
+	}
+	return true
 }
 
 func statusK8sPod(userName string) (*WorkspaceStatus, error) {
@@ -74,40 +99,37 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 
 	switch pod.Status.Phase {
 	case "Failed":
+		fallthrough
 	case "Succeeded":
+		fallthrough
 	case "Unknown":
 		status.Status = "Stopped"
-		return &status, nil
 	case "Pending":
-		status.Status = "Launching"
-		return &status, nil
+		fallthrough
 	case "Running":
-		break
+		allReady := checkPodReadiness(pod)
+		if allReady == true {
+			status.Status = "Running"
+		} else {
+			status.Status = "Launching"
+			conditions := make([]PodConditions, len(pod.Status.Conditions))
+			for i, cond := range pod.Status.Conditions {
+				conditions[i].Status = string(cond.Status)
+				conditions[i].Type = string(cond.Type)
+			}
+			status.Conditions = conditions
+			containerStates := make([]ContainerStates, len(pod.Status.ContainerStatuses))
+			for i, cs := range pod.Status.ContainerStatuses {
+				containerStates[i].State = cs.State
+				containerStates[i].Name = cs.Name
+				containerStates[i].Ready = cs.Ready
+			}
+			status.ContainerStates = containerStates
+		}
 	default:
 		fmt.Printf("Unknown pod status for %s: %s\n", podName, string(pod.Status.Phase))
 	}
-
-	var allReady = true
-	for _, v := range pod.Status.Conditions {
-		if v.Type == "Ready" {
-			if v.Status != "True" {
-				allReady = false
-			}
-		} else if v.Type == "PodScheduled" {
-			if v.Status != "True" {
-				allReady = false
-			}
-		}
-	}
-
-	if allReady == true {
-		status.Status = "Running"
-		return &status, nil
-	} else {
-		status.Status = "Launching"
-		return &status, nil
-	}
-
+	return &status, nil
 }
 
 func deleteK8sPod(userName string) error {

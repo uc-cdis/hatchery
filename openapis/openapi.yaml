@@ -81,13 +81,23 @@ components:
       properties:
         status:
           type: string
-          enum: [Terminating, Stopped, Launching, Running]
+          enum: [Launching, Running, Terminating, Stopped]
           description: >
             Value:
              * `Terminating` - The workspace is shutting down
              * `Launching` - The workspace is starting up
              * `Stopped` - The workspace is in a failed state and must be terminated
              * `Running` - The workspace is running and ready to be used
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/PodCondition'
+          description: The condition of the pod
+        containerStates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContainerState'
+          description: The state of all the containers
     Container:
       type: object
       properties:
@@ -103,6 +113,26 @@ components:
         id:
           type: string
           description: The hash of the container, passed to /launch
+    PodCondition:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [PodScheduled, Initialized, ContainersReady, Ready]
+          description: 	Name of this Pod condition
+        status:
+          type: string
+          enum: ["True", "False", Unknown]
+          description: 	Indicates whether that condition is applicable
+    ContainerState:
+      type: object
+      properties:
+        name:
+          type: string
+          description: 	Name of this container
+        state:
+          type: object
+          description: 	Details about the container's current condition
   responses:
     UnauthorizedError:
       description: Access token is missing or invalid
