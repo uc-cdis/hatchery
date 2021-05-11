@@ -1,4 +1,9 @@
 version: '3'
+
+user_uid: 1000
+group_uid: 2000
+fs_gid: 100
+
 services:
 
    hatchery-container:
