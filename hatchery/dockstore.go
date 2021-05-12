@@ -51,6 +51,9 @@ type ComposeService struct {
 	Command         []string
 	Volumes         []string
 	Ports           []string
+	UserUID         int64    `yaml:"user_uid"`
+	GroupUID        int64    `yaml:"group_uid"`
+	FSGID           int64    `yaml:"fs_gid"`
 	SecurityContext []string `yaml:"security_context"`
 	Deploy          ComposeDeployDetails
 	Healthcheck     ComposeHealthCheck
@@ -61,9 +64,6 @@ type ComposeService struct {
 type ComposeFull struct {
 	// name of the root service mapped to the magic port
 	RootService string `yaml:"-"`
-	UserUID     int64  `yaml:"user_uid"`
-	GroupUID    int64  `yaml:"group_uid"`
-	FSGID       int64  `yaml:"fs_gid"`
 	Services    map[string]ComposeService
 }
 
@@ -293,13 +293,13 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 // from a dockstore compose application config
 func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 	hatchApp := &Container{}
-	hatchApp.UserUID = model.UserUID
-	hatchApp.GroupUID = model.GroupUID
-	hatchApp.FSGID = model.FSGID
 	service := model.Services[model.RootService]
 	hatchApp.Name = service.Name
 	hatchApp.CPULimit = service.Deploy.Resources.Limits.CPU
 	hatchApp.MemoryLimit = service.Deploy.Resources.Limits.Memory
+	hatchApp.UserUID = service.UserUID
+	hatchApp.GroupUID = service.GroupUID
+	hatchApp.FSGID = service.FSGID
 	hatchApp.Image = ""
 
 	for _, portEntry := range service.Ports {

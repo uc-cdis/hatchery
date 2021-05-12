@@ -1,9 +1,4 @@
 version: '3'
-
-user_uid: 1000
-group_uid: 2000
-fs_gid: 100
-
 services:
 
    hatchery-container:
@@ -12,6 +7,9 @@ services:
       volumes:
          - ${DATA_VOLUME}:/data
          - ${SHARED_MEMORY_VOLUME}
+      user_uid: 1000
+      group_uid: 2000
+      fs_gid: 100
       environment:
          - DISABLE_AUTH=true
       depends_on:
