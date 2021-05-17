@@ -116,8 +116,9 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		}
 	}
 	for _, container := range data.Config.Containers {
-		toHash := container.Name + "-" + container.Image + "-" + container.CPULimit + "-" + container.MemoryLimit
-		hash := fmt.Sprintf("%x", md5.Sum([]byte(toHash)))
+		jsonBytes, _ := json.Marshal(container)
+		// toHash := container.Name + "-" + container.Image + "-" + container.CPULimit + "-" + container.MemoryLimit
+		hash := fmt.Sprintf("%x", md5.Sum([]byte(jsonBytes)))
 		data.ContainersMap[hash] = container
 	}
 	return data, nil
