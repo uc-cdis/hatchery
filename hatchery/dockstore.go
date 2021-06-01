@@ -51,6 +51,9 @@ type ComposeService struct {
 	Command         []string
 	Volumes         []string
 	Ports           []string
+	UserUID         int64    `yaml:"user_uid"`
+	GroupUID        int64    `yaml:"group_uid"`
+	FSGID           int64    `yaml:"fs_gid"`
 	SecurityContext []string `yaml:"security_context"`
 	Deploy          ComposeDeployDetails
 	Healthcheck     ComposeHealthCheck
@@ -294,6 +297,9 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 	hatchApp.Name = service.Name
 	hatchApp.CPULimit = service.Deploy.Resources.Limits.CPU
 	hatchApp.MemoryLimit = service.Deploy.Resources.Limits.Memory
+	hatchApp.UserUID = service.UserUID
+	hatchApp.GroupUID = service.GroupUID
+	hatchApp.FSGID = service.FSGID
 	hatchApp.Image = ""
 
 	for _, portEntry := range service.Ports {

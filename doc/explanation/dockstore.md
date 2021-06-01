@@ -77,6 +77,8 @@ services:
 
 ```
 version: '3'
+user_uid: 1000
+fs_gid: 100
 services:
    webapp:
       image: "quay.io/occ_data/jupyternotebook:1.7.4"
@@ -118,6 +120,11 @@ We reserve path prefixes to support mounting user and data (fuse, read-only) dat
 
 * `${USER_VOLUME}` mounts the per-user persistent storage folder
 * `${DATA_VOLUME}` mounts the read-only `gen3-fuse` proxy to the commons objects referenced by the workspace manifest
+
+There is also a possibility to tweak the User ID or filesystem GID to in order to let the user to have correct access permissions to mounted volumes. There are two config fields for this purpose, noted as below. They should be places in the first container's (root service) config YAML file (see `example 2`)
+
+* `user_uid` the UID for the user in this container.
+* `fs_gid` the GID for the filesystem mounts.
 
 ### Mounting Shared Memory Volume
 
