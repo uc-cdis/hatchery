@@ -90,14 +90,21 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	accessToken := getBearerToken(r)
 
 	hash := r.URL.Query().Get("id")
+	external := r.URL.Query().Get("external")
+
 	if hash == "" {
 		http.Error(w, "Missing ID argument", 400)
 		return
 	}
 
 	userName := r.Header.Get("REMOTE_USER")
-
-	err := createK8sPod(string(hash), accessToken, userName)
+	var err error
+	if external == "" {
+		err = createK8sPod(string(hash), accessToken, userName)
+	} else {
+		Config.Logger.Printf("External: %v. Calling LAUNCH EXTERNAL", external)
+		err = createExternalK8sPod(string(hash), accessToken, userName, external)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
