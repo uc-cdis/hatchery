@@ -105,3 +105,4 @@ ENV/
 # jwt keys
 keys/*.pem
 tests/resources/keys/*.pem
+1

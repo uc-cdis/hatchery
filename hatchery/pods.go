@@ -16,10 +16,8 @@ import (
 
 	// AWS stuff
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/eks"
 
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
@@ -77,15 +75,30 @@ func getPodClient() corev1.CoreV1Interface {
 }
 
 // Generate EKS kubeconfig using AWS role
-func NewEKSClientset(cluster *eks.Cluster, roleARN string) (corev1.CoreV1Interface, error) {
-	//Config.Logger.Printf("cluster: %+v", cluster)
+func NewEKSClientset(userName string /*cluster *eks.Cluster, roleARN string*/) (corev1.CoreV1Interface, error) {
+	pm := getPayModel(userName)
+	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String(pm.Region),
+	}))
+
+	creds := stscreds.NewCredentials(sess, roleARN)
+	eksSvc := eks.New(sess, &aws.Config{Credentials: creds})
+	input := &eks.DescribeClusterInput{
+		Name: aws.String(pm.Name),
+	}
+	result, err := eksSvc.DescribeCluster(input)
+	if err != nil {
+		Config.Logger.Fatalf("Error calling DescribeCluster: %v", err)
+	}
+	cluster := result.Cluster
 	gen, err := token.NewGenerator(true, false)
 
 	if err != nil {
 		return nil, err
 	}
 	opts := &token.GetTokenOptions{
-		ClusterID:     aws.StringValue(cluster.Name),
+		ClusterID:     aws.StringValue(result.Cluster.Name),
 		AssumeRoleARN: roleARN,
 	}
 	tok, err := gen.GetWithOptions(opts)
@@ -123,16 +136,28 @@ func checkPodReadiness(pod *k8sv1.Pod) bool {
 	return true
 }
 
-func statusK8sPod(userName string) (*WorkspaceStatus, error) {
-	podClient := getPodClient()
+func getPayModel(userName string) (paymodel PayModel /*, region string, name string, err error*/) {
+	model := Config.PayModelMap[userName]
+	return model
+}
+
+func podStatus(userName string, remote bool) (*WorkspaceStatus, error) {
+	var podClient corev1.CoreV1Interface
+	var err error
+	if !remote {
+		podClient = getPodClient()
+	} else {
+		podClient, err = NewEKSClientset(userName)
+	}
 
 	safeUserName := escapism(userName)
 
-	status := WorkspaceStatus{}
-
 	podName := fmt.Sprintf("hatchery-%s", safeUserName)
+
+	status := WorkspaceStatus{}
 	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	if err != nil {
+
 		// not found
 		status.Status = "Not Found"
 		return &status, nil
@@ -175,7 +200,24 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 	default:
 		fmt.Printf("Unknown pod status for %s: %s\n", podName, string(pod.Status.Phase))
 	}
+
 	return &status, nil
+}
+
+func statusK8sPod(userName string) (*WorkspaceStatus, error) {
+	pm := PayModel{}
+	remote := false
+	if getPayModel(userName) != pm {
+		remote = true
+	}
+	Config.Logger.Printf("PM inside stats: %v", pm)
+	status, err := podStatus(userName, remote)
+	// status := WorkspaceStatus{}
+	if err != nil {
+		Config.Logger.Printf("Error: %v", err)
+	}
+
+	return status, nil
 }
 
 func deleteK8sPod(userName string) error {
@@ -232,7 +274,6 @@ func userToResourceName(userName string, resourceType string) string {
 // launching the app
 func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName string) (pod *k8sv1.Pod, err error) {
 	podName := userToResourceName(userName, "pod")
-	Config.Logger.Printf("Podname: %v", podName)
 	labels := make(map[string]string)
 	labels["app"] = podName
 	annotations := make(map[string]string)
@@ -565,24 +606,10 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	return nil
 }
 
-func createExternalK8sPod(hash string, accessToken string, userName string, awsAccount string) error {
+func createExternalK8sPod(hash string, accessToken string, userName string, awsAccount string, name string) error {
 	hatchApp := Config.ContainersMap[hash]
-	region := "us-east-1"
-	name := "rush2"
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(region),
-	}))
 
-	creds := stscreds.NewCredentials(sess, "arn:aws:iam::"+awsAccount+":role/csoc_adminvm")
-	eksSvc := eks.New(sess, &aws.Config{Credentials: creds})
-	input := &eks.DescribeClusterInput{
-		Name: aws.String(name),
-	}
-	result, err := eksSvc.DescribeCluster(input)
-	if err != nil {
-		Config.Logger.Fatalf("Error calling DescribeCluster: %v", err)
-	}
-	podClient, err := NewEKSClientset(result.Cluster, "arn:aws:iam::"+awsAccount+":role/csoc_adminvm")
+	podClient, err := NewEKSClientset(userName) //result.Cluster, "arn:aws:iam::"+awsAccount+":role/csoc_adminvm")
 	nodes, err := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		Config.Logger.Fatalf("Error getting EKS nodes: %v", err)
@@ -697,38 +724,38 @@ func createExternalK8sPod(hash string, accessToken string, userName string, awsA
 	Config.Logger.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
 	// ASG stuff
-	asgSvc := autoscaling.New(sess, &aws.Config{Credentials: creds})
+	// asgSvc := autoscaling.New(sess, &aws.Config{Credentials: creds})
 
-	asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
-		AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + name)},
-	}
-	asg, err := asgSvc.DescribeAutoScalingGroups(asgInput)
-	cap := *asg.AutoScalingGroups[0].DesiredCapacity
-	Config.Logger.Printf("ASG capacity: %d", cap)
+	// asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
+	// 	AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + name)},
+	// }
+	// asg, err := asgSvc.DescribeAutoScalingGroups(asgInput)
+	// cap := *asg.AutoScalingGroups[0].DesiredCapacity
+	// Config.Logger.Printf("ASG capacity: %d", cap)
 
-	Config.Logger.Printf("Scaling ASG from %d to %d..", cap, cap+1)
+	// Config.Logger.Printf("Scaling ASG from %d to %d..", cap, cap+1)
 
-	asgScaleInput := &autoscaling.SetDesiredCapacityInput{
-		AutoScalingGroupName: asg.AutoScalingGroups[0].AutoScalingGroupName,
-		DesiredCapacity:      aws.Int64(cap + 1),
-	}
-	_, err = asgSvc.SetDesiredCapacity(asgScaleInput)
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case autoscaling.ErrCodeScalingActivityInProgressFault:
-				Config.Logger.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
-			case autoscaling.ErrCodeResourceContentionFault:
-				Config.Logger.Println(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
-			default:
-				Config.Logger.Println(aerr.Error())
-			}
-		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
-			Config.Logger.Println(err.Error())
-		}
-	}
+	// asgScaleInput := &autoscaling.SetDesiredCapacityInput{
+	// 	AutoScalingGroupName: asg.AutoScalingGroups[0].AutoScalingGroupName,
+	// 	DesiredCapacity:      aws.Int64(cap + 1),
+	// }
+	// _, err = asgSvc.SetDesiredCapacity(asgScaleInput)
+	// if err != nil {
+	// 	if aerr, ok := err.(awserr.Error); ok {
+	// 		switch aerr.Code() {
+	// 		case autoscaling.ErrCodeScalingActivityInProgressFault:
+	// 			Config.Logger.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
+	// 		case autoscaling.ErrCodeResourceContentionFault:
+	// 			Config.Logger.Println(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
+	// 		default:
+	// 			Config.Logger.Println(aerr.Error())
+	// 		}
+	// 	} else {
+	// 		// Print the error, cast err to awserr.Error to get the Code and
+	// 		// Message from an error.
+	// 		Config.Logger.Println(err.Error())
+	// 	}
+	// }
 	return nil
 }
 

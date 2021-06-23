@@ -53,9 +53,18 @@ type AppConfigInfo struct {
 	Name    string
 }
 
+// AppConfigInfo provides the type and path of a supplementary config path
+type PayModel struct {
+	Name         string `json:"name"`
+	User         string `json:"user"`
+	AWSAccountId string `json:"aws_account_id"`
+	Region       string `json:"region"`
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace  string           `json:"user-namespace"`
+	PayModels      []PayModel       `json:"pay-models"`
 	SubDir         string           `json:"sub-dir"`
 	Containers     []Container      `json:"containers"`
 	UserVolumeSize string           `json:"user-volume-size"`
@@ -67,6 +76,7 @@ type HatcheryConfig struct {
 type FullHatcheryConfig struct {
 	Config        HatcheryConfig
 	ContainersMap map[string]Container
+	PayModelMap   map[string]PayModel
 	Logger        *log.Logger
 }
 
@@ -89,6 +99,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	}
 	data.Logger.Printf("loaded config: %v", string(plan))
 	data.ContainersMap = make(map[string]Container)
+	data.PayModelMap = make(map[string]PayModel)
 	_ = json.Unmarshal(plan, &data.Config)
 	if nil != data.Config.MoreConfigs && 0 < len(data.Config.MoreConfigs) {
 		for _, info := range data.Config.MoreConfigs {
@@ -119,6 +130,11 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		jsonBytes, _ := json.Marshal(container)
 		hash := fmt.Sprintf("%x", md5.Sum([]byte(jsonBytes)))
 		data.ContainersMap[hash] = container
+	}
+
+	for _, paymodel := range data.Config.PayModels {
+		user := paymodel.User
+		data.PayModelMap[user] = paymodel
 	}
 	return data, nil
 }
