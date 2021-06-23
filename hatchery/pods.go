@@ -14,10 +14,12 @@ import (
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 
-	// AWS stuff
+	// AWS modules
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/eks"
 
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
@@ -515,7 +517,7 @@ func payModelExistsForUser(userName string) (result bool) {
 	result = false
 	for _, paymodel := range Config.PayModelMap {
 		if paymodel.User == userName {
-			Config.Logger.Printf("Pay Model exists: %v %v", paymodel.User, paymodel.AWSAccountId)
+			fmt.Printf("Pay Model exists: %v %v", paymodel.User, paymodel.AWSAccountId)
 			result = true
 		}
 	}
@@ -632,6 +634,49 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 	fmt.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
 	return nil
+}
+
+func scaleEKSNodes(userName string, scale int) {
+	pm := Config.PayModelMap[userName]
+	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String(pm.Region),
+	}))
+
+	creds := stscreds.NewCredentials(sess, roleARN)
+	// ASG stuff
+	asgSvc := autoscaling.New(sess, &aws.Config{Credentials: creds})
+
+	asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
+		AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + pm.Name)},
+	}
+	asg, err := asgSvc.DescribeAutoScalingGroups(asgInput)
+	cap := *asg.AutoScalingGroups[0].DesiredCapacity
+	Config.Logger.Printf("ASG capacity: %d", cap)
+
+	Config.Logger.Printf("Scaling ASG from %d to %d..", cap, cap+1)
+
+	asgScaleInput := &autoscaling.SetDesiredCapacityInput{
+		AutoScalingGroupName: asg.AutoScalingGroups[0].AutoScalingGroupName,
+		DesiredCapacity:      aws.Int64(cap + int64(scale)),
+	}
+	_, err = asgSvc.SetDesiredCapacity(asgScaleInput)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case autoscaling.ErrCodeScalingActivityInProgressFault:
+				Config.Logger.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
+			case autoscaling.ErrCodeResourceContentionFault:
+				Config.Logger.Println(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
+			default:
+				Config.Logger.Println(aerr.Error())
+			}
+		} else {
+			// Print the error, cast err to awserr.Error to get the Code and
+			// Message from an error.
+			Config.Logger.Println(err.Error())
+		}
+	}
 }
 
 func createExternalK8sPod(hash string, accessToken string, userName string) error {
@@ -751,39 +796,8 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 
 	Config.Logger.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
-	// ASG stuff
-	// asgSvc := autoscaling.New(sess, &aws.Config{Credentials: creds})
+	scaleEKSNodes(userName, 0)
 
-	// asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
-	// 	AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + name)},
-	// }
-	// asg, err := asgSvc.DescribeAutoScalingGroups(asgInput)
-	// cap := *asg.AutoScalingGroups[0].DesiredCapacity
-	// Config.Logger.Printf("ASG capacity: %d", cap)
-
-	// Config.Logger.Printf("Scaling ASG from %d to %d..", cap, cap+1)
-
-	// asgScaleInput := &autoscaling.SetDesiredCapacityInput{
-	// 	AutoScalingGroupName: asg.AutoScalingGroups[0].AutoScalingGroupName,
-	// 	DesiredCapacity:      aws.Int64(cap + 1),
-	// }
-	// _, err = asgSvc.SetDesiredCapacity(asgScaleInput)
-	// if err != nil {
-	// 	if aerr, ok := err.(awserr.Error); ok {
-	// 		switch aerr.Code() {
-	// 		case autoscaling.ErrCodeScalingActivityInProgressFault:
-	// 			Config.Logger.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
-	// 		case autoscaling.ErrCodeResourceContentionFault:
-	// 			Config.Logger.Println(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
-	// 		default:
-	// 			Config.Logger.Println(aerr.Error())
-	// 		}
-	// 	} else {
-	// 		// Print the error, cast err to awserr.Error to get the Code and
-	// 		// Message from an error.
-	// 		Config.Logger.Println(err.Error())
-	// 	}
-	// }
 	return nil
 }
 
