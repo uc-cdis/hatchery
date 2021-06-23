@@ -228,7 +228,7 @@ func deleteK8sPod(userName string) error {
 		return err
 	}
 
-	policy := metav1.DeletePropagationBackground
+	policy := metav1.DeletePropagationForeground
 	var grace int64 = 20
 	deleteOptions := metav1.DeleteOptions{
 		PropagationPolicy:  &policy,
