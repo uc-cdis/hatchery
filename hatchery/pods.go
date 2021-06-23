@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"math/rand"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -815,19 +814,91 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 
 	Config.Logger.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
+	createLocalService(userName, hash)
 	scaleEKSNodes(userName, 0)
 
 	return nil
 }
 
-// GetRandString returns a random string of lenght N
-func GetRandString(n int) string {
-	letterBytes := "abcdefghijklmnopqrstuvwxyz"
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letterBytes[rand.Intn(len(letterBytes))]
+// Creates a local service that portal can reach
+// and route traffic to pod in external cluster.
+func createLocalService(userName string, hash string) error {
+	const localAmbassadorYaml = `---
+apiVersion: ambassador/v1
+kind:  Mapping
+name:  %s
+prefix: /
+headers:
+  remote_user: %s
+service: %s:80
+bypass_auth: true
+timeout_ms: 300000
+use_websocket: true
+rewrite: %s
+tls: %s
+`
+	hatchApp := Config.ContainersMap[hash]
+	localPodClient := getLocalPodClient()
+	externalPodClient, err := NewEKSClientset(userName)
+	serviceName := userToResourceName(userName, "service")
+	podName := userToResourceName(userName, "pod")
+	service, err := externalPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	if err != nil {
+		Config.Logger.Printf("Failed to find external service %+v", service)
 	}
-	return string(b)
+	LoadBalancer := service.Status.LoadBalancer.Ingress[0].Hostname
+
+	Config.Logger.Printf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, LoadBalancer, hatchApp.PathRewrite, hatchApp.UseTLS)
+
+	labelsService := make(map[string]string)
+	labelsService["app"] = podName
+	annotationsService := make(map[string]string)
+	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, LoadBalancer, hatchApp.PathRewrite, hatchApp.UseTLS)
+
+	_, err = localPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	if err == nil {
+		// This probably happened as the result of some error... there was no pod but was a service
+		// Lets just clean it up and proceed
+		policy := metav1.DeletePropagationBackground
+		deleteOptions := metav1.DeleteOptions{
+			PropagationPolicy: &policy,
+		}
+		localPodClient.Services(Config.Config.UserNamespace).Delete(context.TODO(), serviceName, deleteOptions)
+
+	}
+
+	localService := &k8sv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        serviceName,
+			Namespace:   Config.Config.UserNamespace,
+			Labels:      labelsService,
+			Annotations: annotationsService,
+		},
+		Spec: k8sv1.ServiceSpec{
+			Type:     k8sv1.ServiceTypeLoadBalancer,
+			Selector: map[string]string{"app": podName},
+			Ports: []k8sv1.ServicePort{
+				{
+					Name:     podName,
+					Protocol: k8sv1.ProtocolTCP,
+					Port:     80,
+					TargetPort: intstr.IntOrString{
+						Type:   intstr.Int,
+						IntVal: hatchApp.TargetPort,
+					},
+				},
+			},
+		},
+	}
+
+	_, err = localPodClient.Services(Config.Config.UserNamespace).Create(context.TODO(), localService, metav1.CreateOptions{})
+	if err != nil {
+		fmt.Printf("Failed to launch local service %s for user %s forwarding port %d. Error: %s\n", serviceName, userName, hatchApp.TargetPort, err)
+		return err
+	}
+
+	Config.Logger.Printf("Launched local service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
+	return nil
 }
 
 // Escapism escapes characters not allowed into hex with -
