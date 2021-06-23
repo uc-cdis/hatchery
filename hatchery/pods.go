@@ -163,15 +163,23 @@ func podStatus(userName string) (*WorkspaceStatus, error) {
 		return &status, err
 	}
 
-	safeUserName := escapism(userName)
+	podName := userToResourceName(userName, "pod")
 
-	podName := fmt.Sprintf("hatchery-%s", safeUserName)
+	serviceName := userToResourceName(userName, "service")
 
 	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	service, service_err := podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err != nil {
-		// not found
-		status.Status = "Not Found"
-		return &status, nil
+		if service_err == nil {
+			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed: %+v", service)
+			// Pod has been terminated, but service is still being terminated. Wait for service to be killed
+			status.Status = "Terminating"
+			return &status, nil
+		} else {
+			// not found
+			status.Status = "Not Found"
+			return &status, nil
+		}
 	}
 
 	if pod.DeletionTimestamp != nil {
@@ -230,7 +238,7 @@ func deleteK8sPod(userName string) error {
 		return err
 	}
 
-	policy := metav1.DeletePropagationForeground
+	policy := metav1.DeletePropagationBackground
 	var grace int64 = 20
 	deleteOptions := metav1.DeleteOptions{
 		PropagationPolicy:  &policy,
@@ -279,7 +287,7 @@ func userToResourceName(userName string, resourceType string) string {
 // buildPod returns a pod ready to pass to the k8s API given
 // a hatchery Container instance, and the name of the user
 // launching the app
-func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName string) (pod *k8sv1.Pod, err error) {
+func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName string, extraVars []k8sv1.EnvVar) (pod *k8sv1.Pod, err error) {
 	podName := userToResourceName(userName, "pod")
 	labels := make(map[string]string)
 	labels["app"] = podName
@@ -311,6 +319,10 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			Value: value,
 		}
 		sidecarEnvVars = append(sidecarEnvVars, envVar)
+	}
+	for _, value := range extraVars {
+		Config.Logger.Printf("%+v", value)
+		sidecarEnvVars = append(sidecarEnvVars, value)
 	}
 
 	//hatchConfig.Logger.Printf("sidecar configured")
@@ -517,11 +529,53 @@ func payModelExistsForUser(userName string) (result bool) {
 	result = false
 	for _, paymodel := range Config.PayModelMap {
 		if paymodel.User == userName {
-			fmt.Printf("Pay Model exists: %v %v", paymodel.User, paymodel.AWSAccountId)
 			result = true
 		}
 	}
 	return result
+}
+
+func scaleEKSNodes(userName string, scale int) {
+	pm := Config.PayModelMap[userName]
+	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String(pm.Region),
+	}))
+
+	creds := stscreds.NewCredentials(sess, roleARN)
+	// ASG stuff
+	asgSvc := autoscaling.New(sess, &aws.Config{Credentials: creds})
+
+	asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
+		AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + pm.Name)},
+	}
+	asg, err := asgSvc.DescribeAutoScalingGroups(asgInput)
+	cap := *asg.AutoScalingGroups[0].DesiredCapacity
+	Config.Logger.Printf("ASG capacity: %d", cap)
+
+	Config.Logger.Printf("Scaling ASG from %d to %d..", cap, cap+1)
+
+	asgScaleInput := &autoscaling.SetDesiredCapacityInput{
+		AutoScalingGroupName: asg.AutoScalingGroups[0].AutoScalingGroupName,
+		DesiredCapacity:      aws.Int64(cap + int64(scale)),
+	}
+	_, err = asgSvc.SetDesiredCapacity(asgScaleInput)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case autoscaling.ErrCodeScalingActivityInProgressFault:
+				Config.Logger.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
+			case autoscaling.ErrCodeResourceContentionFault:
+				Config.Logger.Println(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
+			default:
+				Config.Logger.Println(aerr.Error())
+			}
+		} else {
+			// Print the error, cast err to awserr.Error to get the Code and
+			// Message from an error.
+			Config.Logger.Println(err.Error())
+		}
+	}
 }
 
 func createK8sPod(hash string, accessToken string, userName string) error {
@@ -534,7 +588,9 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 
 func createLocalK8sPod(hash string, accessToken string, userName string) error {
 	hatchApp := Config.ContainersMap[hash]
-	pod, err := buildPod(Config, &hatchApp, userName)
+
+	var extraVars []k8sv1.EnvVar
+	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
 		return err
@@ -636,58 +692,10 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 	return nil
 }
 
-func scaleEKSNodes(userName string, scale int) {
-	pm := Config.PayModelMap[userName]
-	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(pm.Region),
-	}))
-
-	creds := stscreds.NewCredentials(sess, roleARN)
-	// ASG stuff
-	asgSvc := autoscaling.New(sess, &aws.Config{Credentials: creds})
-
-	asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
-		AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + pm.Name)},
-	}
-	asg, err := asgSvc.DescribeAutoScalingGroups(asgInput)
-	cap := *asg.AutoScalingGroups[0].DesiredCapacity
-	Config.Logger.Printf("ASG capacity: %d", cap)
-
-	Config.Logger.Printf("Scaling ASG from %d to %d..", cap, cap+1)
-
-	asgScaleInput := &autoscaling.SetDesiredCapacityInput{
-		AutoScalingGroupName: asg.AutoScalingGroups[0].AutoScalingGroupName,
-		DesiredCapacity:      aws.Int64(cap + int64(scale)),
-	}
-	_, err = asgSvc.SetDesiredCapacity(asgScaleInput)
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case autoscaling.ErrCodeScalingActivityInProgressFault:
-				Config.Logger.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
-			case autoscaling.ErrCodeResourceContentionFault:
-				Config.Logger.Println(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
-			default:
-				Config.Logger.Println(aerr.Error())
-			}
-		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
-			Config.Logger.Println(err.Error())
-		}
-	}
-}
-
 func createExternalK8sPod(hash string, accessToken string, userName string) error {
 	hatchApp := Config.ContainersMap[hash]
 
-	podClient, err := NewEKSClientset(userName) //result.Cluster, "arn:aws:iam::"+awsAccount+":role/csoc_adminvm")
-	nodes, err := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		Config.Logger.Panic("Error getting EKS nodes: %v", err)
-	}
-	Config.Logger.Printf("There are %d nodes associated with cluster %s", len(nodes.Items))
+	podClient, err := NewEKSClientset(userName)
 
 	// Check if NS exists in external cluster, if not create it.
 	ns, err := podClient.Namespaces().Get(context.TODO(), Config.Config.UserNamespace, metav1.GetOptions{})
@@ -700,7 +708,18 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 		Config.Logger.Printf("Namespace created: %v", ns)
 		podClient.Namespaces().Create(context.Background(), nsName, metav1.CreateOptions{})
 	}
-	pod, err := buildPod(Config, &hatchApp, userName)
+	var extraVars []k8sv1.EnvVar
+
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "WTS_OVERRIDE_URL",
+		Value: "https://" + Config.Config.Sidecar.Env["HOSTNAME"] + "/wts",
+	})
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "ACCESS_TOKEN",
+		Value: accessToken,
+	})
+
+	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
 		return err
