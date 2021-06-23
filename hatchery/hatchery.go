@@ -90,7 +90,6 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	accessToken := getBearerToken(r)
 
 	hash := r.URL.Query().Get("id")
-	external := r.URL.Query().Get("external")
 
 	if hash == "" {
 		http.Error(w, "Missing ID argument", 400)
@@ -98,15 +97,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := r.Header.Get("REMOTE_USER")
-	// TODO: Move this to launchk8s functionality to determine local/external
-	var err error
-	if external == "" {
-		Config.Logger.Printf("External: %v. Calling LAUNCH LOCAL", external)
-		err = createK8sPod(string(hash), accessToken, userName)
-	} else {
-		Config.Logger.Printf("External: %v. Calling LAUNCH EXTERNAL", external)
-		err = createExternalK8sPod(string(hash), accessToken, userName)
-	}
+	err := createK8sPod(string(hash), accessToken, userName)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return

@@ -60,24 +60,18 @@ type WorkspaceStatus struct {
 	ContainerStates []ContainerStates `json:"containerStates"`
 }
 
-func getPodClient(userName string) corev1.CoreV1Interface {
-	var podClient corev1.CoreV1Interface
-	var err error
-
-	pm := getPayModel(userName)
-	remote := false
-	if pm.User != "" {
-		remote = true
-	}
-	if !remote {
-		podClient = getLocalPodClient()
-	} else {
-		podClient, err = NewEKSClientset(userName)
+func getPodClient(userName string) (corev1.CoreV1Interface, error) {
+	if payModelExistsForUser(userName) {
+		podClient, err := NewEKSClientset(userName)
 		if err != nil {
-			Config.Logger.Printf("Hello")
+			Config.Logger.Printf("Error fetching EKS kubeconfig: %v", err)
+			return nil, err
+		} else {
+			return podClient, nil
 		}
+	} else {
+		return getLocalPodClient(), nil
 	}
-	return podClient
 }
 
 func getLocalPodClient() corev1.CoreV1Interface {
@@ -96,7 +90,7 @@ func getLocalPodClient() corev1.CoreV1Interface {
 
 // Generate EKS kubeconfig using AWS role
 func NewEKSClientset(userName string /*cluster *eks.Cluster, roleARN string*/) (corev1.CoreV1Interface, error) {
-	pm := getPayModel(userName)
+	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(pm.Region),
@@ -109,7 +103,8 @@ func NewEKSClientset(userName string /*cluster *eks.Cluster, roleARN string*/) (
 	}
 	result, err := eksSvc.DescribeCluster(input)
 	if err != nil {
-		Config.Logger.Panic("Error calling DescribeCluster: %v", err)
+		Config.Logger.Printf("Error calling DescribeCluster: %v", err)
+		return nil, err
 	}
 	cluster := result.Cluster
 	gen, err := token.NewGenerator(true, false)
@@ -156,28 +151,22 @@ func checkPodReadiness(pod *k8sv1.Pod) bool {
 	return true
 }
 
-func getPayModel(userName string) (paymodel PayModel /*, region string, name string, err error*/) {
-	model := Config.PayModelMap[userName]
-	return model
-}
+func podStatus(userName string) (*WorkspaceStatus, error) {
 
-func podStatus(userName string, remote bool) (*WorkspaceStatus, error) {
-	var podClient corev1.CoreV1Interface
-	var err error
-	if !remote {
-		podClient = getPodClient(userName)
-	} else {
-		podClient, err = NewEKSClientset(userName)
+	status := WorkspaceStatus{}
+	podClient, err := getPodClient(userName)
+	if err != nil {
+		// Config.Logger.Panic("Error trying to fetch kubeConfig: %v", err)
+		status.Status = fmt.Sprintf("%v", err)
+		return &status, err
 	}
 
 	safeUserName := escapism(userName)
 
 	podName := fmt.Sprintf("hatchery-%s", safeUserName)
 
-	status := WorkspaceStatus{}
 	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	if err != nil {
-
 		// not found
 		status.Status = "Not Found"
 		return &status, nil
@@ -225,23 +214,19 @@ func podStatus(userName string, remote bool) (*WorkspaceStatus, error) {
 }
 
 func statusK8sPod(userName string) (*WorkspaceStatus, error) {
-	pm := PayModel{}
-	remote := false
-	if getPayModel(userName) != pm {
-		Config.Logger.Printf("Hello: %s", getPayModel(userName))
-		remote = true
-	}
-	status, err := podStatus(userName, remote)
-	// status := WorkspaceStatus{}
+	status, err := podStatus(userName)
 	if err != nil {
-		Config.Logger.Printf("Error: %v", err)
+		status.Status = fmt.Sprintf("%v", err)
+		Config.Logger.Printf("Error getting status: %v", err)
 	}
-
 	return status, nil
 }
 
 func deleteK8sPod(userName string) error {
-	podClient := getPodClient(userName)
+	podClient, err := getPodClient(userName)
+	if err != nil {
+		return err
+	}
 
 	policy := metav1.DeletePropagationBackground
 	var grace int64 = 20
@@ -253,7 +238,7 @@ func deleteK8sPod(userName string) error {
 	safeUserName := escapism(userName)
 
 	podName := fmt.Sprintf("hatchery-%s", safeUserName)
-	_, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	_, err = podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace pod was not found: %s", err)
 	}
@@ -526,7 +511,26 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	return pod, nil
 }
 
+func payModelExistsForUser(userName string) (result bool) {
+	result = false
+	for _, paymodel := range Config.PayModelMap {
+		if paymodel.User == userName {
+			Config.Logger.Printf("Pay Model exists: %v %v", paymodel.User, paymodel.AWSAccountId)
+			result = true
+		}
+	}
+	return result
+}
+
 func createK8sPod(hash string, accessToken string, userName string) error {
+	if payModelExistsForUser(userName) {
+		return createExternalK8sPod(hash, accessToken, userName)
+	} else {
+		return createLocalK8sPod(hash, accessToken, userName)
+	}
+}
+
+func createLocalK8sPod(hash string, accessToken string, userName string) error {
 	hatchApp := Config.ContainersMap[hash]
 	pod, err := buildPod(Config, &hatchApp, userName)
 	if err != nil {
@@ -534,7 +538,11 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		return err
 	}
 	podName := userToResourceName(userName, "pod")
-	podClient := getPodClient(userName)
+	podClient, err := getPodClient(userName)
+	if err != nil {
+		Config.Logger.Panic("Error in createLocalK8sPod: %v", err)
+		return err
+	}
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
 	if mountUserVolume {
@@ -644,7 +652,7 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 				Name: Config.Config.UserNamespace,
 			},
 		}
-		Config.Logger.Printf("Ns name: %v", ns)
+		Config.Logger.Printf("Namespace created: %v", ns)
 		podClient.Namespaces().Create(context.Background(), nsName, metav1.CreateOptions{})
 	}
 	pod, err := buildPod(Config, &hatchApp, userName)
