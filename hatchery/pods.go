@@ -875,7 +875,7 @@ tls: %s
 			Annotations: annotationsService,
 		},
 		Spec: k8sv1.ServiceSpec{
-			Type:     k8sv1.ServiceTypeLoadBalancer,
+			Type:     k8sv1.ServiceTypeClusterIP,
 			Selector: map[string]string{"app": podName},
 			Ports: []k8sv1.ServicePort{
 				{
