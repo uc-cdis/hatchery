@@ -60,7 +60,27 @@ type WorkspaceStatus struct {
 	ContainerStates []ContainerStates `json:"containerStates"`
 }
 
-func getPodClient() corev1.CoreV1Interface {
+func getPodClient(userName string) corev1.CoreV1Interface {
+	var podClient corev1.CoreV1Interface
+	var err error
+
+	pm := getPayModel(userName)
+	remote := false
+	if pm.User != "" {
+		remote = true
+	}
+	if !remote {
+		podClient = getLocalPodClient()
+	} else {
+		podClient, err = NewEKSClientset(userName)
+		if err != nil {
+			Config.Logger.Printf("Hello")
+		}
+	}
+	return podClient
+}
+
+func getLocalPodClient() corev1.CoreV1Interface {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -89,7 +109,7 @@ func NewEKSClientset(userName string /*cluster *eks.Cluster, roleARN string*/) (
 	}
 	result, err := eksSvc.DescribeCluster(input)
 	if err != nil {
-		Config.Logger.Fatalf("Error calling DescribeCluster: %v", err)
+		Config.Logger.Panic("Error calling DescribeCluster: %v", err)
 	}
 	cluster := result.Cluster
 	gen, err := token.NewGenerator(true, false)
@@ -145,7 +165,7 @@ func podStatus(userName string, remote bool) (*WorkspaceStatus, error) {
 	var podClient corev1.CoreV1Interface
 	var err error
 	if !remote {
-		podClient = getPodClient()
+		podClient = getPodClient(userName)
 	} else {
 		podClient, err = NewEKSClientset(userName)
 	}
@@ -208,9 +228,9 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 	pm := PayModel{}
 	remote := false
 	if getPayModel(userName) != pm {
+		Config.Logger.Printf("Hello: %s", getPayModel(userName))
 		remote = true
 	}
-	Config.Logger.Printf("PM inside stats: %v", pm)
 	status, err := podStatus(userName, remote)
 	// status := WorkspaceStatus{}
 	if err != nil {
@@ -221,7 +241,7 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 }
 
 func deleteK8sPod(userName string) error {
-	podClient := getPodClient()
+	podClient := getPodClient(userName)
 
 	policy := metav1.DeletePropagationBackground
 	var grace int64 = 20
@@ -514,7 +534,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 		return err
 	}
 	podName := userToResourceName(userName, "pod")
-	podClient := getPodClient()
+	podClient := getPodClient(userName)
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
 	if mountUserVolume {
@@ -606,15 +626,15 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	return nil
 }
 
-func createExternalK8sPod(hash string, accessToken string, userName string, awsAccount string, name string) error {
+func createExternalK8sPod(hash string, accessToken string, userName string) error {
 	hatchApp := Config.ContainersMap[hash]
 
 	podClient, err := NewEKSClientset(userName) //result.Cluster, "arn:aws:iam::"+awsAccount+":role/csoc_adminvm")
 	nodes, err := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		Config.Logger.Fatalf("Error getting EKS nodes: %v", err)
+		Config.Logger.Panic("Error getting EKS nodes: %v", err)
 	}
-	Config.Logger.Printf("There are %d nodes associated with cluster %s", len(nodes.Items), name)
+	Config.Logger.Printf("There are %d nodes associated with cluster %s", len(nodes.Items))
 
 	// Check if NS exists in external cluster, if not create it.
 	ns, err := podClient.Namespaces().Get(context.TODO(), Config.Config.UserNamespace, metav1.GetOptions{})
