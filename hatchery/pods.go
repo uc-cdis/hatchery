@@ -167,10 +167,10 @@ func podStatus(userName string) (*WorkspaceStatus, error) {
 	serviceName := userToResourceName(userName, "service")
 
 	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	service, service_err := podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	_, service_err := podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err != nil {
 		if service_err == nil {
-			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed: %+v", service)
+			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed.")
 			// Pod has been terminated, but service is still being terminated. Wait for service to be killed
 			status.Status = "Terminating"
 			return &status, nil
@@ -320,7 +320,6 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		sidecarEnvVars = append(sidecarEnvVars, envVar)
 	}
 	for _, value := range extraVars {
-		Config.Logger.Printf("%+v", value)
 		sidecarEnvVars = append(sidecarEnvVars, value)
 	}
 
@@ -847,8 +846,6 @@ tls: %s
 		Config.Logger.Printf("Failed to find external service %+v", service)
 	}
 	LoadBalancer := service.Status.LoadBalancer.Ingress[0].Hostname
-
-	Config.Logger.Printf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, LoadBalancer, hatchApp.PathRewrite, hatchApp.UseTLS)
 
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
