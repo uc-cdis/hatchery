@@ -61,17 +61,17 @@ type WorkspaceStatus struct {
 	ContainerStates []ContainerStates `json:"containerStates"`
 }
 
-func getPodClient(userName string) (corev1.CoreV1Interface, error) {
+func getPodClient(userName string) (corev1.CoreV1Interface, bool, error) {
 	if payModelExistsForUser(userName) {
 		podClient, err := NewEKSClientset(userName)
 		if err != nil {
 			Config.Logger.Printf("Error fetching EKS kubeconfig: %v", err)
-			return nil, err
+			return nil, true, err
 		} else {
-			return podClient, nil
+			return podClient, true, nil
 		}
 	} else {
-		return getLocalPodClient(), nil
+		return getLocalPodClient(), false, nil
 	}
 }
 
@@ -155,7 +155,7 @@ func checkPodReadiness(pod *k8sv1.Pod) bool {
 func podStatus(userName string) (*WorkspaceStatus, error) {
 
 	status := WorkspaceStatus{}
-	podClient, err := getPodClient(userName)
+	podClient, isExternalClient, err := getPodClient(userName)
 	if err != nil {
 		// Config.Logger.Panic("Error trying to fetch kubeConfig: %v", err)
 		status.Status = fmt.Sprintf("%v", err)
@@ -169,7 +169,8 @@ func podStatus(userName string) (*WorkspaceStatus, error) {
 	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
 	_, serviceErr := podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err != nil {
-		if serviceErr == nil {
+		if isExternalClient && serviceErr == nil {
+			// only delete service if podClient is external EKS
 			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed. %v %v", serviceErr, err)
 			// Pod has been terminated, but service is still being terminated. Wait for service to be killed
 			status.Status = "Terminating"
@@ -232,7 +233,7 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 }
 
 func deleteK8sPod(userName string) error {
-	podClient, err := getPodClient(userName)
+	podClient, _, err := getPodClient(userName)
 	if err != nil {
 		return err
 	}
@@ -594,9 +595,9 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 		return err
 	}
 	podName := userToResourceName(userName, "pod")
-	podClient, err := getPodClient(userName)
+	podClient, _, err := getPodClient(userName)
 	if err != nil {
-		Config.Logger.Panic("Error in createLocalK8sPod: %v", err)
+		Config.Logger.Panicf("Error in createLocalK8sPod: %v", err)
 		return err
 	}
 	// a null image indicates a dockstore app - always mount user volume
