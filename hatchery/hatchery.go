@@ -17,6 +17,7 @@ func RegisterHatchery() {
 	http.HandleFunc("/terminate", terminate)
 	http.HandleFunc("/status", status)
 	http.HandleFunc("/options", options)
+	http.HandleFunc("/paymodels", paymodels)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -33,6 +34,20 @@ func home(w http.ResponseWriter, r *http.Request) {
 	</html>`
 	fmt.Fprintf(w, htmlFooter)
 
+}
+
+func paymodels(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		out, err := json.Marshal(Config.PayModelMap[userName])
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		fmt.Fprintf(w, string(out))
+	} else {
+		http.Error(w, "Not Found", 404)
+	}
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
@@ -90,13 +105,13 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	accessToken := getBearerToken(r)
 
 	hash := r.URL.Query().Get("id")
+
 	if hash == "" {
 		http.Error(w, "Missing ID argument", 400)
 		return
 	}
 
 	userName := r.Header.Get("REMOTE_USER")
-
 	err := createK8sPod(string(hash), accessToken, userName)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
