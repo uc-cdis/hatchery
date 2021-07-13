@@ -167,9 +167,9 @@ func podStatus(userName string) (*WorkspaceStatus, error) {
 	serviceName := userToResourceName(userName, "service")
 
 	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	_, service_err := podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	_, serviceErr := podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err != nil {
-		if service_err == nil {
+		if serviceErr == nil {
 			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed.")
 			// Pod has been terminated, but service is still being terminated. Wait for service to be killed
 			status.Status = "Terminating"
