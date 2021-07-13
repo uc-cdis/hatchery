@@ -170,7 +170,7 @@ func podStatus(userName string) (*WorkspaceStatus, error) {
 	_, serviceErr := podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err != nil {
 		if serviceErr == nil {
-			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed. %v", serviceErr)
+			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed. %v %v", serviceErr, err)
 			// Pod has been terminated, but service is still being terminated. Wait for service to be killed
 			status.Status = "Terminating"
 			return &status, nil
