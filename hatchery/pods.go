@@ -170,8 +170,8 @@ func podStatus(userName string) (*WorkspaceStatus, error) {
 	_, serviceErr := podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err != nil {
 		if isExternalClient && serviceErr == nil {
-			// only delete service if podClient is external EKS
-			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed. %v %v", serviceErr, err)
+			// only worry for service if podClient is external EKS
+			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed.")
 			// Pod has been terminated, but service is still being terminated. Wait for service to be killed
 			status.Status = "Terminating"
 			return &status, nil
