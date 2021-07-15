@@ -842,11 +842,11 @@ tls: %s
 	externalPodClient, err := NewEKSClientset(userName)
 	serviceName := userToResourceName(userName, "service")
 	podName := userToResourceName(userName, "pod")
-	service, err := externalPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
-	if err != nil {
-		Config.Logger.Printf("Failed to find external service %+v", service)
-	}
 	for len(service.Status.LoadBalancer.Ingress) == 0 {
+		service, err := externalPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+		if err != nil {
+			Config.Logger.Printf("Failed to find external service %+v", service)
+		}
 		Config.Logger.Printf("Waiting for Load Balancer")
 	}
 	LoadBalancer := service.Status.LoadBalancer.Ingress[0].Hostname
