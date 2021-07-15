@@ -846,6 +846,9 @@ tls: %s
 	if err != nil {
 		Config.Logger.Printf("Failed to find external service %+v", service)
 	}
+	for len(service.Status.LoadBalancer.Ingress) == 0 {
+		Config.Logger.Printf("Waiting for Load Balancer")
+	}
 	LoadBalancer := service.Status.LoadBalancer.Ingress[0].Hostname
 
 	labelsService := make(map[string]string)
