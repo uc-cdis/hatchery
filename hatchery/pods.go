@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -848,6 +849,7 @@ tls: %s
 			Config.Logger.Printf("Failed to find external service %+v", service)
 		}
 		Config.Logger.Printf("Waiting for Load Balancer")
+		time.Sleep(5 * time.Second)
 	}
 	LoadBalancer := service.Status.LoadBalancer.Ingress[0].Hostname
 
