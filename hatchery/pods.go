@@ -770,7 +770,7 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 	labelsService["app"] = podName
 	annotationsService := make(map[string]string)
 	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userToResourceName(userName, "mapping"), userName, serviceName, Config.Config.UserNamespace, hatchApp.PathRewrite, hatchApp.UseTLS)
-
+	annotationsService["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err == nil {
 		// This probably happened as the result of some error... there was no pod but was a service
