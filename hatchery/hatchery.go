@@ -5,18 +5,20 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
 
 // Config package-global shared hatchery config
 var Config *FullHatcheryConfig
 
 // RegisterHatchery setup endpoints with the http engine
-func RegisterHatchery() {
-	http.HandleFunc("/", home)
-	http.HandleFunc("/launch", launch)
-	http.HandleFunc("/terminate", terminate)
-	http.HandleFunc("/status", status)
-	http.HandleFunc("/options", options)
+func RegisterHatchery(mux *httptrace.ServeMux) {
+	mux.HandleFunc("/", home)
+	mux.HandleFunc("/launch", launch)
+	mux.HandleFunc("/terminate", terminate)
+	mux.HandleFunc("/status", status)
+	mux.HandleFunc("/options", options)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
