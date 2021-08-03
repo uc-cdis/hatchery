@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/uc-cdis/hatchery/hatchery"
+	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func main() {
@@ -28,8 +30,20 @@ func main() {
 		return
 	}
 	hatchery.Config = config
+	ddEnabled := os.Getenv("DD_ENABLED")
+	if strings.ToLower(ddEnabled) == "true" {
+		config.Logger.Printf("Setting up datadog")
+		tracer.Start()
+		defer tracer.Stop()
+	} else {
+		config.Logger.Printf("Datadog not enabled in manifest, skipping...")
+	}
+
+	config.Logger.Printf("Setting up routes")
+	mux := httptrace.NewServeMux()
+	hatchery.RegisterSystem(mux)
+	hatchery.RegisterHatchery(mux)
+
 	config.Logger.Printf("Running main")
-	hatchery.RegisterSystem()
-	hatchery.RegisterHatchery()
-	log.Fatal(http.ListenAndServe("0.0.0.0:8000", nil))
+	log.Fatal(http.ListenAndServe("0.0.0.0:8000", mux))
 }
