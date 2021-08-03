@@ -830,7 +830,7 @@ name:  %s
 prefix: /
 headers:
   remote_user: %s
-service: %s:%s
+service: %s:%d
 bypass_auth: true
 timeout_ms: 300000
 use_websocket: true
