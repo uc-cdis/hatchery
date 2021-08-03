@@ -815,7 +815,6 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 	Config.Logger.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
 	createLocalService(userName, hash)
-	scaleEKSNodes(userName, 0)
 
 	return nil
 }
