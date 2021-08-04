@@ -16,10 +16,42 @@ var Config *FullHatcheryConfig
 func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/", home)
 	mux.HandleFunc("/launch", launch)
+	mux.HandleFunc("/findecs", findEcs)
+	mux.HandleFunc("/launchecs", launchEcs)
 	mux.HandleFunc("/terminate", terminate)
 	mux.HandleFunc("/status", status)
 	mux.HandleFunc("/options", options)
 	mux.HandleFunc("/paymodels", paymodels)
+}
+
+func launchEcs(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		result, err := launchEcsCluster()
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+			Config.Logger.Printf("Error: %s", err)
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("%s", result))
+		}
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", 404)
+	}
+}
+
+func findEcs(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		result, err := findEcsCluster()
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+			Config.Logger.Printf("Error: %s", err)
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("%s", result))
+		}
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", 404)
+	}
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
