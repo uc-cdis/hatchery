@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"time"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -791,7 +790,7 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 			Annotations: annotationsService,
 		},
 		Spec: k8sv1.ServiceSpec{
-			Type:     k8sv1.ServiceTypeLoadBalancer,
+			Type:     k8sv1.ServiceTypeNodePort,
 			Selector: map[string]string{"app": podName},
 			Ports: []k8sv1.ServicePort{
 				{
@@ -816,7 +815,6 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 	Config.Logger.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
 	createLocalService(userName, hash)
-	scaleEKSNodes(userName, 0)
 
 	return nil
 }
@@ -831,7 +829,7 @@ name:  %s
 prefix: /
 headers:
   remote_user: %s
-service: %s:80
+service: %s:%d
 bypass_auth: true
 timeout_ms: 300000
 use_websocket: true
@@ -844,20 +842,14 @@ tls: %s
 	serviceName := userToResourceName(userName, "service")
 	podName := userToResourceName(userName, "pod")
 	service, err := externalPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
-	for len(service.Status.LoadBalancer.Ingress) == 0 {
-		service, err = externalPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
-		if err != nil {
-			Config.Logger.Printf("Failed to find external service %+v", service)
-		}
-		Config.Logger.Printf("Waiting for Load Balancer")
-		time.Sleep(5 * time.Second)
-	}
-	LoadBalancer := service.Status.LoadBalancer.Ingress[0].Hostname
 
+	nodes, _ := externalPodClient.Nodes().List(context.TODO(), metav1.ListOptions{})
+	NodeIP := nodes.Items[0].Status.Addresses[0].Address
+	NodePort := service.Spec.Ports[0].NodePort
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
 	annotationsService := make(map[string]string)
-	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, LoadBalancer, hatchApp.PathRewrite, hatchApp.UseTLS)
+	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, NodeIP, NodePort, hatchApp.PathRewrite, hatchApp.UseTLS)
 
 	_, err = localPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err == nil {
