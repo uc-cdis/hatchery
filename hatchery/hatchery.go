@@ -96,7 +96,6 @@ func options(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprintf(w, string(out))
-
 }
 
 func launch(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +129,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 	userName := r.Header.Get("REMOTE_USER")
 
-	err := deleteK8sPod(userName)
+	err := deleteK8sPod(r.Context(), userName)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
