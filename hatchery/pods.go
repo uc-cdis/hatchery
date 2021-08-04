@@ -21,6 +21,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/eks"
 
+	awstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
+	kubernetestrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
 )
 
@@ -81,6 +83,8 @@ func getLocalPodClient() corev1.CoreV1Interface {
 	if err != nil {
 		panic(err.Error())
 	}
+	// Use this to trace all calls made to the Kubernetes API
+	config.WrapTransport = kubernetestrace.WrapRoundTripper
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	// Access jobs. We can't do it all in one line, since we need to receive the
@@ -96,6 +100,7 @@ func NewEKSClientset(userName string /*cluster *eks.Cluster, roleARN string*/) (
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(pm.Region),
 	}))
+	sess = awstrace.WrapSession(sess)
 
 	creds := stscreds.NewCredentials(sess, roleARN)
 	eksSvc := eks.New(sess, &aws.Config{Credentials: creds})
@@ -540,6 +545,7 @@ func scaleEKSNodes(userName string, scale int) {
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(pm.Region),
 	}))
+	sess = awstrace.WrapSession(sess)
 
 	creds := stscreds.NewCredentials(sess, roleARN)
 	// ASG stuff
