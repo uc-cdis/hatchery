@@ -55,7 +55,7 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 func status(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
 
-	result, err := statusK8sPod(userName)
+	result, err := statusK8sPod(r.Context(), userName)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -114,7 +114,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := r.Header.Get("REMOTE_USER")
-	err := createK8sPod(string(hash), accessToken, userName)
+	err := createK8sPod(r.Context(), string(hash), accessToken, userName)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return

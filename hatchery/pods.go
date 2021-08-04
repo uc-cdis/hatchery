@@ -22,6 +22,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/eks"
 
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
+
+	awstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
+	kubernetestrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/client-go/kubernetes"
 )
 
 var (
@@ -78,6 +81,7 @@ func getPodClient(userName string) (corev1.CoreV1Interface, bool, error) {
 func getLocalPodClient() corev1.CoreV1Interface {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
+	config.WrapTransport = kubernetestrace.WrapRoundTripper
 	if err != nil {
 		panic(err.Error())
 	}
@@ -93,9 +97,9 @@ func getLocalPodClient() corev1.CoreV1Interface {
 func NewEKSClientset(userName string /*cluster *eks.Cluster, roleARN string*/) (corev1.CoreV1Interface, error) {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
+	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(pm.Region),
-	}))
+	})))
 
 	creds := stscreds.NewCredentials(sess, roleARN)
 	eksSvc := eks.New(sess, &aws.Config{Credentials: creds})
@@ -152,7 +156,7 @@ func checkPodReadiness(pod *k8sv1.Pod) bool {
 	return true
 }
 
-func podStatus(userName string) (*WorkspaceStatus, error) {
+func podStatus(ctx context.Context, userName string) (*WorkspaceStatus, error) {
 
 	status := WorkspaceStatus{}
 	podClient, isExternalClient, err := getPodClient(userName)
@@ -166,8 +170,8 @@ func podStatus(userName string) (*WorkspaceStatus, error) {
 
 	serviceName := userToResourceName(userName, "service")
 
-	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	_, serviceErr := podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
+	_, serviceErr := podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err != nil {
 		if isExternalClient && serviceErr == nil {
 			// only worry for service if podClient is external EKS
@@ -223,8 +227,8 @@ func podStatus(userName string) (*WorkspaceStatus, error) {
 	return &status, nil
 }
 
-func statusK8sPod(userName string) (*WorkspaceStatus, error) {
-	status, err := podStatus(userName)
+func statusK8sPod(ctx context.Context, userName string) (*WorkspaceStatus, error) {
+	status, err := podStatus(ctx, userName)
 	if err != nil {
 		status.Status = fmt.Sprintf("%v", err)
 		Config.Logger.Printf("Error getting status: %v", err)
@@ -537,9 +541,9 @@ func payModelExistsForUser(userName string) (result bool) {
 func scaleEKSNodes(userName string, scale int) {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
+	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(pm.Region),
-	}))
+	})))
 
 	creds := stscreds.NewCredentials(sess, roleARN)
 	// ASG stuff
@@ -577,15 +581,15 @@ func scaleEKSNodes(userName string, scale int) {
 	}
 }
 
-func createK8sPod(hash string, accessToken string, userName string) error {
+func createK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
 	if payModelExistsForUser(userName) {
 		return createExternalK8sPod(hash, accessToken, userName)
 	} else {
-		return createLocalK8sPod(hash, accessToken, userName)
+		return createLocalK8sPod(ctx, hash, accessToken, userName)
 	}
 }
 
-func createLocalK8sPod(hash string, accessToken string, userName string) error {
+func createLocalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
 	hatchApp := Config.ContainersMap[hash]
 
 	var extraVars []k8sv1.EnvVar
@@ -605,7 +609,7 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 	if mountUserVolume {
 		claimName := userToResourceName(userName, "claim")
 
-		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(context.TODO(), claimName, metav1.GetOptions{})
+		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(ctx, claimName, metav1.GetOptions{})
 		if err != nil {
 			Config.Logger.Printf("Creating PersistentVolumeClaim %s.\n", claimName)
 			pvc := &k8sv1.PersistentVolumeClaim{
@@ -623,7 +627,7 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 					},
 				},
 			}
-			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(context.TODO(), pvc, metav1.CreateOptions{})
+			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(ctx, pvc, metav1.CreateOptions{})
 			if err != nil {
 				Config.Logger.Printf("Failed to create PVC %s. Error: %s\n", claimName, err)
 				return err
