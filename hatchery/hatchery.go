@@ -16,42 +16,14 @@ var Config *FullHatcheryConfig
 func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/", home)
 	mux.HandleFunc("/launch", launch)
-	mux.HandleFunc("/findecs", findEcs)
-	mux.HandleFunc("/launchecs", launchEcs)
 	mux.HandleFunc("/terminate", terminate)
 	mux.HandleFunc("/status", status)
 	mux.HandleFunc("/options", options)
 	mux.HandleFunc("/paymodels", paymodels)
-}
-
-func launchEcs(w http.ResponseWriter, r *http.Request) {
-	userName := r.Header.Get("REMOTE_USER")
-	if payModelExistsForUser(userName) {
-		result, err := launchEcsCluster()
-		if err != nil {
-			fmt.Fprintf(w, fmt.Sprintf("%s", err))
-			Config.Logger.Printf("Error: %s", err)
-		} else {
-			fmt.Fprintf(w, fmt.Sprintf("%s", result))
-		}
-	} else {
-		http.Error(w, "Paymodel has not been setup for user", 404)
-	}
-}
-
-func findEcs(w http.ResponseWriter, r *http.Request) {
-	userName := r.Header.Get("REMOTE_USER")
-	if payModelExistsForUser(userName) {
-		result, err := findEcsCluster()
-		if err != nil {
-			fmt.Fprintf(w, fmt.Sprintf("%s", err))
-			Config.Logger.Printf("Error: %s", err)
-		} else {
-			fmt.Fprintf(w, fmt.Sprintf("%s", result))
-		}
-	} else {
-		http.Error(w, "Paymodel has not been setup for user", 404)
-	}
+	// ECS functions
+	mux.HandleFunc("/status-ecs", statusEcs)
+	mux.HandleFunc("/launch-ecs", launcEcs)
+	mux.HandleFunc("/create-ecs-cluster", ecsCluster)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -181,4 +153,66 @@ func getBearerToken(r *http.Request) string {
 		return s[1]
 	}
 	return ""
+}
+
+// ECS functions
+
+// Function to launch workspace in ECS
+func launcEcs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Not Found", 404)
+		return
+	}
+	hash := r.URL.Query().Get("id")
+
+	if hash == "" {
+		http.Error(w, "Missing ID argument", 400)
+		return
+	}
+
+	// accessToken := getBearerToken(r)
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		result, err := launchEcsWorkspace(userName, hash)
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+			Config.Logger.Printf("Error: %s", err)
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("%s", result))
+		}
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", 404)
+	}
+}
+
+// Function to create ECS cluster.
+func ecsCluster(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		result, err := launchEcsCluster(userName)
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+			Config.Logger.Printf("Error: %s", err)
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("%s", result))
+		}
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", 404)
+	}
+}
+
+// Function to check status of ECS cluster.
+func statusEcs(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		result, err := findEcsCluster(userName)
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+			Config.Logger.Printf("Error: %s", err)
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("%s", result))
+		}
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", 404)
+	}
 }
