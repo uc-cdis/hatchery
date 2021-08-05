@@ -124,19 +124,14 @@ func findEcsCluster(userName string) ([]*ecs.Cluster, error) {
 
 func launchEcsWorkspace(userName string, hash string) (string, error) {
 	Config.Logger.Printf("%s", userName)
+
+	taskDef := CreateTaskDefinitionInput{
+		Image: "hello-world",
+	}
+
+	CreateTaskDefinition(&taskDef, userName, hash)
 	return userName, nil
 
-}
-
-func DescribeTaskDefinition(svc *ecs.ECS, hash string) (*ecs.DescribeTaskDefinitionOutput, error) {
-	describeTaskDefinitionInput := ecs.DescribeTaskDefinitionInput{
-		TaskDefinition: &hash,
-	}
-	taskDef, err := svc.DescribeTaskDefinition(&describeTaskDefinitionInput)
-	if err != nil {
-		return nil, err
-	}
-	return taskDef, nil
 }
 
 // create Task Definitioin in ECS
@@ -210,4 +205,15 @@ func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, has
 	Config.Logger.Printf("Created ECS task definition [%s:%d]", aws.StringValue(td.Family), aws.Int64Value(td.Revision))
 
 	return aws.StringValue(td.TaskDefinitionArn)
+}
+
+func DescribeTaskDefinition(svc *ecs.ECS, hash string) (*ecs.DescribeTaskDefinitionOutput, error) {
+	describeTaskDefinitionInput := ecs.DescribeTaskDefinitionInput{
+		TaskDefinition: &hash,
+	}
+	taskDef, err := svc.DescribeTaskDefinition(&describeTaskDefinitionInput)
+	if err != nil {
+		return nil, err
+	}
+	return taskDef, nil
 }
