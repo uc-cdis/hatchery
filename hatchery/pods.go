@@ -537,7 +537,7 @@ func payModelExistsForUser(userName string) (result bool) {
 	return result
 }
 
-func scaleEKSNodes(userName string, scale int) {
+func scaleEKSNodes(ctx context.Context, userName string, scale int) {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
@@ -551,7 +551,7 @@ func scaleEKSNodes(userName string, scale int) {
 	asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
 		AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + pm.Name)},
 	}
-	asg, err := asgSvc.DescribeAutoScalingGroups(asgInput)
+	asg, err := asgSvc.DescribeAutoScalingGroupsWithContext(ctx, asgInput)
 	cap := *asg.AutoScalingGroups[0].DesiredCapacity
 	Config.Logger.Printf("ASG capacity: %d", cap)
 
@@ -561,7 +561,7 @@ func scaleEKSNodes(userName string, scale int) {
 		AutoScalingGroupName: asg.AutoScalingGroups[0].AutoScalingGroupName,
 		DesiredCapacity:      aws.Int64(cap + int64(scale)),
 	}
-	_, err = asgSvc.SetDesiredCapacity(asgScaleInput)
+	_, err = asgSvc.SetDesiredCapacityWithContext(ctx, asgScaleInput)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
