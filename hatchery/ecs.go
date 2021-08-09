@@ -7,8 +7,10 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go/service/ecs"
 )
 
@@ -24,6 +26,8 @@ type CreateTaskDefinitionInput struct {
 	LogRegion        string
 	TaskRole         string
 	Type             string
+	EntryPoint       []string
+	Args             []string
 }
 
 type EnvVar struct {
@@ -46,7 +50,7 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 	return environment
 }
 
-const logStreamPrefix = "fargate"
+const logStreamPrefix = "gen3ws"
 
 // To create a new cluster
 //
@@ -122,19 +126,63 @@ func findEcsCluster(userName string) ([]*ecs.Cluster, error) {
 	}
 }
 
+func StrToInt(str string) (string, error) {
+	nonFractionalPart := strings.Split(str, ".")
+	return nonFractionalPart[0], nil
+}
+
 func launchEcsWorkspace(userName string, hash string) (string, error) {
 	Config.Logger.Printf("%s", userName)
+	hatchApp := Config.ContainersMap[hash]
+	// cpu, _ := StrToInt(hatchApp.CPULimit)
 
 	taskDef := CreateTaskDefinitionInput{
-		Image: "hello-world",
+		Image:            "jupyter/minimal-notebook:latest", //hatchApp.Image,
+		Cpu:              "1024",
+		Memory:           "2048",
+		Name:             hash,
+		EntryPoint:       hatchApp.Command,
+		Args:             hatchApp.Args,
+		ExecutionRoleArn: "arn:aws:iam::354484406138:role/ecsTaskExecutionRole",
+	}
+	Config.Logger.Printf("%+v", taskDef)
+	response := CreateTaskDefinition(&taskDef, userName, hash)
+	return response, nil
+}
+
+//Create CloudWatch LogGroup for hatchery
+func CreateLogGroup(LogGroupName string, creds *credentials.Credentials) (string, error) {
+
+	describeLogGroupIn := &cloudwatchlogs.DescribeLogGroupsInput{
+		LogGroupNamePrefix: aws.String(LogGroupName),
 	}
 
-	CreateTaskDefinition(&taskDef, userName, hash)
-	return userName, nil
+	createLogGroupIn := &cloudwatchlogs.CreateLogGroupInput{
+		LogGroupName: aws.String(LogGroupName),
+	}
+
+	c := cloudwatchlogs.New(session.New(&aws.Config{
+		Credentials: creds,
+		Region:      aws.String("us-east-1"),
+	}))
+	logGroup, err := c.DescribeLogGroups(describeLogGroupIn)
+	if err != nil {
+		Config.Logger.Printf("Error in DescribeLogGroup: %s", err)
+		return "", err
+	}
+	if len(logGroup.LogGroups) < 0 {
+		Config.Logger.Panicf("%s", logGroup.LogGroups[0].LogGroupName)
+	}
+	newLogGroup, err := c.CreateLogGroup(createLogGroupIn)
+	if err != nil {
+		Config.Logger.Printf("Error in  CreateLogGroup: %s, %s", err, newLogGroup)
+		return "", err
+	}
+	return "logGroup", nil
 
 }
 
-// create Task Definitioin in ECS
+// create Task Definition in ECS
 func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, hash string) string {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
@@ -144,24 +192,26 @@ func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, has
 	Config.Logger.Printf("Assuming role: %s", roleARN)
 
 	creds := stscreds.NewCredentials(sess, roleARN)
-
+	LogGroup, err := CreateLogGroup(fmt.Sprintf("/hatchery/%s/", pm.AWSAccountId), creds)
+	if err != nil {
+		Config.Logger.Printf("Failed to create LogGroup. %s", LogGroup)
+	}
+	Config.Logger.Printf("LogGroup Created: %s", LogGroup)
 	svc := ecs.New(session.New(&aws.Config{
 		Credentials: creds,
 		Region:      aws.String("us-east-1"),
 	}))
-
+	Config.Logger.Printf("CPU INSIDE FUNCTION: %s", input.Cpu)
 	Config.Logger.Printf("Checking if ECS task definition exists")
-	taskDef, _ := DescribeTaskDefinition(svc, hash)
 
-	Config.Logger.Printf("TaskDef: %s", taskDef)
 	Config.Logger.Printf("Creating ECS task definition")
 
 	logConfiguration := &ecs.LogConfiguration{
 		LogDriver: aws.String(ecs.LogDriverAwslogs),
 		Options: map[string]*string{
-			"awslogs-region":        aws.String(input.LogRegion),
-			"awslogs-group":         aws.String(input.LogGroupName),
-			"awslogs-stream-prefix": aws.String(logStreamPrefix),
+			"awslogs-region":        aws.String("us-east-1"),
+			"awslogs-group":         aws.String("LogGroup"),
+			"awslogs-stream-prefix": aws.String(userName),
 		},
 	}
 
@@ -171,6 +221,8 @@ func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, has
 		Image:            aws.String(input.Image),
 		LogConfiguration: logConfiguration,
 		Name:             aws.String(input.Name),
+		EntryPoint:       aws.StringSlice(input.EntryPoint),
+		Command:          aws.StringSlice(input.Args),
 	}
 
 	if input.Port != 0 {
@@ -213,6 +265,7 @@ func DescribeTaskDefinition(svc *ecs.ECS, hash string) (*ecs.DescribeTaskDefinit
 	}
 	taskDef, err := svc.DescribeTaskDefinition(&describeTaskDefinitionInput)
 	if err != nil {
+		Config.Logger.Printf("taskdefDescribe error: %s", err)
 		return nil, err
 	}
 	return taskDef, nil

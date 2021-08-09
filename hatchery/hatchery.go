@@ -178,7 +178,7 @@ func launcEcs(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, fmt.Sprintf("%s", err))
 			Config.Logger.Printf("Error: %s", err)
 		} else {
-			fmt.Fprintf(w, fmt.Sprintf("%s", result))
+			fmt.Fprintf(w, fmt.Sprintf("%+v", result))
 		}
 	} else {
 		http.Error(w, "Paymodel has not been setup for user", 404)
