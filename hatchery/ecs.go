@@ -218,7 +218,7 @@ func (sess *CREDS) launchService(taskDefArn string, accessToken string) (string,
 // Create/Update Task Definition in ECS
 func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, hash string) (string, error) {
 	creds := sess.creds
-	LogGroup, err := sess.CreateLogGroup(fmt.Sprintf("/hatchery/%s/", userName), creds)
+	LogGroup, err := sess.CreateLogGroup(fmt.Sprintf("/hatchery/%s/", Config.PayModelMap[userName].AWSAccountId), creds)
 	if err != nil {
 		Config.Logger.Printf("Failed to create/get LogGroup. Error: %s", err)
 		return "", err
@@ -254,7 +254,6 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 			[]*ecs.PortMapping{
 				&ecs.PortMapping{
 					ContainerPort: aws.Int64(int64(input.Port)),
-					HostPort:      aws.Int64(80),
 				},
 			},
 		)
