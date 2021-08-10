@@ -164,6 +164,7 @@ func launcEcs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hash := r.URL.Query().Get("id")
+	accessToken := getBearerToken(r)
 
 	if hash == "" {
 		http.Error(w, "Missing ID argument", 400)
@@ -173,7 +174,7 @@ func launcEcs(w http.ResponseWriter, r *http.Request) {
 	// accessToken := getBearerToken(r)
 	userName := r.Header.Get("REMOTE_USER")
 	if payModelExistsForUser(userName) {
-		result, err := launchEcsWorkspace(userName, hash)
+		result, err := launchEcsWorkspace(userName, hash, accessToken)
 		if err != nil {
 			fmt.Fprintf(w, fmt.Sprintf("%s", err))
 			Config.Logger.Printf("Error: %s", err)

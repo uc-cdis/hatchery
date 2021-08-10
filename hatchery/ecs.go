@@ -3,6 +3,8 @@ package hatchery
 import (
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -50,11 +52,7 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 	return environment
 }
 
-const logStreamPrefix = "gen3ws"
-
 // To create a new cluster
-//
-// This example creates a cluster in your default region.
 func launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
@@ -131,59 +129,65 @@ func StrToInt(str string) (string, error) {
 	return nonFractionalPart[0], nil
 }
 
-func launchEcsWorkspace(userName string, hash string) (string, error) {
+func mem(str string) (string, error) {
+	res := regexp.MustCompile(`(\d*)([M|G])ib?`)
+	matches := res.FindStringSubmatch(str)
+	num, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return "", err
+	}
+	if matches[2] == "G" {
+		num = num * 1024
+	}
+	return strconv.Itoa(num), nil
+}
+
+func cpu(str string) (string, error) {
+	num, err := strconv.Atoi(str[:strings.IndexByte(str, '.')])
+	if err != nil {
+		return "", err
+	}
+	num = num * 1024
+	return strconv.Itoa(num), nil
+}
+
+func launchEcsWorkspace(userName string, hash string, accessToken string) (string, error) {
 	Config.Logger.Printf("%s", userName)
 	hatchApp := Config.ContainersMap[hash]
-	// cpu, _ := StrToInt(hatchApp.CPULimit)
-
+	mem, err := mem(hatchApp.MemoryLimit)
+	if err != nil {
+		return "", err
+	}
+	cpu, err := cpu(hatchApp.CPULimit)
+	if err != nil {
+		return "", err
+	}
+	e := []EnvVar{}
+	for k, v := range Config.Config.Sidecar.Env {
+		e = append(e, EnvVar{
+			Key:   k,
+			Value: v,
+		})
+	}
 	taskDef := CreateTaskDefinitionInput{
-		Image:            "jupyter/minimal-notebook:latest", //hatchApp.Image,
-		Cpu:              "1024",
-		Memory:           "2048",
+		Image:            hatchApp.Image, // TODO: test all images. Tested with smaller image "jupyter/minimal-notebook:latest",
+		Cpu:              cpu,
+		Memory:           mem,
 		Name:             hash,
 		EntryPoint:       hatchApp.Command,
 		Args:             hatchApp.Args,
-		ExecutionRoleArn: "arn:aws:iam::354484406138:role/ecsTaskExecutionRole",
+		EnvVars:          e,
+		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", Config.PayModelMap[userName].AWSAccountId), // TODO: Make this configurable?
 	}
-	Config.Logger.Printf("%+v", taskDef)
-	response := CreateTaskDefinition(&taskDef, userName, hash)
+	response, err := CreateTaskDefinition(&taskDef, userName, hash)
+	if err != nil {
+		return "", err // TODO: Make this better? clearer?
+	}
 	return response, nil
 }
 
-//Create CloudWatch LogGroup for hatchery
-func CreateLogGroup(LogGroupName string, creds *credentials.Credentials) (string, error) {
-
-	describeLogGroupIn := &cloudwatchlogs.DescribeLogGroupsInput{
-		LogGroupNamePrefix: aws.String(LogGroupName),
-	}
-
-	createLogGroupIn := &cloudwatchlogs.CreateLogGroupInput{
-		LogGroupName: aws.String(LogGroupName),
-	}
-
-	c := cloudwatchlogs.New(session.New(&aws.Config{
-		Credentials: creds,
-		Region:      aws.String("us-east-1"),
-	}))
-	logGroup, err := c.DescribeLogGroups(describeLogGroupIn)
-	if err != nil {
-		Config.Logger.Printf("Error in DescribeLogGroup: %s", err)
-		return "", err
-	}
-	if len(logGroup.LogGroups) < 0 {
-		Config.Logger.Panicf("%s", logGroup.LogGroups[0].LogGroupName)
-	}
-	newLogGroup, err := c.CreateLogGroup(createLogGroupIn)
-	if err != nil {
-		Config.Logger.Printf("Error in  CreateLogGroup: %s, %s", err, newLogGroup)
-		return "", err
-	}
-	return "logGroup", nil
-
-}
-
-// create Task Definition in ECS
-func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, hash string) string {
+// Create/Update Task Definition in ECS
+func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, hash string) (string, error) {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
@@ -194,7 +198,8 @@ func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, has
 	creds := stscreds.NewCredentials(sess, roleARN)
 	LogGroup, err := CreateLogGroup(fmt.Sprintf("/hatchery/%s/", pm.AWSAccountId), creds)
 	if err != nil {
-		Config.Logger.Printf("Failed to create LogGroup. %s", LogGroup)
+		Config.Logger.Printf("Failed to create/get LogGroup. Error: %s", err)
+		return "", err
 	}
 	Config.Logger.Printf("LogGroup Created: %s", LogGroup)
 	svc := ecs.New(session.New(&aws.Config{
@@ -210,7 +215,7 @@ func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, has
 		LogDriver: aws.String(ecs.LogDriverAwslogs),
 		Options: map[string]*string{
 			"awslogs-region":        aws.String("us-east-1"),
-			"awslogs-group":         aws.String("LogGroup"),
+			"awslogs-group":         aws.String(LogGroup),
 			"awslogs-stream-prefix": aws.String(userName),
 		},
 	}
@@ -249,14 +254,15 @@ func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, has
 	)
 
 	if err != nil {
-		Config.Logger.Print(err, "Couldn't register ECS task definition")
+		Config.Logger.Print(err, " Couldn't register ECS task definition")
+		return "", err
 	}
 
 	td := resp.TaskDefinition
 
 	Config.Logger.Printf("Created ECS task definition [%s:%d]", aws.StringValue(td.Family), aws.Int64Value(td.Revision))
 
-	return aws.StringValue(td.TaskDefinitionArn)
+	return aws.StringValue(td.TaskDefinitionArn), nil
 }
 
 func DescribeTaskDefinition(svc *ecs.ECS, hash string) (*ecs.DescribeTaskDefinitionOutput, error) {
@@ -269,4 +275,34 @@ func DescribeTaskDefinition(svc *ecs.ECS, hash string) (*ecs.DescribeTaskDefinit
 		return nil, err
 	}
 	return taskDef, nil
+}
+
+//Create CloudWatch LogGroup for hatchery containers
+func CreateLogGroup(LogGroupName string, creds *credentials.Credentials) (string, error) {
+	c := cloudwatchlogs.New(session.New(&aws.Config{
+		Credentials: creds,
+		Region:      aws.String("us-east-1"),
+	}))
+
+	describeLogGroupIn := &cloudwatchlogs.DescribeLogGroupsInput{
+		LogGroupNamePrefix: aws.String(LogGroupName),
+	}
+
+	logGroup, err := c.DescribeLogGroups(describeLogGroupIn)
+	if err != nil {
+		Config.Logger.Printf("Error in DescribeLogGroup: %s", err)
+		return "", err
+	}
+	if len(logGroup.LogGroups) < 0 {
+		createLogGroupIn := &cloudwatchlogs.CreateLogGroupInput{
+			LogGroupName: aws.String(LogGroupName),
+		}
+		newLogGroup, err := c.CreateLogGroup(createLogGroupIn)
+		if err != nil {
+			Config.Logger.Printf("Error in  CreateLogGroup: %s, %s", err, newLogGroup)
+			return "", err
+		}
+		return newLogGroup.String(), nil
+	}
+	return *logGroup.LogGroups[0].LogGroupName, nil
 }
