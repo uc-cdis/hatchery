@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go/service/ecs"
@@ -52,20 +51,9 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 	return environment
 }
 
-// To create a new cluster
-func launchEcsCluster(userName string) (*ecs.Cluster, error) {
-	pm := Config.PayModelMap[userName]
-	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(pm.Region),
-	}))
-
-	creds := stscreds.NewCredentials(sess, roleARN)
-
-	svc := ecs.New(session.New(&aws.Config{
-		Credentials: creds,
-		Region:      aws.String("us-east-1"),
-	}))
+// Create ECS cluster
+func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
+	svc := sess.svc
 	cluster_name := strings.ReplaceAll(Config.Config.Sidecar.Env["HOSTNAME"], ".", "-") + "-cluster"
 	input := &ecs.CreateClusterInput{
 		ClusterName: aws.String(cluster_name),
@@ -84,19 +72,8 @@ func launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	return result.Cluster, nil
 }
 
-func findEcsCluster(userName string) ([]*ecs.Cluster, error) {
-	pm := Config.PayModelMap[userName]
-	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(pm.Region),
-	}))
-
-	creds := stscreds.NewCredentials(sess, roleARN)
-
-	svc := ecs.New(session.New(&aws.Config{
-		Credentials: creds,
-		Region:      aws.String("us-east-1"),
-	}))
+func (sess *CREDS) findEcsCluster(userName string) ([]*ecs.Cluster, error) {
+	svc := sess.svc
 	cluster_name := strings.ReplaceAll(Config.Config.Sidecar.Env["HOSTNAME"], ".", "-") + "-cluster"
 	cluster_input := &ecs.DescribeClustersInput{
 		Clusters: []*string{
@@ -152,6 +129,10 @@ func cpu(str string) (string, error) {
 }
 
 func launchEcsWorkspace(userName string, hash string, accessToken string) (string, error) {
+	pm := Config.PayModelMap[userName]
+	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+
+	svc := NewSession(sess, roleARN)
 	Config.Logger.Printf("%s", userName)
 	hatchApp := Config.ContainersMap[hash]
 	mem, err := mem(hatchApp.MemoryLimit)
@@ -177,37 +158,75 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 		EntryPoint:       hatchApp.Command,
 		Args:             hatchApp.Args,
 		EnvVars:          e,
+		Port:             int64(hatchApp.TargetPort),
 		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", Config.PayModelMap[userName].AWSAccountId), // TODO: Make this configurable?
 	}
-	response, err := CreateTaskDefinition(&taskDef, userName, hash)
+	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash)
 	if err != nil {
 		return "", err // TODO: Make this better? clearer?
 	}
-	return response, nil
+
+	launchTask, err := svc.launchService(taskDefResult, accessToken)
+	return launchTask, nil
+}
+
+// Launch the workspace container + LB for routing
+func (sess *CREDS) launchService(taskDefArn string, accessToken string) (string, error) {
+	// svc := ecs.New(session.New())
+	// input := &ecs.CreateServiceInput{
+	// 	DesiredCount:   aws.Int64(1),
+	// 	ServiceName:    aws.String("ecs-simple-service"),
+	// 	TaskDefinition: &taskDefArn,
+	// }
+
+	// result, err := svc.CreateService(input)
+	// if err != nil {
+	// 	if aerr, ok := err.(awserr.Error); ok {
+	// 		switch aerr.Code() {
+	// 		case ecs.ErrCodeServerException:
+	// 			fmt.Println(ecs.ErrCodeServerException, aerr.Error())
+	// 		case ecs.ErrCodeClientException:
+	// 			fmt.Println(ecs.ErrCodeClientException, aerr.Error())
+	// 		case ecs.ErrCodeInvalidParameterException:
+	// 			fmt.Println(ecs.ErrCodeInvalidParameterException, aerr.Error())
+	// 		case ecs.ErrCodeClusterNotFoundException:
+	// 			fmt.Println(ecs.ErrCodeClusterNotFoundException, aerr.Error())
+	// 		case ecs.ErrCodeUnsupportedFeatureException:
+	// 			fmt.Println(ecs.ErrCodeUnsupportedFeatureException, aerr.Error())
+	// 		case ecs.ErrCodePlatformUnknownException:
+	// 			fmt.Println(ecs.ErrCodePlatformUnknownException, aerr.Error())
+	// 		case ecs.ErrCodePlatformTaskDefinitionIncompatibilityException:
+	// 			fmt.Println(ecs.ErrCodePlatformTaskDefinitionIncompatibilityException, aerr.Error())
+	// 		case ecs.ErrCodeAccessDeniedException:
+	// 			fmt.Println(ecs.ErrCodeAccessDeniedException, aerr.Error())
+	// 		default:
+	// 			fmt.Println(aerr.Error())
+	// 		}
+	// 	} else {
+	// 		// Print the error, cast err to awserr.Error to get the Code and
+	// 		// Message from an error.
+	// 		fmt.Println(err.Error())
+	// 	}
+	// }
+
+	// fmt.Println(result)
+
+	return taskDefArn, nil
+
 }
 
 // Create/Update Task Definition in ECS
-func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, hash string) (string, error) {
-	pm := Config.PayModelMap[userName]
-	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(pm.Region),
-	}))
-	Config.Logger.Printf("Assuming role: %s", roleARN)
-
-	creds := stscreds.NewCredentials(sess, roleARN)
-	LogGroup, err := CreateLogGroup(fmt.Sprintf("/hatchery/%s/", pm.AWSAccountId), creds)
+func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, hash string) (string, error) {
+	creds := sess.creds
+	LogGroup, err := sess.CreateLogGroup(fmt.Sprintf("/hatchery/%s/", userName), creds)
 	if err != nil {
 		Config.Logger.Printf("Failed to create/get LogGroup. Error: %s", err)
 		return "", err
 	}
-	Config.Logger.Printf("LogGroup Created: %s", LogGroup)
 	svc := ecs.New(session.New(&aws.Config{
 		Credentials: creds,
 		Region:      aws.String("us-east-1"),
 	}))
-	Config.Logger.Printf("CPU INSIDE FUNCTION: %s", input.Cpu)
-	Config.Logger.Printf("Checking if ECS task definition exists")
 
 	Config.Logger.Printf("Creating ECS task definition")
 
@@ -235,6 +254,7 @@ func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, has
 			[]*ecs.PortMapping{
 				&ecs.PortMapping{
 					ContainerPort: aws.Int64(int64(input.Port)),
+					HostPort:      aws.Int64(80),
 				},
 			},
 		)
@@ -265,20 +285,20 @@ func CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, has
 	return aws.StringValue(td.TaskDefinitionArn), nil
 }
 
-func DescribeTaskDefinition(svc *ecs.ECS, hash string) (*ecs.DescribeTaskDefinitionOutput, error) {
-	describeTaskDefinitionInput := ecs.DescribeTaskDefinitionInput{
-		TaskDefinition: &hash,
-	}
-	taskDef, err := svc.DescribeTaskDefinition(&describeTaskDefinitionInput)
-	if err != nil {
-		Config.Logger.Printf("taskdefDescribe error: %s", err)
-		return nil, err
-	}
-	return taskDef, nil
-}
+// func DescribeTaskDefinition(svc *ecs.ECS, hash string) (*ecs.DescribeTaskDefinitionOutput, error) {
+// 	describeTaskDefinitionInput := ecs.DescribeTaskDefinitionInput{
+// 		TaskDefinition: &hash,
+// 	}
+// 	taskDef, err := svc.DescribeTaskDefinition(&describeTaskDefinitionInput)
+// 	if err != nil {
+// 		Config.Logger.Printf("taskdefDescribe error: %s", err)
+// 		return nil, err
+// 	}
+// 	return taskDef, nil
+// }
 
 //Create CloudWatch LogGroup for hatchery containers
-func CreateLogGroup(LogGroupName string, creds *credentials.Credentials) (string, error) {
+func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Credentials) (string, error) {
 	c := cloudwatchlogs.New(session.New(&aws.Config{
 		Credentials: creds,
 		Region:      aws.String("us-east-1"),

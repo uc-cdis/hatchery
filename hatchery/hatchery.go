@@ -6,11 +6,17 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
 
 // Config package-global shared hatchery config
 var Config *FullHatcheryConfig
+
+var sess = session.Must(session.NewSession(&aws.Config{
+	Region: aws.String("us-east-1"),
+}))
 
 // RegisterHatchery setup endpoints with the http engine
 func RegisterHatchery(mux *httptrace.ServeMux) {
@@ -164,23 +170,23 @@ func launcEcs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hash := r.URL.Query().Get("id")
-	accessToken := getBearerToken(r)
 
 	if hash == "" {
 		http.Error(w, "Missing ID argument", 400)
 		return
 	}
 
-	// accessToken := getBearerToken(r)
+	accessToken := getBearerToken(r)
 	userName := r.Header.Get("REMOTE_USER")
 	if payModelExistsForUser(userName) {
 		result, err := launchEcsWorkspace(userName, hash, accessToken)
 		if err != nil {
 			fmt.Fprintf(w, fmt.Sprintf("%s", err))
 			Config.Logger.Printf("Error: %s", err)
-		} else {
-			fmt.Fprintf(w, fmt.Sprintf("%+v", result))
 		}
+
+		fmt.Fprintf(w, fmt.Sprintf("%+v", result))
+
 	} else {
 		http.Error(w, "Paymodel has not been setup for user", 404)
 	}
@@ -190,7 +196,12 @@ func launcEcs(w http.ResponseWriter, r *http.Request) {
 func ecsCluster(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
 	if payModelExistsForUser(userName) {
-		result, err := launchEcsCluster(userName)
+		pm := Config.PayModelMap[userName]
+		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+
+		svc := NewSession(sess, roleARN)
+
+		result, err := svc.launchEcsCluster(userName)
 		if err != nil {
 			fmt.Fprintf(w, fmt.Sprintf("%s", err))
 			Config.Logger.Printf("Error: %s", err)
@@ -206,7 +217,11 @@ func ecsCluster(w http.ResponseWriter, r *http.Request) {
 func statusEcs(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
 	if payModelExistsForUser(userName) {
-		result, err := findEcsCluster(userName)
+		pm := Config.PayModelMap[userName]
+		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+
+		svc := NewSession(sess, roleARN)
+		result, err := svc.findEcsCluster(userName)
 		if err != nil {
 			fmt.Fprintf(w, fmt.Sprintf("%s", err))
 			Config.Logger.Printf("Error: %s", err)
