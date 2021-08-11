@@ -63,17 +63,17 @@ func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 	}
 
 	networkConfig := ecs.NetworkConfiguration{
-		// Whether the task's elastic network interface receives a public IP address.
-		// The default value is DISABLED.
 		AwsvpcConfiguration: &ecs.AwsVpcConfiguration{
-			// AssignPublicIp: aws.String("ENABLED"),
+			// Whether the task's elastic network interface receives a public IP address.
+			// The default value is DISABLED.
+			AssignPublicIp: aws.String("ENABLED"),
 			// The IDs of the security groups associated with the task or service. If you
 			// do not specify a security group, the default security group for the VPC is
 			// used. There is a limit of 5 security groups that can be specified per AwsVpcConfiguration.
 			//
 			// All specified security groups must be from the same VPC.
 			SecurityGroups: []*string{aws.String(*securityGroup.SecurityGroups[0].GroupId)},
-
+			//
 			// The IDs of the subnets associated with the task or service. There is a limit
 			// of 16 subnets that can be specified per AwsVpcConfiguration.
 			//

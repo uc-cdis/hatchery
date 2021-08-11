@@ -896,27 +896,3 @@ tls: %s
 	Config.Logger.Printf("Launched local service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 	return nil
 }
-
-// Escapism escapes characters not allowed into hex with -
-func escapism(input string) string {
-	safeBytes := "abcdefghijklmnopqrstuvwxyz0123456789"
-	var escaped string
-	for _, v := range input {
-		if !characterInString(v, safeBytes) {
-			hexCode := fmt.Sprintf("%2x", v)
-			escaped += "-" + hexCode
-		} else {
-			escaped += string(v)
-		}
-	}
-	return escaped
-}
-
-func characterInString(a rune, list string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
-}

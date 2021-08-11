@@ -7,9 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go/service/ecs"
 )
 
@@ -99,10 +97,54 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 	}
 }
 
+// Status of workspace running in ECS
+func (sess *CREDS) statusEcsWorkspace(userName string) (string, error) {
+	cluster, err := sess.findEcsCluster(userName)
+	if err != nil {
+		return "", err
+	}
+	service, err := sess.svc.DescribeServices(&ecs.DescribeServicesInput{
+		Cluster: cluster.ClusterName,
+		Services: []*string{
+			aws.String(userToResourceName(userName, "pod")),
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s", *service), nil
+}
+
+// Terminate workspace running in ECS
+func terminateEcsWorkspace(userName string) (string, error) {
+	pm := Config.PayModelMap[userName]
+	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("us-east-1"),
+	}))
+	svc := NewSession(sess, roleARN)
+	cluster, err := svc.findEcsCluster(userName)
+	if err != nil {
+		return "", err
+	}
+	service, err := svc.svc.DeleteService(&ecs.DeleteServiceInput{
+		Cluster: cluster.ClusterName,
+		Force:   aws.Bool(true),
+		Service: aws.String(userToResourceName(userName, "pod")),
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *service.Service.Status), nil
+}
+
 func launchEcsWorkspace(userName string, hash string, accessToken string) (string, error) {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("us-east-1"),
+	}))
 	svc := NewSession(sess, roleARN)
 	Config.Logger.Printf("%s", userName)
 	hatchApp := Config.ContainersMap[hash]
@@ -121,8 +163,12 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 			Value: v,
 		})
 	}
+	e = append(e, EnvVar{
+		Key:   "ACCESS_TOKEN",
+		Value: accessToken,
+	})
 	taskDef := CreateTaskDefinitionInput{
-		Image:            hatchApp.Image, // TODO: test all images. Tested with smaller image "jupyter/minimal-notebook:latest",
+		Image:            "jupyter/minimal-notebook:latest", //hatchApp.Image, // TODO: test all images. Tested with smaller image "jupyter/minimal-notebook:latest",
 		Cpu:              cpu,
 		Memory:           mem,
 		Name:             userToResourceName(userName, "pod"),
@@ -138,24 +184,37 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 		return "", err // TODO: Make this better? clearer?
 	}
 
-	launchTask, err := svc.launchService(taskDefResult, accessToken, userName)
+	launchTask, err := svc.launchService(taskDefResult, userName, hash)
 	return launchTask, nil
 }
 
-// Launch the workspace container + LB for routing
-func (sess *CREDS) launchService(taskDefArn string, accessToken string, userName string) (string, error) {
+// Launch ECS service for task definition + LB for routing
+func (sess *CREDS) launchService(taskDefArn string, userName string, hash string) (string, error) {
 	svc := sess.svc
+	hatchApp := Config.ContainersMap[hash]
 	cluster, err := sess.findEcsCluster(userName)
-	Config.Logger.Printf("Cluster: %v", cluster.ClusterName)
+	if err != nil {
+		return "", err
+	}
+	Config.Logger.Printf("Cluster: %s", *cluster.ClusterName)
 
 	networkConfig, _ := sess.networkConfig()
 
 	input := &ecs.CreateServiceInput{
 		DesiredCount:         aws.Int64(1),
 		Cluster:              cluster.ClusterArn,
-		ServiceName:          aws.String("ecs-simple-service"),
+		ServiceName:          aws.String(userToResourceName(userName, "pod")),
 		TaskDefinition:       &taskDefArn,
 		NetworkConfiguration: &networkConfig,
+		EnableECSManagedTags: aws.Bool(true),
+		LaunchType:           aws.String("FARGATE"),
+		LoadBalancers: []*ecs.LoadBalancer{
+			{
+				ContainerName:  aws.String(userToResourceName(userName, "pod")),
+				ContainerPort:  aws.Int64(int64(hatchApp.TargetPort)),
+				TargetGroupArn: aws.String("arn:aws:elasticloadbalancing:us-east-1:354484406138:targetgroup/ecs-brh-da-hatchery-qureshi/a263d7f192460d6a"),
+			},
+		},
 	}
 
 	result, err := svc.CreateService(input)
@@ -272,33 +331,3 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 // 	}
 // 	return taskDef, nil
 // }
-
-//Create CloudWatch LogGroup for hatchery containers
-func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Credentials) (string, error) {
-	c := cloudwatchlogs.New(session.New(&aws.Config{
-		Credentials: creds,
-		Region:      aws.String("us-east-1"),
-	}))
-
-	describeLogGroupIn := &cloudwatchlogs.DescribeLogGroupsInput{
-		LogGroupNamePrefix: aws.String(LogGroupName),
-	}
-
-	logGroup, err := c.DescribeLogGroups(describeLogGroupIn)
-	if err != nil {
-		Config.Logger.Printf("Error in DescribeLogGroup: %s", err)
-		return "", err
-	}
-	if len(logGroup.LogGroups) < 0 {
-		createLogGroupIn := &cloudwatchlogs.CreateLogGroupInput{
-			LogGroupName: aws.String(LogGroupName),
-		}
-		newLogGroup, err := c.CreateLogGroup(createLogGroupIn)
-		if err != nil {
-			Config.Logger.Printf("Error in  CreateLogGroup: %s, %s", err, newLogGroup)
-			return "", err
-		}
-		return newLogGroup.String(), nil
-	}
-	return *logGroup.LogGroups[0].LogGroupName, nil
-}

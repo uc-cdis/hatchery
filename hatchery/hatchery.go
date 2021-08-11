@@ -14,10 +14,6 @@ import (
 // Config package-global shared hatchery config
 var Config *FullHatcheryConfig
 
-var sess = session.Must(session.NewSession(&aws.Config{
-	Region: aws.String("us-east-1"),
-}))
-
 // RegisterHatchery setup endpoints with the http engine
 func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/", home)
@@ -29,6 +25,7 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	// ECS functions
 	mux.HandleFunc("/status-ecs", statusEcs)
 	mux.HandleFunc("/launch-ecs", launcEcs)
+	mux.HandleFunc("/terminate-ecs", terminateEcs)
 	mux.HandleFunc("/create-ecs-cluster", ecsCluster)
 }
 
@@ -163,6 +160,25 @@ func getBearerToken(r *http.Request) string {
 
 // ECS functions
 
+// Function to terminate workspace in ECS
+func terminateEcs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Not Found", 404)
+		return
+	}
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		svc, err := terminateEcsWorkspace(userName)
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("%s", svc))
+		}
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", 404)
+	}
+}
+
 // Function to launch workspace in ECS
 func launcEcs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -198,7 +214,9 @@ func ecsCluster(w http.ResponseWriter, r *http.Request) {
 	if payModelExistsForUser(userName) {
 		pm := Config.PayModelMap[userName]
 		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-
+		sess := session.Must(session.NewSession(&aws.Config{
+			Region: aws.String("us-east-1"),
+		}))
 		svc := NewSession(sess, roleARN)
 
 		result, err := svc.launchEcsCluster(userName)
@@ -213,18 +231,20 @@ func ecsCluster(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Function to check status of ECS cluster.
+// Function to check status of ECS workspace.
 func statusEcs(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
 	if payModelExistsForUser(userName) {
 		pm := Config.PayModelMap[userName]
 		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-
+		sess := session.Must(session.NewSession(&aws.Config{
+			Region: aws.String("us-east-1"),
+		}))
 		svc := NewSession(sess, roleARN)
-		result, err := svc.findEcsCluster(userName)
+		result, err := svc.statusEcsWorkspace(userName)
 		if err != nil {
-			fmt.Fprintf(w, fmt.Sprintf("%s", err))
 			Config.Logger.Printf("Error: %s", err)
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
 		} else {
 			fmt.Fprintf(w, fmt.Sprintf("%s", result))
 		}

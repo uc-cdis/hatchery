@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,4 +32,28 @@ func cpu(str string) (string, error) {
 	}
 	num = num * 1024
 	return strconv.Itoa(num), nil
+}
+
+// Escapism escapes characters not allowed into hex with -
+func escapism(input string) string {
+	safeBytes := "abcdefghijklmnopqrstuvwxyz0123456789"
+	var escaped string
+	for _, v := range input {
+		if !characterInString(v, safeBytes) {
+			hexCode := fmt.Sprintf("%2x", v)
+			escaped += "-" + hexCode
+		} else {
+			escaped += string(v)
+		}
+	}
+	return escaped
+}
+
+func characterInString(a rune, list string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }
