@@ -3,8 +3,6 @@ package hatchery
 import (
 	"errors"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -72,7 +70,7 @@ func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	return result.Cluster, nil
 }
 
-func (sess *CREDS) findEcsCluster(userName string) ([]*ecs.Cluster, error) {
+func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
 	cluster_name := strings.ReplaceAll(Config.Config.Sidecar.Env["HOSTNAME"], ".", "-") + "-cluster"
 	cluster_input := &ecs.DescribeClustersInput{
@@ -97,35 +95,8 @@ func (sess *CREDS) findEcsCluster(userName string) ([]*ecs.Cluster, error) {
 		Config.Logger.Printf("ECS cluster named %s not found", cluster_name)
 		return nil, errors.New(fmt.Sprintf("ECS cluster named %s not found", cluster_name))
 	} else {
-		return result.Clusters, nil
+		return result.Clusters[0], nil
 	}
-}
-
-func StrToInt(str string) (string, error) {
-	nonFractionalPart := strings.Split(str, ".")
-	return nonFractionalPart[0], nil
-}
-
-func mem(str string) (string, error) {
-	res := regexp.MustCompile(`(\d*)([M|G])ib?`)
-	matches := res.FindStringSubmatch(str)
-	num, err := strconv.Atoi(matches[1])
-	if err != nil {
-		return "", err
-	}
-	if matches[2] == "G" {
-		num = num * 1024
-	}
-	return strconv.Itoa(num), nil
-}
-
-func cpu(str string) (string, error) {
-	num, err := strconv.Atoi(str[:strings.IndexByte(str, '.')])
-	if err != nil {
-		return "", err
-	}
-	num = num * 1024
-	return strconv.Itoa(num), nil
 }
 
 func launchEcsWorkspace(userName string, hash string, accessToken string) (string, error) {
@@ -154,7 +125,8 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 		Image:            hatchApp.Image, // TODO: test all images. Tested with smaller image "jupyter/minimal-notebook:latest",
 		Cpu:              cpu,
 		Memory:           mem,
-		Name:             hash,
+		Name:             userToResourceName(userName, "pod"),
+		Type:             "testing-ws",
 		EntryPoint:       hatchApp.Command,
 		Args:             hatchApp.Args,
 		EnvVars:          e,
@@ -166,52 +138,57 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 		return "", err // TODO: Make this better? clearer?
 	}
 
-	launchTask, err := svc.launchService(taskDefResult, accessToken)
+	launchTask, err := svc.launchService(taskDefResult, accessToken, userName)
 	return launchTask, nil
 }
 
 // Launch the workspace container + LB for routing
-func (sess *CREDS) launchService(taskDefArn string, accessToken string) (string, error) {
-	// svc := ecs.New(session.New())
-	// input := &ecs.CreateServiceInput{
-	// 	DesiredCount:   aws.Int64(1),
-	// 	ServiceName:    aws.String("ecs-simple-service"),
-	// 	TaskDefinition: &taskDefArn,
-	// }
+func (sess *CREDS) launchService(taskDefArn string, accessToken string, userName string) (string, error) {
+	svc := sess.svc
+	cluster, err := sess.findEcsCluster(userName)
+	Config.Logger.Printf("Cluster: %v", cluster.ClusterName)
 
-	// result, err := svc.CreateService(input)
-	// if err != nil {
-	// 	if aerr, ok := err.(awserr.Error); ok {
-	// 		switch aerr.Code() {
-	// 		case ecs.ErrCodeServerException:
-	// 			fmt.Println(ecs.ErrCodeServerException, aerr.Error())
-	// 		case ecs.ErrCodeClientException:
-	// 			fmt.Println(ecs.ErrCodeClientException, aerr.Error())
-	// 		case ecs.ErrCodeInvalidParameterException:
-	// 			fmt.Println(ecs.ErrCodeInvalidParameterException, aerr.Error())
-	// 		case ecs.ErrCodeClusterNotFoundException:
-	// 			fmt.Println(ecs.ErrCodeClusterNotFoundException, aerr.Error())
-	// 		case ecs.ErrCodeUnsupportedFeatureException:
-	// 			fmt.Println(ecs.ErrCodeUnsupportedFeatureException, aerr.Error())
-	// 		case ecs.ErrCodePlatformUnknownException:
-	// 			fmt.Println(ecs.ErrCodePlatformUnknownException, aerr.Error())
-	// 		case ecs.ErrCodePlatformTaskDefinitionIncompatibilityException:
-	// 			fmt.Println(ecs.ErrCodePlatformTaskDefinitionIncompatibilityException, aerr.Error())
-	// 		case ecs.ErrCodeAccessDeniedException:
-	// 			fmt.Println(ecs.ErrCodeAccessDeniedException, aerr.Error())
-	// 		default:
-	// 			fmt.Println(aerr.Error())
-	// 		}
-	// 	} else {
-	// 		// Print the error, cast err to awserr.Error to get the Code and
-	// 		// Message from an error.
-	// 		fmt.Println(err.Error())
-	// 	}
-	// }
+	networkConfig, _ := sess.networkConfig()
 
-	// fmt.Println(result)
+	input := &ecs.CreateServiceInput{
+		DesiredCount:         aws.Int64(1),
+		Cluster:              cluster.ClusterArn,
+		ServiceName:          aws.String("ecs-simple-service"),
+		TaskDefinition:       &taskDefArn,
+		NetworkConfiguration: &networkConfig,
+	}
 
-	return taskDefArn, nil
+	result, err := svc.CreateService(input)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case ecs.ErrCodeServerException:
+				fmt.Println(ecs.ErrCodeServerException, aerr.Error())
+			case ecs.ErrCodeClientException:
+				fmt.Println(ecs.ErrCodeClientException, aerr.Error())
+			case ecs.ErrCodeInvalidParameterException:
+				fmt.Println(ecs.ErrCodeInvalidParameterException, aerr.Error())
+			case ecs.ErrCodeClusterNotFoundException:
+				fmt.Println(ecs.ErrCodeClusterNotFoundException, aerr.Error())
+			case ecs.ErrCodeUnsupportedFeatureException:
+				fmt.Println(ecs.ErrCodeUnsupportedFeatureException, aerr.Error())
+			case ecs.ErrCodePlatformUnknownException:
+				fmt.Println(ecs.ErrCodePlatformUnknownException, aerr.Error())
+			case ecs.ErrCodePlatformTaskDefinitionIncompatibilityException:
+				fmt.Println(ecs.ErrCodePlatformTaskDefinitionIncompatibilityException, aerr.Error())
+			case ecs.ErrCodeAccessDeniedException:
+				fmt.Println(ecs.ErrCodeAccessDeniedException, aerr.Error())
+			default:
+				fmt.Println(aerr.Error())
+			}
+		} else {
+			// Print the error, cast err to awserr.Error to get the Code and
+			// Message from an error.
+			fmt.Println(err.Error())
+		}
+	}
+
+	return *result.Service.ServiceArn, nil
 
 }
 
