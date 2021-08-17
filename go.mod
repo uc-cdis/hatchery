@@ -6,11 +6,12 @@ require (
 	github.com/DataDog/datadog-go v4.8.1+incompatible // indirect
 	github.com/DataDog/sketches-go v1.1.0 // indirect
 	github.com/Microsoft/go-winio v0.5.0 // indirect
-	github.com/aws/aws-sdk-go v1.40.13
+	github.com/aws/aws-sdk-go v1.40.15
 	github.com/go-logr/logr v1.0.0 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
+	github.com/google/pprof v0.0.0-20210804190019-f964ff605595 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/json-iterator/go v1.1.11 // indirect
