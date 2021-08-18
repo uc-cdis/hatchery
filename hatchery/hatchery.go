@@ -138,9 +138,10 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not Found", 404)
 		return
 	}
+	accessToken := getBearerToken(r)
 	userName := r.Header.Get("REMOTE_USER")
 
-	err := deleteK8sPod(r.Context(), userName)
+	err := deleteK8sPod(r.Context(), accessToken, userName)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -161,11 +162,36 @@ func getBearerToken(r *http.Request) string {
 	return ""
 }
 
-func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIKeyStruct, err error) {
-	if accessToken == "" {
-		return nil, errors.New("No valid access token")
+// Make http request with header and body
+func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint string, accessKey string, contentType string, headers map[string]string, body *bytes.Buffer) (*http.Response, error) {
+	if headers == nil {
+		headers = make(map[string]string)
 	}
+	if accessKey != "" {
+		headers["Authorization"] = "Bearer " + accessKey
+	}
+	if contentType != "" {
+		headers["Content-Type"] = contentType
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	var req *http.Request
+	var err error
+	req, err = http.NewRequest(method, apiEndpoint, body)
 
+	if err != nil {
+		return nil, errors.New("Error occurred during generating HTTP request: " + err.Error())
+	}
+	for k, v := range headers {
+		req.Header.Add(k, v)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, errors.New("Error occurred during making HTTP request: " + err.Error())
+	}
+	return resp, nil
+}
+
+func getFenceURL() string {
 	fenceURL := "http://fence-service/"
 	_, ok := os.LookupEnv("FENCE_URL")
 	if ok {
@@ -174,24 +200,20 @@ func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIK
 	if !strings.HasSuffix(fenceURL, "/") {
 		fenceURL += "/"
 	}
-	fenceAPIKeyURL := fenceURL + "credentials/api/"
-	headers := make(map[string]string)
-	headers["Authorization"] = "Bearer " + accessToken
-	headers["Content-Type"] = "application/json"
+	return fenceURL
+}
+
+func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIKeyStruct, err error) {
+	if accessToken == "" {
+		return nil, errors.New("No valid access token")
+	}
+
+	fenceAPIKeyURL := getFenceURL() + "credentials/api/"
 	body := bytes.NewBufferString("{\"scope\": \"[\"data\", \"user\"]\"}")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "POST", fenceAPIKeyURL, body)
+	resp, err := MakeARequestWithContext(ctx, "POST", fenceAPIKeyURL, accessToken, "application/json", nil, body)
 	if err != nil {
-		return nil, errors.New("Error occurred during generating HTTP request: " + err.Error())
-	}
-	for k, v := range headers {
-		req.Header.Add(k, v)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, errors.New("Error occurred during making HTTP request: " + err.Error())
+		return nil, err
 	}
 
 	if resp != nil && resp.StatusCode != 200 {
@@ -204,4 +226,20 @@ func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIK
 		return nil, errors.New("Unable to decode API key response: " + err.Error())
 	}
 	return apiKey, nil
+}
+
+func deleteAPIKeyWithContext(ctx context.Context, accessToken string, apiKeyID string) error {
+	if accessToken == "" {
+		return errors.New("No valid access token")
+	}
+
+	fenceDeleteAPIKeyURL := getFenceURL() + "credentials/api/" + apiKeyID
+	resp, err := MakeARequestWithContext(ctx, "DELETE", fenceDeleteAPIKeyURL, accessToken, "application/json", nil, nil)
+	if err != nil {
+		return err
+	}
+	if resp != nil && resp.StatusCode != 204 {
+		return errors.New("Error occurred when deleting API key with error code " + strconv.Itoa(resp.StatusCode))
+	}
+	return nil
 }

@@ -235,7 +235,7 @@ func statusK8sPod(ctx context.Context, userName string) (*WorkspaceStatus, error
 	return status, nil
 }
 
-func deleteK8sPod(ctx context.Context, userName string) error {
+func deleteK8sPod(ctx context.Context, accessToken string, userName string) error {
 	podClient, _, err := getPodClient(ctx, userName)
 	if err != nil {
 		return err
@@ -248,17 +248,36 @@ func deleteK8sPod(ctx context.Context, userName string) error {
 		GracePeriodSeconds: &grace,
 	}
 
-	safeUserName := escapism(userName)
-
-	podName := fmt.Sprintf("hatchery-%s", safeUserName)
-	_, err = podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
+	podName := userToResourceName(userName, "pod")
+	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace pod was not found: %s", err)
 	}
+	containers := pod.Spec.Containers
+	var mountedAPIKeyID string
+	for i := range containers {
+		if containers[i].Name == "hatchery-container" {
+			for j := range containers[i].Env {
+				if containers[i].Env[j].Name == "API_KEY_ID" {
+					mountedAPIKeyID = containers[i].Env[j].Value
+					break
+				}
+			}
+			break
+		}
+	}
+	if mountedAPIKeyID != "" {
+		fmt.Printf("Found mounted API key. Attempting to delete API Key for user %s\n", userName)
+		err := deleteAPIKeyWithContext(ctx, accessToken, mountedAPIKeyID)
+		if err != nil {
+			fmt.Printf("Error occurred when deleting API Key for user %s\n", userName)
+		}
+	}
+
 	fmt.Printf("Attempting to delete pod %s for user %s\n", podName, userName)
 	podClient.Pods(Config.Config.UserNamespace).Delete(ctx, podName, deleteOptions)
 
-	serviceName := fmt.Sprintf("h-%s-s", safeUserName)
+	serviceName := userToResourceName(userName, "service")
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace service was not found: %s", err)
