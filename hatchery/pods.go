@@ -325,6 +325,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	}
 	for _, value := range extraVars {
 		sidecarEnvVars = append(sidecarEnvVars, value)
+		envVars = append(envVars, value)
 	}
 
 	//hatchConfig.Logger.Printf("sidecar configured")
@@ -698,6 +699,16 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 	hatchApp := Config.ContainersMap[hash]
 
 	podClient, err := NewEKSClientset(ctx, userName)
+	if err != nil {
+		Config.Logger.Printf("Failed to create pod client for user %v, Error: %v", userName, err)
+		return err
+	}
+
+	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
+	if err != nil {
+		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
+		return err
+	}
 
 	// Check if NS exists in external cluster, if not create it.
 	ns, err := podClient.Namespaces().Get(ctx, Config.Config.UserNamespace, metav1.GetOptions{})
@@ -708,8 +719,9 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 			},
 		}
 		Config.Logger.Printf("Namespace created: %v", ns)
-		podClient.Namespaces().Create(context.Background(), nsName, metav1.CreateOptions{})
+		podClient.Namespaces().Create(ctx, nsName, metav1.CreateOptions{})
 	}
+
 	var extraVars []k8sv1.EnvVar
 
 	extraVars = append(extraVars, k8sv1.EnvVar{
@@ -717,9 +729,17 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 		Value: "https://" + Config.Config.Sidecar.Env["HOSTNAME"] + "/wts",
 	})
 	extraVars = append(extraVars, k8sv1.EnvVar{
-		Name:  "ACCESS_TOKEN",
-		Value: accessToken,
+		Name:  "API_KEY",
+		Value: apiKey.APIKey,
 	})
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "API_KEY_ID",
+		Value: apiKey.KeyID,
+	})
+	// extraVars = append(extraVars, k8sv1.EnvVar{
+	// 	Name:  "ACCESS_TOKEN",
+	// 	Value: accessToken,
+	// })
 
 	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
 	if err != nil {

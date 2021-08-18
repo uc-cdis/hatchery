@@ -1,13 +1,24 @@
 package hatchery
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
+
+type APIKeyStruct struct {
+	APIKey string `json:"api_key"`
+	KeyID  string `json:"key_id"`
+}
 
 // Config package-global shared hatchery config
 var Config *FullHatcheryConfig
@@ -148,4 +159,49 @@ func getBearerToken(r *http.Request) string {
 		return s[1]
 	}
 	return ""
+}
+
+func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIKeyStruct, err error) {
+	if accessToken == "" {
+		return nil, errors.New("No valid access token")
+	}
+
+	fenceURL := "http://fence-service/"
+	_, ok := os.LookupEnv("FENCE_URL")
+	if ok {
+		fenceURL = os.Getenv("FENCE_URL")
+	}
+	if !strings.HasSuffix(fenceURL, "/") {
+		fenceURL += "/"
+	}
+	fenceAPIKeyURL := fenceURL + "credentials/api/"
+	headers := make(map[string]string)
+	headers["Authorization"] = "Bearer " + accessToken
+	headers["Content-Type"] = "application/json"
+	body := bytes.NewBufferString("{\"scope\": \"[\"data\", \"user\"]\"}")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "POST", fenceAPIKeyURL, body)
+	if err != nil {
+		return nil, errors.New("Error occurred during generating HTTP request: " + err.Error())
+	}
+	for k, v := range headers {
+		req.Header.Add(k, v)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, errors.New("Error occurred during making HTTP request: " + err.Error())
+	}
+
+	if resp != nil && resp.StatusCode != 200 {
+		return nil, errors.New("Error occurred when creating API key with error code " + strconv.Itoa(resp.StatusCode))
+	}
+	defer resp.Body.Close()
+
+	err = json.NewDecoder(resp.Body).Decode(apiKey)
+	if err != nil {
+		return nil, errors.New("Unable to decode API key response: " + err.Error())
+	}
+	return apiKey, nil
 }
