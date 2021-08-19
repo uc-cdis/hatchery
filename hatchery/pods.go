@@ -783,10 +783,11 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 		Name:  "API_KEY_ID",
 		Value: apiKey.KeyID,
 	})
-	// extraVars = append(extraVars, k8sv1.EnvVar{
-	// 	Name:  "ACCESS_TOKEN",
-	// 	Value: accessToken,
-	// })
+	// TODO: still mounting access token for now, remove this when fully switched to use API key
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "ACCESS_TOKEN",
+		Value: accessToken,
+	})
 
 	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
 	if err != nil {
