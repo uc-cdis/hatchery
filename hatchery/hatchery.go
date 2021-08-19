@@ -176,7 +176,7 @@ func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint str
 	client := &http.Client{Timeout: 10 * time.Second}
 	var req *http.Request
 	var err error
-	req, err = http.NewRequest(method, apiEndpoint, body)
+	req, err = http.NewRequestWithContext(ctx, method, apiEndpoint, body)
 
 	if err != nil {
 		return nil, errors.New("Error occurred during generating HTTP request: " + err.Error())
@@ -209,7 +209,7 @@ func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIK
 	}
 
 	fenceAPIKeyURL := getFenceURL() + "credentials/api/"
-	body := bytes.NewBufferString("{\"scope\": \"[\"data\", \"user\"]\"}")
+	body := bytes.NewBufferString("{\"scope\": [\"data\", \"user\"]}")
 
 	resp, err := MakeARequestWithContext(ctx, "POST", fenceAPIKeyURL, accessToken, "application/json", nil, body)
 	if err != nil {
