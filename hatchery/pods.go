@@ -349,7 +349,9 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		sidecarEnvVars = append(sidecarEnvVars, value)
 		envVars = append(envVars, value)
 	}
+	// scan if sidecarEnvVars has HOSTNAME, and add it if not
 	sidecarEnvVarsCopy := sidecarEnvVars[:0]
+	// this is the best we can do with golang
 	for i, value := range sidecarEnvVarsCopy {
 		if value.Name == "HOSTNAME" {
 			break
@@ -361,6 +363,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			})
 		}
 	}
+	// do the same thing for envVars
 	envVarsCopy := envVars[:0]
 	for i, value := range envVarsCopy {
 		if value.Name == "HOSTNAME" {
