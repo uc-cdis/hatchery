@@ -636,7 +636,22 @@ func createK8sPod(ctx context.Context, hash string, accessToken string, userName
 func createLocalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
 	hatchApp := Config.ContainersMap[hash]
 
+	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
+	if err != nil {
+		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
+		return err
+	}
+	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
+
 	var extraVars []k8sv1.EnvVar
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "API_KEY",
+		Value: apiKey.APIKey,
+	})
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "API_KEY_ID",
+		Value: apiKey.KeyID,
+	})
 	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
