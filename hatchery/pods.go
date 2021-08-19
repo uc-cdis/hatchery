@@ -268,10 +268,10 @@ func deleteK8sPod(ctx context.Context, accessToken string, userName string) erro
 		}
 	}
 	if mountedAPIKeyID != "" {
-		fmt.Printf("Found mounted API key. Attempting to delete API Key for user %s\n", userName)
+		fmt.Printf("Found mounted API key. Attempting to delete API Key with ID %s for user %s\n", mountedAPIKeyID, userName)
 		err := deleteAPIKeyWithContext(ctx, accessToken, mountedAPIKeyID)
 		if err != nil {
-			fmt.Printf("Error occurred when deleting API Key for user %s\n", userName)
+			fmt.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", mountedAPIKeyID, userName, err.Error())
 		}
 	}
 
@@ -753,6 +753,7 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
 		return err
 	}
+	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
 
 	// Check if NS exists in external cluster, if not create it.
 	ns, err := podClient.Namespaces().Get(ctx, Config.Config.UserNamespace, metav1.GetOptions{})
