@@ -193,9 +193,9 @@ func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint str
 
 func getFenceURL() string {
 	fenceURL := "http://fence-service/"
-	_, ok := os.LookupEnv("FENCE_URL")
+	_, ok := os.LookupEnv("HOSTNAME")
 	if ok {
-		fenceURL = os.Getenv("FENCE_URL")
+		fenceURL = "https://" + os.Getenv("HOSTNAME") + "/user"
 	}
 	if !strings.HasSuffix(fenceURL, "/") {
 		fenceURL += "/"
@@ -221,11 +221,12 @@ func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIK
 	}
 	defer resp.Body.Close()
 
-	err = json.NewDecoder(resp.Body).Decode(apiKey)
+	fenceApiKeyResponse := new(APIKeyStruct)
+	err = json.NewDecoder(resp.Body).Decode(fenceApiKeyResponse)
 	if err != nil {
 		return nil, errors.New("Unable to decode API key response: " + err.Error())
 	}
-	return apiKey, nil
+	return fenceApiKeyResponse, nil
 }
 
 func deleteAPIKeyWithContext(ctx context.Context, accessToken string, apiKeyID string) error {
