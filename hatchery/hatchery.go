@@ -176,7 +176,11 @@ func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint str
 	client := &http.Client{Timeout: 10 * time.Second}
 	var req *http.Request
 	var err error
-	req, err = http.NewRequestWithContext(ctx, method, apiEndpoint, body)
+	if body == nil {
+		req, err = http.NewRequestWithContext(ctx, method, apiEndpoint, nil)
+	} else {
+		req, err = http.NewRequestWithContext(ctx, method, apiEndpoint, body)
+	}
 
 	if err != nil {
 		return nil, errors.New("Error occurred during generating HTTP request: " + err.Error())
