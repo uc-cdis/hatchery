@@ -272,6 +272,8 @@ func deleteK8sPod(ctx context.Context, accessToken string, userName string) erro
 		err := deleteAPIKeyWithContext(ctx, accessToken, mountedAPIKeyID)
 		if err != nil {
 			fmt.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", mountedAPIKeyID, userName, err.Error())
+		} else {
+			fmt.Printf("API Key with ID %s for user %s has been deleted\n", mountedAPIKeyID, userName)
 		}
 	}
 
