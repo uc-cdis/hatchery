@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -235,7 +236,7 @@ func statusK8sPod(ctx context.Context, userName string) (*WorkspaceStatus, error
 	return status, nil
 }
 
-func deleteK8sPod(ctx context.Context, userName string) error {
+func deleteK8sPod(ctx context.Context, accessToken string, userName string) error {
 	podClient, _, err := getPodClient(ctx, userName)
 	if err != nil {
 		return err
@@ -248,17 +249,38 @@ func deleteK8sPod(ctx context.Context, userName string) error {
 		GracePeriodSeconds: &grace,
 	}
 
-	safeUserName := escapism(userName)
-
-	podName := fmt.Sprintf("hatchery-%s", safeUserName)
-	_, err = podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
+	podName := userToResourceName(userName, "pod")
+	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace pod was not found: %s", err)
 	}
+	containers := pod.Spec.Containers
+	var mountedAPIKeyID string
+	for i := range containers {
+		if containers[i].Name == "hatchery-container" {
+			for j := range containers[i].Env {
+				if containers[i].Env[j].Name == "API_KEY_ID" {
+					mountedAPIKeyID = containers[i].Env[j].Value
+					break
+				}
+			}
+			break
+		}
+	}
+	if mountedAPIKeyID != "" {
+		fmt.Printf("Found mounted API key. Attempting to delete API Key with ID %s for user %s\n", mountedAPIKeyID, userName)
+		err := deleteAPIKeyWithContext(ctx, accessToken, mountedAPIKeyID)
+		if err != nil {
+			fmt.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", mountedAPIKeyID, userName, err.Error())
+		} else {
+			fmt.Printf("API Key with ID %s for user %s has been deleted\n", mountedAPIKeyID, userName)
+		}
+	}
+
 	fmt.Printf("Attempting to delete pod %s for user %s\n", podName, userName)
 	podClient.Pods(Config.Config.UserNamespace).Delete(ctx, podName, deleteOptions)
 
-	serviceName := fmt.Sprintf("h-%s-s", safeUserName)
+	serviceName := userToResourceName(userName, "service")
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace service was not found: %s", err)
@@ -325,6 +347,34 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	}
 	for _, value := range extraVars {
 		sidecarEnvVars = append(sidecarEnvVars, value)
+		envVars = append(envVars, value)
+	}
+	// scan if sidecarEnvVars has HOSTNAME, and add it if not
+	sidecarEnvVarsCopy := sidecarEnvVars[:0]
+	// this is the best we can do with golang
+	for i, value := range sidecarEnvVarsCopy {
+		if value.Name == "HOSTNAME" {
+			break
+		}
+		if i == len(sidecarEnvVarsCopy)-1 {
+			sidecarEnvVars = append(sidecarEnvVars, k8sv1.EnvVar{
+				Name:  "HOSTNAME",
+				Value: os.Getenv("HOSTNAME"),
+			})
+		}
+	}
+	// do the same thing for envVars
+	envVarsCopy := envVars[:0]
+	for i, value := range envVarsCopy {
+		if value.Name == "HOSTNAME" {
+			break
+		}
+		if i == len(envVarsCopy)-1 {
+			envVars = append(envVars, k8sv1.EnvVar{
+				Name:  "HOSTNAME",
+				Value: os.Getenv("HOSTNAME"),
+			})
+		}
 	}
 
 	//hatchConfig.Logger.Printf("sidecar configured")
@@ -698,6 +748,17 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 	hatchApp := Config.ContainersMap[hash]
 
 	podClient, err := NewEKSClientset(ctx, userName)
+	if err != nil {
+		Config.Logger.Printf("Failed to create pod client for user %v, Error: %v", userName, err)
+		return err
+	}
+
+	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
+	if err != nil {
+		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
+		return err
+	}
+	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
 
 	// Check if NS exists in external cluster, if not create it.
 	ns, err := podClient.Namespaces().Get(ctx, Config.Config.UserNamespace, metav1.GetOptions{})
@@ -708,14 +769,24 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 			},
 		}
 		Config.Logger.Printf("Namespace created: %v", ns)
-		podClient.Namespaces().Create(context.Background(), nsName, metav1.CreateOptions{})
+		podClient.Namespaces().Create(ctx, nsName, metav1.CreateOptions{})
 	}
+
 	var extraVars []k8sv1.EnvVar
 
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "WTS_OVERRIDE_URL",
-		Value: "https://" + Config.Config.Sidecar.Env["HOSTNAME"] + "/wts",
+		Value: "https://" + os.Getenv("HOSTNAME") + "/wts",
 	})
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "API_KEY",
+		Value: apiKey.APIKey,
+	})
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "API_KEY_ID",
+		Value: apiKey.KeyID,
+	})
+	// TODO: still mounting access token for now, remove this when fully switched to use API key
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "ACCESS_TOKEN",
 		Value: accessToken,
