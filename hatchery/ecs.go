@@ -168,7 +168,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 		Value: accessToken,
 	})
 	taskDef := CreateTaskDefinitionInput{
-		Image:            "jupyter/minimal-notebook:latest", //hatchApp.Image, // TODO: test all images. Tested with smaller image "jupyter/minimal-notebook:latest",
+		Image:            hatchApp.Image, // TODO: test all images. Tested with smaller image "jupyter/minimal-notebook:latest",
 		Cpu:              cpu,
 		Memory:           mem,
 		Name:             userToResourceName(userName, "pod"),
@@ -185,6 +185,10 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 	}
 
 	launchTask, err := svc.launchService(taskDefResult, userName, hash)
+	if err != nil {
+		return "", err // TODO: Make this better? clearer?
+	}
+
 	return launchTask, nil
 }
 
@@ -200,6 +204,11 @@ func (sess *CREDS) launchService(taskDefArn string, userName string, hash string
 
 	networkConfig, _ := sess.networkConfig()
 
+	loadBalancer, targetGroupArn, _, err := sess.CreateLoadBalancer(userName)
+	if err != nil {
+		return "", err // TODO: Make this better? clearer?
+	}
+
 	input := &ecs.CreateServiceInput{
 		DesiredCount:         aws.Int64(1),
 		Cluster:              cluster.ClusterArn,
@@ -212,7 +221,7 @@ func (sess *CREDS) launchService(taskDefArn string, userName string, hash string
 			{
 				ContainerName:  aws.String(userToResourceName(userName, "pod")),
 				ContainerPort:  aws.Int64(int64(hatchApp.TargetPort)),
-				TargetGroupArn: aws.String("arn:aws:elasticloadbalancing:us-east-1:354484406138:targetgroup/ecs-brh-da-hatchery-qureshi/a263d7f192460d6a"),
+				TargetGroupArn: targetGroupArn,
 			},
 		},
 	}
@@ -246,9 +255,9 @@ func (sess *CREDS) launchService(taskDefArn string, userName string, hash string
 			fmt.Println(err.Error())
 		}
 	}
+	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
 
-	return *result.Service.ServiceArn, nil
-
+	return *loadBalancer.LoadBalancers[0].DNSName, nil
 }
 
 // Create/Update Task Definition in ECS

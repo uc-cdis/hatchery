@@ -7,12 +7,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/ecs"
 )
 
-func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
+func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput, defaultSubnets *ec2.DescribeSubnetsOutput, securityGroups *ec2.DescribeSecurityGroupsOutput, err error) {
 	svc := ec2.New(session.New(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
 	}))
-
 	vpcInput := &ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{
 			&ec2.Filter{
@@ -24,15 +23,11 @@ func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 
 	vpcs, err := svc.DescribeVpcs(vpcInput)
 	if err != nil {
-		return ecs.NetworkConfiguration{}, err
+		return &ec2.DescribeVpcsOutput{}, &ec2.DescribeSubnetsOutput{}, &ec2.DescribeSecurityGroupsOutput{}, err
 	}
 
 	subnetInput := &ec2.DescribeSubnetsInput{
 		Filters: []*ec2.Filter{
-			&ec2.Filter{
-				Name:   aws.String("availability-zone"),
-				Values: []*string{aws.String("us-east-1d")},
-			},
 			&ec2.Filter{
 				Name:   aws.String("vpc-id"),
 				Values: []*string{aws.String(*vpcs.Vpcs[0].VpcId)},
@@ -42,7 +37,7 @@ func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 
 	subnets, err := svc.DescribeSubnets(subnetInput)
 	if err != nil {
-		return ecs.NetworkConfiguration{}, err
+		return &ec2.DescribeVpcsOutput{}, &ec2.DescribeSubnetsOutput{}, &ec2.DescribeSecurityGroupsOutput{}, err
 	}
 
 	securityGroupInput := ec2.DescribeSecurityGroupsInput{
@@ -58,6 +53,17 @@ func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 		},
 	}
 	securityGroup, err := svc.DescribeSecurityGroups(&securityGroupInput)
+	// TODO: Create security group if it doesn't exist here
+	if err != nil {
+		return &ec2.DescribeVpcsOutput{}, &ec2.DescribeSubnetsOutput{}, &ec2.DescribeSecurityGroupsOutput{}, err
+	}
+
+	return vpcs, subnets, securityGroup, nil
+}
+
+func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
+
+	_, subnets, securityGroup, err := creds.describeDefaultNetwork()
 	if err != nil {
 		return ecs.NetworkConfiguration{}, err
 	}
