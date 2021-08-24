@@ -246,7 +246,6 @@ func ecsCluster(w http.ResponseWriter, r *http.Request) {
 // Function to check status of ECS workspace.
 func statusEcs(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
-	Config.Logger.Printf("I can't believe this worked. %s", userName)
 	if payModelExistsForUser(userName) {
 		pm := Config.PayModelMap[userName]
 		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
