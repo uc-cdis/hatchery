@@ -22,10 +22,8 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/status", status)
 	mux.HandleFunc("/options", options)
 	mux.HandleFunc("/paymodels", paymodels)
+
 	// ECS functions
-	mux.HandleFunc("/status-ecs", statusEcs)
-	mux.HandleFunc("/launch-ecs", launcEcs)
-	mux.HandleFunc("/terminate-ecs", terminateEcs)
 	mux.HandleFunc("/create-ecs-cluster", ecsCluster)
 }
 
@@ -62,20 +60,24 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 func status(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
 
-	result, err := statusK8sPod(userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
+	pm := Config.PayModelMap[userName]
+	if pm.Ecs == "true" {
+		statusEcs(w, r)
+	} else {
+		result, err := statusK8sPod(userName)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		out, err := json.Marshal(result)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		fmt.Fprintf(w, string(out))
 	}
-
-	out, err := json.Marshal(result)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	fmt.Fprintf(w, string(out))
-
 }
 
 func options(w http.ResponseWriter, r *http.Request) {
@@ -121,13 +123,17 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := r.Header.Get("REMOTE_USER")
-	err := createK8sPod(string(hash), accessToken, userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
+	pm := Config.PayModelMap[userName]
+	if pm.Ecs == "true" {
+		launcEcs(w, r)
+	} else {
+		err := createK8sPod(string(hash), accessToken, userName)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		fmt.Fprintf(w, "Success")
 	}
-
-	fmt.Fprintf(w, "Success")
 }
 
 func terminate(w http.ResponseWriter, r *http.Request) {
@@ -136,14 +142,18 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userName := r.Header.Get("REMOTE_USER")
+	pm := Config.PayModelMap[userName]
+	if pm.Ecs == "true" {
+		terminateEcs(w, r)
+	} else {
+		err := deleteK8sPod(userName)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
 
-	err := deleteK8sPod(userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
+		fmt.Fprintf(w, "Terminated workspace")
 	}
-
-	fmt.Fprintf(w, "Terminated workspace")
 }
 
 func getBearerToken(r *http.Request) string {
@@ -180,6 +190,7 @@ func terminateEcs(w http.ResponseWriter, r *http.Request) {
 }
 
 // Function to launch workspace in ECS
+// TODO: Evaluate this functionality
 func launcEcs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Not Found", 404)
@@ -209,6 +220,7 @@ func launcEcs(w http.ResponseWriter, r *http.Request) {
 }
 
 // Function to create ECS cluster.
+// TODO: Evaluate the need for this!! Delete?
 func ecsCluster(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
 	if payModelExistsForUser(userName) {
@@ -234,6 +246,7 @@ func ecsCluster(w http.ResponseWriter, r *http.Request) {
 // Function to check status of ECS workspace.
 func statusEcs(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
+	Config.Logger.Printf("I can't believe this worked. %s", userName)
 	if payModelExistsForUser(userName) {
 		pm := Config.PayModelMap[userName]
 		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
