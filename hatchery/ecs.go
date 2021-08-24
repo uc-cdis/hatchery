@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -112,15 +113,15 @@ func (sess *CREDS) statusEcsWorkspace(userName string) (*WorkspaceStatus, error)
 			aws.String(userToResourceName(userName, "pod")),
 		},
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	statusMessage := "INACTIVE"
 	if len(service.Services) > 0 {
 		statusMessage = *service.Services[0].Status
 	}
 
-	if err != nil {
-		return nil, err
-	}
 	statusMap := map[string]string{
 		"ACTIVE":   "Running",
 		"DRAINING": "Terminating",
@@ -134,7 +135,7 @@ func (sess *CREDS) statusEcsWorkspace(userName string) (*WorkspaceStatus, error)
 
 // Terminate workspace running in ECS
 // TODO: Make this terminate ALB as well.
-func terminateEcsWorkspace(userName string) (string, error) {
+func terminateEcsWorkspace(ctx context.Context, userName string, accessToken string) (string, error) {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
@@ -145,7 +146,56 @@ func terminateEcsWorkspace(userName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	service, err := svc.svc.DeleteService(&ecs.DeleteServiceInput{
+	desServiceOutput, err := svc.svc.DescribeServices(&ecs.DescribeServicesInput{
+		Cluster: cluster.ClusterName,
+		Services: []*string{
+			aws.String(userToResourceName(userName, "pod")),
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	var taskDefName string
+	if len(desServiceOutput.Services) > 0 {
+		taskDefName = *desServiceOutput.Services[0].TaskDefinition
+	} else {
+		return "", errors.New("No service found for " + userName)
+	}
+	if taskDefName == "" {
+		Config.Logger.Printf("No task definition found for user %s, skipping API key deletion", userName)
+	} else {
+		desTaskDefOutput, err := svc.svc.DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
+			TaskDefinition: &taskDefName,
+		})
+		if err != nil {
+			return "", err
+		}
+		containerDefs := desTaskDefOutput.TaskDefinition.ContainerDefinitions
+		if len(containerDefs) > 0 {
+			envVars := containerDefs[0].Environment
+			if len(envVars) > 0 {
+				for i, ev := range envVars {
+					if *ev.Name == "API_KEY_ID" {
+						Config.Logger.Printf("Found mounted API key. Attempting to delete API Key with ID %s for user %s\n", *ev.Value, userName)
+						err := deleteAPIKeyWithContext(ctx, accessToken, *ev.Value)
+						if err != nil {
+							Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", *ev.Value, userName, err.Error())
+						}
+						break
+					}
+					if i == len(envVars)-1 {
+						Config.Logger.Printf("Unable to fund API Key ID in env vars for user %s\n", userName)
+					}
+				}
+			} else {
+				Config.Logger.Printf("No env vars found for task definition %s, skipping API key deletion\n", taskDefName)
+			}
+		} else {
+			Config.Logger.Printf("No container definition found for task definition %s, skipping API key deletion\n", taskDefName)
+		}
+	}
+
+	delServiceOutput, err := svc.svc.DeleteService(&ecs.DeleteServiceInput{
 		Cluster: cluster.ClusterName,
 		Force:   aws.Bool(true),
 		Service: aws.String(userToResourceName(userName, "pod")),
@@ -154,7 +204,7 @@ func terminateEcsWorkspace(userName string) (string, error) {
 		return "", err
 	}
 	// TODO: Terminate ALB + target group here too
-	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *service.Service.Status), nil
+	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
 func launchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string) (string, error) {
@@ -167,6 +217,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	}))
 	svc := NewSession(sess, roleARN)
 	Config.Logger.Printf("%s", userName)
+
 	hatchApp := Config.ContainersMap[hash]
 	mem, err := mem(hatchApp.MemoryLimit)
 	if err != nil {
@@ -176,17 +227,47 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	if err != nil {
 		return "", err
 	}
-	e := []EnvVar{}
+
+	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
+	if err != nil {
+		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
+		return "", err
+	}
+	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
+
+	envVars := []EnvVar{}
 	for k, v := range Config.Config.Sidecar.Env {
-		e = append(e, EnvVar{
+		envVars = append(envVars, EnvVar{
 			Key:   k,
 			Value: v,
 		})
 	}
-	e = append(e, EnvVar{
+	envVars = append(envVars, EnvVar{
+		Key:   "API_KEY",
+		Value: apiKey.APIKey,
+	})
+	envVars = append(envVars, EnvVar{
+		Key:   "API_KEY_ID",
+		Value: apiKey.KeyID,
+	})
+	// TODO: still mounting access token for now, remove this when fully switched to use API key
+	envVars = append(envVars, EnvVar{
 		Key:   "ACCESS_TOKEN",
 		Value: accessToken,
 	})
+	// append 'HOSTNAME' env var if missing
+	envVarsCopy := envVars[:0]
+	for i, value := range envVarsCopy {
+		if value.Key == "HOSTNAME" {
+			break
+		}
+		if i == len(envVarsCopy)-1 {
+			envVars = append(envVars, EnvVar{
+				Key:   "HOSTNAME",
+				Value: os.Getenv("HOSTNAME"),
+			})
+		}
+	}
 	taskDef := CreateTaskDefinitionInput{
 		Image:            hatchApp.Image,
 		Cpu:              cpu,
@@ -195,7 +276,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		Type:             "testing-ws",
 		EntryPoint:       hatchApp.Command,
 		Args:             hatchApp.Args,
-		EnvVars:          e,
+		EnvVars:          envVars,
 		Port:             int64(hatchApp.TargetPort),
 		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", Config.PayModelMap[userName].AWSAccountId), // TODO: Make this configurable?
 	}

@@ -135,7 +135,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
 	pm := Config.PayModelMap[userName]
 	if pm.Ecs == "true" {
-		launcEcs(w, r)
+		launchEcs(w, r)
 	} else {
 		err := createK8sPod(r.Context(), string(hash), accessToken, userName)
 		if err != nil {
@@ -186,9 +186,10 @@ func terminateEcs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not Found", 404)
 		return
 	}
+	accessToken := getBearerToken(r)
 	userName := r.Header.Get("REMOTE_USER")
 	if payModelExistsForUser(userName) {
-		svc, err := terminateEcsWorkspace(userName)
+		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken)
 		if err != nil {
 			fmt.Fprintf(w, fmt.Sprintf("%s", err))
 		} else {
@@ -201,7 +202,7 @@ func terminateEcs(w http.ResponseWriter, r *http.Request) {
 
 // Function to launch workspace in ECS
 // TODO: Evaluate this functionality
-func launcEcs(w http.ResponseWriter, r *http.Request) {
+func launchEcs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Not Found", 404)
 		return
@@ -284,12 +285,12 @@ func statusEcs(w http.ResponseWriter, r *http.Request) {
 
 // API key related helper functions
 // Make http request with header and body
-func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint string, accessKey string, contentType string, headers map[string]string, body *bytes.Buffer) (*http.Response, error) {
+func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint string, accessToken string, contentType string, headers map[string]string, body *bytes.Buffer) (*http.Response, error) {
 	if headers == nil {
 		headers = make(map[string]string)
 	}
-	if accessKey != "" {
-		headers["Authorization"] = "Bearer " + accessKey
+	if accessToken != "" {
+		headers["Authorization"] = "Bearer " + accessToken
 	}
 	if contentType != "" {
 		headers["Content-Type"] = contentType
