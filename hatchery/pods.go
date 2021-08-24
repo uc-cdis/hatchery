@@ -814,14 +814,17 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 
 	Config.Logger.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
-	createLocalService(userName, hash)
+	nodes, _ := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
+	NodeIP := nodes.Items[0].Status.Addresses[0].Address
+	NodePort := service.Spec.Ports[0].NodePort
+	createLocalService(userName, hash, NodeIP, NodePort)
 
 	return nil
 }
 
 // Creates a local service that portal can reach
 // and route traffic to pod in external cluster.
-func createLocalService(userName string, hash string) error {
+func createLocalService(userName string, hash string, serviceURL string, servicePort int32) error {
 	const localAmbassadorYaml = `---
 apiVersion: ambassador/v1
 kind:  Mapping
@@ -838,20 +841,16 @@ tls: %s
 `
 	hatchApp := Config.ContainersMap[hash]
 	localPodClient := getLocalPodClient()
-	externalPodClient, err := NewEKSClientset(userName)
+
 	serviceName := userToResourceName(userName, "service")
 	podName := userToResourceName(userName, "pod")
-	service, err := externalPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 
-	nodes, _ := externalPodClient.Nodes().List(context.TODO(), metav1.ListOptions{})
-	NodeIP := nodes.Items[0].Status.Addresses[0].Address
-	NodePort := service.Spec.Ports[0].NodePort
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
 	annotationsService := make(map[string]string)
-	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, NodeIP, NodePort, hatchApp.PathRewrite, hatchApp.UseTLS)
+	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, serviceURL, servicePort, hatchApp.PathRewrite, hatchApp.UseTLS)
 
-	_, err = localPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	_, err := localPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err == nil {
 		// This probably happened as the result of some error... there was no pod but was a service
 		// Lets just clean it up and proceed

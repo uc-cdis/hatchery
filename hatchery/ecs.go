@@ -273,7 +273,10 @@ func (sess *CREDS) launchService(taskDefArn string, userName string, hash string
 		return "", err
 	}
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
-
+	err = createLocalService(userName, hash, *result.Service.ClusterArn, int32(80))
+	if err != nil {
+		return "", err
+	}
 	return *loadBalancer.LoadBalancers[0].DNSName, nil
 }
 
