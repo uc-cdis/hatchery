@@ -111,6 +111,12 @@ func (sess *CREDS) statusEcsWorkspace(userName string) (*WorkspaceStatus, error)
 			aws.String(userToResourceName(userName, "pod")),
 		},
 	})
+
+	statusMessage := "INACTIVE"
+	if len(service.Services) > 0 {
+		statusMessage = *service.Services[0].Status
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +127,7 @@ func (sess *CREDS) statusEcsWorkspace(userName string) (*WorkspaceStatus, error)
 		"INACTIVE": "Not Found",
 	}
 
-	status.Status = statusMap[*service.Services[0].Status]
+	status.Status = statusMap[statusMessage]
 	return &status, nil
 }
 
