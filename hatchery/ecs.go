@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -156,7 +157,7 @@ func terminateEcsWorkspace(userName string) (string, error) {
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *service.Service.Status), nil
 }
 
-func launchEcsWorkspace(userName string, hash string, accessToken string) (string, error) {
+func launchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string) (string, error) {
 	// TODO: Setup EBS volume as pd
 	// Must create volume using SDK too.. :(
 	pm := Config.PayModelMap[userName]
@@ -203,7 +204,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 		return "", err
 	}
 
-	launchTask, err := svc.launchService(taskDefResult, userName, hash)
+	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash)
 	if err != nil {
 		return "", err
 	}
@@ -212,7 +213,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 }
 
 // Launch ECS service for task definition + LB for routing
-func (sess *CREDS) launchService(taskDefArn string, userName string, hash string) (string, error) {
+func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userName string, hash string) (string, error) {
 	svc := sess.svc
 	hatchApp := Config.ContainersMap[hash]
 	cluster, err := sess.findEcsCluster(userName)
@@ -279,7 +280,7 @@ func (sess *CREDS) launchService(taskDefArn string, userName string, hash string
 		return "", err
 	}
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
-	err = createLocalService(userName, hash, *result.Service.ClusterArn, int32(80))
+	err = createLocalService(ctx, userName, hash, *result.Service.ClusterArn, int32(80))
 	if err != nil {
 		return "", err
 	}
