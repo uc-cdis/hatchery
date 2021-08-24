@@ -127,6 +127,9 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 	Config.Logger.Printf("Vpcs: %s, subnets: %s, securitygroups: %s", vpcs, subnets, securityGroups)
 	input := &elbv2.CreateLoadBalancerInput{
 		Name: aws.String(userToResourceName(userName, "service")),
+		SecurityGroups: []*string{
+			securityGroups.SecurityGroups[0].GroupId,
+		},
 		Subnets: []*string{
 			subnets.Subnets[0].SubnetId,
 			subnets.Subnets[1].SubnetId,

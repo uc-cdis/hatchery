@@ -86,7 +86,7 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 		} else {
 			// Print the error, cast err to awserr.Error to get the Code and
 			// Message from an error.
-			fmt.Println(err.Error())
+			Config.Logger.Println(err.Error())
 		}
 	}
 	if len(result.Failures) > 0 {
@@ -98,6 +98,7 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 }
 
 // Status of workspace running in ECS
+// TODO: Make this return Kubernetes style container status.
 func (sess *CREDS) statusEcsWorkspace(userName string) (string, error) {
 	cluster, err := sess.findEcsCluster(userName)
 	if err != nil {
@@ -135,11 +136,13 @@ func terminateEcsWorkspace(userName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
+	// TODO: Terminate ALB + target group here too
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *service.Service.Status), nil
 }
 
 func launchEcsWorkspace(userName string, hash string, accessToken string) (string, error) {
+	// TODO: Setup EBS volume as pd
+	// Must create volume using SDK too.. :(
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
@@ -168,7 +171,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 		Value: accessToken,
 	})
 	taskDef := CreateTaskDefinitionInput{
-		Image:            hatchApp.Image, // TODO: test all images. Tested with smaller image "jupyter/minimal-notebook:latest",
+		Image:            hatchApp.Image,
 		Cpu:              cpu,
 		Memory:           mem,
 		Name:             userToResourceName(userName, "pod"),
@@ -181,12 +184,12 @@ func launchEcsWorkspace(userName string, hash string, accessToken string) (strin
 	}
 	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash)
 	if err != nil {
-		return "", err // TODO: Make this better? clearer?
+		return "", err
 	}
 
 	launchTask, err := svc.launchService(taskDefResult, userName, hash)
 	if err != nil {
-		return "", err // TODO: Make this better? clearer?
+		return "", err
 	}
 
 	return launchTask, nil
@@ -206,7 +209,7 @@ func (sess *CREDS) launchService(taskDefArn string, userName string, hash string
 
 	loadBalancer, targetGroupArn, _, err := sess.CreateLoadBalancer(userName)
 	if err != nil {
-		return "", err // TODO: Make this better? clearer?
+		return "", err
 	}
 
 	input := &ecs.CreateServiceInput{
@@ -231,29 +234,30 @@ func (sess *CREDS) launchService(taskDefArn string, userName string, hash string
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
 			case ecs.ErrCodeServerException:
-				fmt.Println(ecs.ErrCodeServerException, aerr.Error())
+				Config.Logger.Println(ecs.ErrCodeServerException, aerr.Error())
 			case ecs.ErrCodeClientException:
-				fmt.Println(ecs.ErrCodeClientException, aerr.Error())
+				Config.Logger.Println(ecs.ErrCodeClientException, aerr.Error())
 			case ecs.ErrCodeInvalidParameterException:
-				fmt.Println(ecs.ErrCodeInvalidParameterException, aerr.Error())
+				Config.Logger.Println(ecs.ErrCodeInvalidParameterException, aerr.Error())
 			case ecs.ErrCodeClusterNotFoundException:
-				fmt.Println(ecs.ErrCodeClusterNotFoundException, aerr.Error())
+				Config.Logger.Println(ecs.ErrCodeClusterNotFoundException, aerr.Error())
 			case ecs.ErrCodeUnsupportedFeatureException:
-				fmt.Println(ecs.ErrCodeUnsupportedFeatureException, aerr.Error())
+				Config.Logger.Println(ecs.ErrCodeUnsupportedFeatureException, aerr.Error())
 			case ecs.ErrCodePlatformUnknownException:
-				fmt.Println(ecs.ErrCodePlatformUnknownException, aerr.Error())
+				Config.Logger.Println(ecs.ErrCodePlatformUnknownException, aerr.Error())
 			case ecs.ErrCodePlatformTaskDefinitionIncompatibilityException:
-				fmt.Println(ecs.ErrCodePlatformTaskDefinitionIncompatibilityException, aerr.Error())
+				Config.Logger.Println(ecs.ErrCodePlatformTaskDefinitionIncompatibilityException, aerr.Error())
 			case ecs.ErrCodeAccessDeniedException:
-				fmt.Println(ecs.ErrCodeAccessDeniedException, aerr.Error())
+				Config.Logger.Println(ecs.ErrCodeAccessDeniedException, aerr.Error())
 			default:
-				fmt.Println(aerr.Error())
+				Config.Logger.Println(aerr.Error())
 			}
 		} else {
 			// Print the error, cast err to awserr.Error to get the Code and
 			// Message from an error.
-			fmt.Println(err.Error())
+			Config.Logger.Println(err.Error())
 		}
+		return "", err
 	}
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
 
