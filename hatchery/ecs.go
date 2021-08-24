@@ -117,8 +117,8 @@ func (sess *CREDS) statusEcsWorkspace(userName string) (*WorkspaceStatus, error)
 	statusMap := map[string]string{
 		"ACTIVE":   "Running",
 		"DRAINING": "Terminating",
-		"STOPPED":  "Not found",
-		"INACTIVE": "Not found",
+		"STOPPED":  "Not Found",
+		"INACTIVE": "Not Found",
 	}
 
 	status.Status = statusMap[*service.Services[0].Status]
