@@ -99,11 +99,11 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 }
 
 // Status of workspace running in ECS
-// TODO: Make this return Kubernetes style container status.
-func (sess *CREDS) statusEcsWorkspace(userName string) (string, error) {
+func (sess *CREDS) statusEcsWorkspace(userName string) (*WorkspaceStatus, error) {
+	status := WorkspaceStatus{}
 	cluster, err := sess.findEcsCluster(userName)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	service, err := sess.svc.DescribeServices(&ecs.DescribeServicesInput{
 		Cluster: cluster.ClusterName,
@@ -112,9 +112,10 @@ func (sess *CREDS) statusEcsWorkspace(userName string) (string, error) {
 		},
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return fmt.Sprintf("%s", *service), nil
+	status.Status = *service.Services[0].Status
+	return &status, nil
 }
 
 // Terminate workspace running in ECS
@@ -220,6 +221,9 @@ func (sess *CREDS) launchService(taskDefArn string, userName string, hash string
 		ServiceName:          aws.String(userToResourceName(userName, "pod")),
 		TaskDefinition:       &taskDefArn,
 		NetworkConfiguration: &networkConfig,
+		DeploymentConfiguration: &ecs.DeploymentConfiguration{
+			MinimumHealthyPercent: aws.Int64(0),
+		},
 		EnableECSManagedTags: aws.Bool(true),
 		LaunchType:           aws.String("FARGATE"),
 		LoadBalancers: []*ecs.LoadBalancer{
