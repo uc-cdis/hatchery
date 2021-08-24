@@ -53,9 +53,60 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 		},
 	}
 	securityGroup, err := svc.DescribeSecurityGroups(&securityGroupInput)
-	// TODO: Create security group if it doesn't exist here
 	if err != nil {
-		return &ec2.DescribeVpcsOutput{}, &ec2.DescribeSubnetsOutput{}, &ec2.DescribeSecurityGroupsOutput{}, err
+		return nil, nil, nil, err
+	}
+	// Create security group if it doesn't exist
+	if len(securityGroup.SecurityGroups) == 0 {
+		createSecurityGroupInput := ec2.CreateSecurityGroupInput{
+			GroupName: aws.String("ws-security-group"),
+			TagSpecifications: []*ec2.TagSpecification{
+				{
+					Tags: []*ec2.Tag{
+						{
+							Key:   aws.String("Name"),
+							Value: aws.String("ws-security-group"),
+						},
+					},
+				},
+			},
+			VpcId:       aws.String(*vpcs.Vpcs[0].VpcId),
+			Description: aws.String("Security group for workspaces running in ECS"),
+		}
+
+		newSecurityGroup, err := svc.CreateSecurityGroup(&createSecurityGroupInput)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		Config.Logger.Printf("Create Security Grouo: %s", *newSecurityGroup.GroupId)
+
+		ingressRules := ec2.AuthorizeSecurityGroupIngressInput{
+			GroupId: newSecurityGroup.GroupId,
+			IpPermissions: []*ec2.IpPermission{
+				{
+					IpProtocol: aws.String("tcp"),
+					IpRanges: []*ec2.IpRange{
+						{
+							CidrIp:      aws.String("0.0.0.0/0"),
+							Description: aws.String("All IPv4"),
+						},
+					},
+					Ipv6Ranges: []*ec2.Ipv6Range{
+						{
+							CidrIpv6:    aws.String("::/0"),
+							Description: aws.String("All IPv6"),
+						},
+					},
+					ToPort: aws.Int64(80),
+				},
+			},
+		}
+		_, err = svc.AuthorizeSecurityGroupIngress(&ingressRules)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		securityGroup, _ = svc.DescribeSecurityGroups(&securityGroupInput)
 	}
 
 	return vpcs, subnets, securityGroup, nil

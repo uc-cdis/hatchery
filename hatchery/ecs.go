@@ -48,6 +48,7 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 }
 
 // Create ECS cluster
+// TODO: Evaluate if this is still this needed..
 func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
 	cluster_name := strings.ReplaceAll(Config.Config.Sidecar.Env["HOSTNAME"], ".", "-") + "-cluster"
@@ -117,6 +118,7 @@ func (sess *CREDS) statusEcsWorkspace(userName string) (string, error) {
 }
 
 // Terminate workspace running in ECS
+// TODO: Make this terminate ALB as well.
 func terminateEcsWorkspace(userName string) (string, error) {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
