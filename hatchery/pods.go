@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -22,6 +23,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/eks"
 
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
+
+	awstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
+	kubernetestrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/client-go/kubernetes"
 )
 
 var (
@@ -61,9 +65,9 @@ type WorkspaceStatus struct {
 	ContainerStates []ContainerStates `json:"containerStates"`
 }
 
-func getPodClient(userName string) (corev1.CoreV1Interface, bool, error) {
+func getPodClient(ctx context.Context, userName string) (corev1.CoreV1Interface, bool, error) {
 	if payModelExistsForUser(userName) {
-		podClient, err := NewEKSClientset(userName)
+		podClient, err := NewEKSClientset(ctx, userName)
 		if err != nil {
 			Config.Logger.Printf("Error fetching EKS kubeconfig: %v", err)
 			return nil, true, err
@@ -78,6 +82,7 @@ func getPodClient(userName string) (corev1.CoreV1Interface, bool, error) {
 func getLocalPodClient() corev1.CoreV1Interface {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
+	config.WrapTransport = kubernetestrace.WrapRoundTripper
 	if err != nil {
 		panic(err.Error())
 	}
@@ -90,19 +95,19 @@ func getLocalPodClient() corev1.CoreV1Interface {
 }
 
 // Generate EKS kubeconfig using AWS role
-func NewEKSClientset(userName string /*cluster *eks.Cluster, roleARN string*/) (corev1.CoreV1Interface, error) {
+func NewEKSClientset(ctx context.Context, userName string /*cluster *eks.Cluster, roleARN string*/) (corev1.CoreV1Interface, error) {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
+	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(pm.Region),
-	}))
+	})))
 
 	creds := stscreds.NewCredentials(sess, roleARN)
 	eksSvc := eks.New(sess, &aws.Config{Credentials: creds})
 	input := &eks.DescribeClusterInput{
 		Name: aws.String(pm.Name),
 	}
-	result, err := eksSvc.DescribeCluster(input)
+	result, err := eksSvc.DescribeClusterWithContext(ctx, input)
 	if err != nil {
 		Config.Logger.Printf("Error calling DescribeCluster: %v", err)
 		return nil, err
@@ -152,10 +157,9 @@ func checkPodReadiness(pod *k8sv1.Pod) bool {
 	return true
 }
 
-func podStatus(userName string) (*WorkspaceStatus, error) {
-
+func podStatus(ctx context.Context, userName string) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
-	podClient, isExternalClient, err := getPodClient(userName)
+	podClient, isExternalClient, err := getPodClient(ctx, userName)
 	if err != nil {
 		// Config.Logger.Panic("Error trying to fetch kubeConfig: %v", err)
 		status.Status = fmt.Sprintf("%v", err)
@@ -166,8 +170,8 @@ func podStatus(userName string) (*WorkspaceStatus, error) {
 
 	serviceName := userToResourceName(userName, "service")
 
-	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
-	_, serviceErr := podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
+	_, serviceErr := podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err != nil {
 		if isExternalClient && serviceErr == nil {
 			// only worry for service if podClient is external EKS
@@ -223,8 +227,8 @@ func podStatus(userName string) (*WorkspaceStatus, error) {
 	return &status, nil
 }
 
-func statusK8sPod(userName string) (*WorkspaceStatus, error) {
-	status, err := podStatus(userName)
+func statusK8sPod(ctx context.Context, userName string) (*WorkspaceStatus, error) {
+	status, err := podStatus(ctx, userName)
 	if err != nil {
 		status.Status = fmt.Sprintf("%v", err)
 		Config.Logger.Printf("Error getting status: %v", err)
@@ -232,8 +236,8 @@ func statusK8sPod(userName string) (*WorkspaceStatus, error) {
 	return status, nil
 }
 
-func deleteK8sPod(userName string) error {
-	podClient, _, err := getPodClient(userName)
+func deleteK8sPod(ctx context.Context, accessToken string, userName string) error {
+	podClient, _, err := getPodClient(ctx, userName)
 	if err != nil {
 		return err
 	}
@@ -245,23 +249,44 @@ func deleteK8sPod(userName string) error {
 		GracePeriodSeconds: &grace,
 	}
 
-	safeUserName := escapism(userName)
-
-	podName := fmt.Sprintf("hatchery-%s", safeUserName)
-	_, err = podClient.Pods(Config.Config.UserNamespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	podName := userToResourceName(userName, "pod")
+	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace pod was not found: %s", err)
 	}
-	fmt.Printf("Attempting to delete pod %s for user %s\n", podName, userName)
-	podClient.Pods(Config.Config.UserNamespace).Delete(context.TODO(), podName, deleteOptions)
+	containers := pod.Spec.Containers
+	var mountedAPIKeyID string
+	for i := range containers {
+		if containers[i].Name == "hatchery-container" {
+			for j := range containers[i].Env {
+				if containers[i].Env[j].Name == "API_KEY_ID" {
+					mountedAPIKeyID = containers[i].Env[j].Value
+					break
+				}
+			}
+			break
+		}
+	}
+	if mountedAPIKeyID != "" {
+		fmt.Printf("Found mounted API key. Attempting to delete API Key with ID %s for user %s\n", mountedAPIKeyID, userName)
+		err := deleteAPIKeyWithContext(ctx, accessToken, mountedAPIKeyID)
+		if err != nil {
+			fmt.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", mountedAPIKeyID, userName, err.Error())
+		} else {
+			fmt.Printf("API Key with ID %s for user %s has been deleted\n", mountedAPIKeyID, userName)
+		}
+	}
 
-	serviceName := fmt.Sprintf("h-%s-s", safeUserName)
-	_, err = podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	fmt.Printf("Attempting to delete pod %s for user %s\n", podName, userName)
+	podClient.Pods(Config.Config.UserNamespace).Delete(ctx, podName, deleteOptions)
+
+	serviceName := userToResourceName(userName, "service")
+	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace service was not found: %s", err)
 	}
 	fmt.Printf("Attempting to delete service %s for user %s\n", serviceName, userName)
-	podClient.Services(Config.Config.UserNamespace).Delete(context.TODO(), serviceName, deleteOptions)
+	podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
 
 	return nil
 }
@@ -322,6 +347,34 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	}
 	for _, value := range extraVars {
 		sidecarEnvVars = append(sidecarEnvVars, value)
+		envVars = append(envVars, value)
+	}
+	// scan if sidecarEnvVars has HOSTNAME, and add it if not
+	sidecarEnvVarsCopy := sidecarEnvVars[:0]
+	// this is the best we can do with golang
+	for i, value := range sidecarEnvVarsCopy {
+		if value.Name == "HOSTNAME" {
+			break
+		}
+		if i == len(sidecarEnvVarsCopy)-1 {
+			sidecarEnvVars = append(sidecarEnvVars, k8sv1.EnvVar{
+				Name:  "HOSTNAME",
+				Value: os.Getenv("HOSTNAME"),
+			})
+		}
+	}
+	// do the same thing for envVars
+	envVarsCopy := envVars[:0]
+	for i, value := range envVarsCopy {
+		if value.Name == "HOSTNAME" {
+			break
+		}
+		if i == len(envVarsCopy)-1 {
+			envVars = append(envVars, k8sv1.EnvVar{
+				Name:  "HOSTNAME",
+				Value: os.Getenv("HOSTNAME"),
+			})
+		}
 	}
 
 	//hatchConfig.Logger.Printf("sidecar configured")
@@ -534,12 +587,12 @@ func payModelExistsForUser(userName string) (result bool) {
 	return result
 }
 
-func scaleEKSNodes(userName string, scale int) {
+func scaleEKSNodes(ctx context.Context, userName string, scale int) {
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
+	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(pm.Region),
-	}))
+	})))
 
 	creds := stscreds.NewCredentials(sess, roleARN)
 	// ASG stuff
@@ -548,7 +601,7 @@ func scaleEKSNodes(userName string, scale int) {
 	asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
 		AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + pm.Name)},
 	}
-	asg, err := asgSvc.DescribeAutoScalingGroups(asgInput)
+	asg, err := asgSvc.DescribeAutoScalingGroupsWithContext(ctx, asgInput)
 	cap := *asg.AutoScalingGroups[0].DesiredCapacity
 	Config.Logger.Printf("ASG capacity: %d", cap)
 
@@ -558,7 +611,7 @@ func scaleEKSNodes(userName string, scale int) {
 		AutoScalingGroupName: asg.AutoScalingGroups[0].AutoScalingGroupName,
 		DesiredCapacity:      aws.Int64(cap + int64(scale)),
 	}
-	_, err = asgSvc.SetDesiredCapacity(asgScaleInput)
+	_, err = asgSvc.SetDesiredCapacityWithContext(ctx, asgScaleInput)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
@@ -577,15 +630,15 @@ func scaleEKSNodes(userName string, scale int) {
 	}
 }
 
-func createK8sPod(hash string, accessToken string, userName string) error {
+func createK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
 	if payModelExistsForUser(userName) {
-		return createExternalK8sPod(hash, accessToken, userName)
+		return createExternalK8sPod(ctx, hash, accessToken, userName)
 	} else {
-		return createLocalK8sPod(hash, accessToken, userName)
+		return createLocalK8sPod(ctx, hash, accessToken, userName)
 	}
 }
 
-func createLocalK8sPod(hash string, accessToken string, userName string) error {
+func createLocalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
 	hatchApp := Config.ContainersMap[hash]
 
 	var extraVars []k8sv1.EnvVar
@@ -595,7 +648,7 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 		return err
 	}
 	podName := userToResourceName(userName, "pod")
-	podClient, _, err := getPodClient(userName)
+	podClient, _, err := getPodClient(ctx, userName)
 	if err != nil {
 		Config.Logger.Panicf("Error in createLocalK8sPod: %v", err)
 		return err
@@ -605,7 +658,7 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 	if mountUserVolume {
 		claimName := userToResourceName(userName, "claim")
 
-		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(context.TODO(), claimName, metav1.GetOptions{})
+		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(ctx, claimName, metav1.GetOptions{})
 		if err != nil {
 			Config.Logger.Printf("Creating PersistentVolumeClaim %s.\n", claimName)
 			pvc := &k8sv1.PersistentVolumeClaim{
@@ -623,7 +676,7 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 					},
 				},
 			}
-			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(context.TODO(), pvc, metav1.CreateOptions{})
+			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(ctx, pvc, metav1.CreateOptions{})
 			if err != nil {
 				Config.Logger.Printf("Failed to create PVC %s. Error: %s\n", claimName, err)
 				return err
@@ -631,7 +684,7 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 		}
 	}
 
-	_, err = podClient.Pods(Config.Config.UserNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	_, err = podClient.Pods(Config.Config.UserNamespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		Config.Logger.Printf("Failed to launch pod %s for user %s. Image: %s, CPU %s, Memory %s. Error: %s\n", hatchApp.Name, userName, hatchApp.Image, hatchApp.CPULimit, hatchApp.MemoryLimit, err)
 		return err
@@ -645,7 +698,7 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 	annotationsService := make(map[string]string)
 	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userToResourceName(userName, "mapping"), userName, serviceName, Config.Config.UserNamespace, hatchApp.PathRewrite, hatchApp.UseTLS)
 
-	_, err = podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
 		// This probably happened as the result of some error... there was no pod but was a service
 		// Lets just clean it up and proceed
@@ -653,7 +706,7 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 		deleteOptions := metav1.DeleteOptions{
 			PropagationPolicy: &policy,
 		}
-		podClient.Services(Config.Config.UserNamespace).Delete(context.TODO(), serviceName, deleteOptions)
+		podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
 	}
 
 	service := &k8sv1.Service{
@@ -680,7 +733,7 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 		},
 	}
 
-	_, err = podClient.Services(Config.Config.UserNamespace).Create(context.TODO(), service, metav1.CreateOptions{})
+	_, err = podClient.Services(Config.Config.UserNamespace).Create(ctx, service, metav1.CreateOptions{})
 	if err != nil {
 		fmt.Printf("Failed to launch service %s for user %s forwarding port %d. Error: %s\n", serviceName, userName, hatchApp.TargetPort, err)
 		return err
@@ -691,13 +744,24 @@ func createLocalK8sPod(hash string, accessToken string, userName string) error {
 	return nil
 }
 
-func createExternalK8sPod(hash string, accessToken string, userName string) error {
+func createExternalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
 	hatchApp := Config.ContainersMap[hash]
 
-	podClient, err := NewEKSClientset(userName)
+	podClient, err := NewEKSClientset(ctx, userName)
+	if err != nil {
+		Config.Logger.Printf("Failed to create pod client for user %v, Error: %v", userName, err)
+		return err
+	}
+
+	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
+	if err != nil {
+		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
+		return err
+	}
+	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
 
 	// Check if NS exists in external cluster, if not create it.
-	ns, err := podClient.Namespaces().Get(context.TODO(), Config.Config.UserNamespace, metav1.GetOptions{})
+	ns, err := podClient.Namespaces().Get(ctx, Config.Config.UserNamespace, metav1.GetOptions{})
 	if err != nil {
 		nsName := &k8sv1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -705,14 +769,24 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 			},
 		}
 		Config.Logger.Printf("Namespace created: %v", ns)
-		podClient.Namespaces().Create(context.Background(), nsName, metav1.CreateOptions{})
+		podClient.Namespaces().Create(ctx, nsName, metav1.CreateOptions{})
 	}
+
 	var extraVars []k8sv1.EnvVar
 
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "WTS_OVERRIDE_URL",
-		Value: "https://" + Config.Config.Sidecar.Env["HOSTNAME"] + "/wts",
+		Value: "https://" + os.Getenv("HOSTNAME") + "/wts",
 	})
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "API_KEY",
+		Value: apiKey.APIKey,
+	})
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "API_KEY_ID",
+		Value: apiKey.KeyID,
+	})
+	// TODO: still mounting access token for now, remove this when fully switched to use API key
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "ACCESS_TOKEN",
 		Value: accessToken,
@@ -729,7 +803,7 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 	if mountUserVolume {
 		claimName := userToResourceName(userName, "claim")
 
-		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(context.TODO(), claimName, metav1.GetOptions{})
+		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(ctx, claimName, metav1.GetOptions{})
 		if err != nil {
 			Config.Logger.Printf("Creating PersistentVolumeClaim %s.\n", claimName)
 			pvc := &k8sv1.PersistentVolumeClaim{
@@ -748,7 +822,7 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 				},
 			}
 
-			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(context.TODO(), pvc, metav1.CreateOptions{})
+			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(ctx, pvc, metav1.CreateOptions{})
 			if err != nil {
 				Config.Logger.Printf("Failed to create PVC %s. Error: %s\n", claimName, err)
 				return err
@@ -756,7 +830,7 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 		}
 	}
 
-	_, err = podClient.Pods(Config.Config.UserNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	_, err = podClient.Pods(Config.Config.UserNamespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		Config.Logger.Printf("Failed to launch pod %s for user %s. Image: %s, CPU %s, Memory %s. Error: %s\n", hatchApp.Name, userName, hatchApp.Image, hatchApp.CPULimit, hatchApp.MemoryLimit, err)
 		return err
@@ -770,7 +844,7 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 	annotationsService := make(map[string]string)
 	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userToResourceName(userName, "mapping"), userName, serviceName, Config.Config.UserNamespace, hatchApp.PathRewrite, hatchApp.UseTLS)
 	annotationsService["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
-	_, err = podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
 		// This probably happened as the result of some error... there was no pod but was a service
 		// Lets just clean it up and proceed
@@ -778,7 +852,7 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 		deleteOptions := metav1.DeleteOptions{
 			PropagationPolicy: &policy,
 		}
-		podClient.Services(Config.Config.UserNamespace).Delete(context.TODO(), serviceName, deleteOptions)
+		podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
 
 	}
 
@@ -806,7 +880,7 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 		},
 	}
 
-	_, err = podClient.Services(Config.Config.UserNamespace).Create(context.TODO(), service, metav1.CreateOptions{})
+	_, err = podClient.Services(Config.Config.UserNamespace).Create(ctx, service, metav1.CreateOptions{})
 	if err != nil {
 		fmt.Printf("Failed to launch service %s for user %s forwarding port %d. Error: %s\n", serviceName, userName, hatchApp.TargetPort, err)
 		return err
@@ -817,14 +891,14 @@ func createExternalK8sPod(hash string, accessToken string, userName string) erro
 	nodes, _ := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
 	NodeIP := nodes.Items[0].Status.Addresses[0].Address
 	NodePort := service.Spec.Ports[0].NodePort
-	createLocalService(userName, hash, NodeIP, NodePort)
+	createLocalService(ctx, userName, hash, NodeIP, NodePort)
 
 	return nil
 }
 
 // Creates a local service that portal can reach
 // and route traffic to pod in external cluster.
-func createLocalService(userName string, hash string, serviceURL string, servicePort int32) error {
+func createLocalService(ctx context.Context, userName string, hash string, serviceURL string, servicePort int32) error {
 	const localAmbassadorYaml = `---
 apiVersion: ambassador/v1
 kind:  Mapping
@@ -850,7 +924,7 @@ tls: %s
 	annotationsService := make(map[string]string)
 	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, serviceURL, servicePort, hatchApp.PathRewrite, hatchApp.UseTLS)
 
-	_, err := localPodClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+	_, err := localPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
 		// This probably happened as the result of some error... there was no pod but was a service
 		// Lets just clean it up and proceed
@@ -858,7 +932,7 @@ tls: %s
 		deleteOptions := metav1.DeleteOptions{
 			PropagationPolicy: &policy,
 		}
-		localPodClient.Services(Config.Config.UserNamespace).Delete(context.TODO(), serviceName, deleteOptions)
+		localPodClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
 
 	}
 
@@ -886,7 +960,7 @@ tls: %s
 		},
 	}
 
-	_, err = localPodClient.Services(Config.Config.UserNamespace).Create(context.TODO(), localService, metav1.CreateOptions{})
+	_, err = localPodClient.Services(Config.Config.UserNamespace).Create(ctx, localService, metav1.CreateOptions{})
 	if err != nil {
 		fmt.Printf("Failed to launch local service %s for user %s forwarding port %d. Error: %s\n", serviceName, userName, hatchApp.TargetPort, err)
 		return err
