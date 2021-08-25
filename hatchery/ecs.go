@@ -53,7 +53,7 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 // TODO: Evaluate if this is still this needed..
 func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
-	cluster_name := strings.ReplaceAll(Config.Config.Sidecar.Env["HOSTNAME"], ".", "-") + "-cluster"
+	cluster_name := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
 	input := &ecs.CreateClusterInput{
 		ClusterName: aws.String(cluster_name),
 	}
@@ -255,16 +255,16 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		Key:   "ACCESS_TOKEN",
 		Value: accessToken,
 	})
-	// append 'HOSTNAME' env var if missing
+	// append 'BASE_URL' env var if missing
 	envVarsCopy := envVars[:0]
 	for i, value := range envVarsCopy {
-		if value.Key == "HOSTNAME" {
+		if value.Key == "BASE_URL" {
 			break
 		}
 		if i == len(envVarsCopy)-1 {
 			envVars = append(envVars, EnvVar{
-				Key:   "HOSTNAME",
-				Value: os.Getenv("HOSTNAME"),
+				Key:   "BASE_URL",
+				Value: os.Getenv("BASE_URL"),
 			})
 		}
 	}
