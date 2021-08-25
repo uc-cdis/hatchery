@@ -23,7 +23,7 @@ func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Creden
 		Config.Logger.Printf("Error in DescribeLogGroup: %s", err)
 		return "", err
 	}
-	if len(logGroup.LogGroups) < 0 {
+	if len(logGroup.LogGroups) == 0 {
 		createLogGroupIn := &cloudwatchlogs.CreateLogGroupInput{
 			LogGroupName: aws.String(LogGroupName),
 		}

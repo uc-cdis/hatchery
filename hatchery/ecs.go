@@ -22,11 +22,13 @@ type CreateTaskDefinitionInput struct {
 	Name             string
 	Port             int64
 	LogGroupName     string
+	MountPoints      []*ecs.MountPoint
 	LogRegion        string
 	TaskRole         string
 	Type             string
 	EntryPoint       []string
 	Args             []string
+	SidecarContainer ecs.ContainerDefinition
 }
 
 type EnvVar struct {
@@ -269,16 +271,33 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		}
 	}
 	taskDef := CreateTaskDefinitionInput{
-		Image:            hatchApp.Image,
-		Cpu:              cpu,
-		Memory:           mem,
-		Name:             userToResourceName(userName, "pod"),
-		Type:             "testing-ws",
-		EntryPoint:       hatchApp.Command,
+		Image:      hatchApp.Image,
+		Cpu:        cpu,
+		Memory:     mem,
+		Name:       userToResourceName(userName, "pod"),
+		Type:       "testing-ws",
+		EntryPoint: hatchApp.Command,
+		MountPoints: []*ecs.MountPoint{
+			{
+				ContainerPath: aws.String("/home/jovyan/data"),
+				SourceVolume:  aws.String("test-volume"),
+			},
+		},
 		Args:             hatchApp.Args,
 		EnvVars:          envVars,
 		Port:             int64(hatchApp.TargetPort),
 		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", Config.PayModelMap[userName].AWSAccountId), // TODO: Make this configurable?
+		SidecarContainer: ecs.ContainerDefinition{
+			Image:     aws.String("quay.io/cdis/bash:test"),
+			Name:      aws.String("sidecar-container"),
+			Essential: aws.Bool(false),
+			MountPoints: []*ecs.MountPoint{
+				{
+					ContainerPath: aws.String("/data"),
+					SourceVolume:  aws.String("test-volume"),
+				},
+			},
+		},
 	}
 	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash)
 	if err != nil {
@@ -395,6 +414,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 	containerDefinition := &ecs.ContainerDefinition{
 		Environment:      input.Environment(),
 		Essential:        aws.Bool(true),
+		MountPoints:      input.MountPoints,
 		Image:            aws.String(input.Image),
 		LogConfiguration: logConfiguration,
 		Name:             aws.String(input.Name),
@@ -402,10 +422,14 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 		Command:          aws.StringSlice(input.Args),
 	}
 
+	sidecarContainerDefinition := input.SidecarContainer
+	sidecarContainerDefinition.LogConfiguration = logConfiguration
+	sidecarContainerDefinition.Environment = input.Environment()
+
 	if input.Port != 0 {
 		containerDefinition.SetPortMappings(
 			[]*ecs.PortMapping{
-				&ecs.PortMapping{
+				{
 					ContainerPort: aws.Int64(int64(input.Port)),
 				},
 			},
@@ -414,7 +438,10 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 
 	resp, err := svc.RegisterTaskDefinition(
 		&ecs.RegisterTaskDefinitionInput{
-			ContainerDefinitions:    []*ecs.ContainerDefinition{containerDefinition},
+			ContainerDefinitions: []*ecs.ContainerDefinition{
+				containerDefinition,
+				&sidecarContainerDefinition,
+			},
 			Cpu:                     aws.String(input.Cpu),
 			ExecutionRoleArn:        aws.String(input.ExecutionRoleArn),
 			Family:                  aws.String(fmt.Sprintf("%s_%s", input.Type, input.Name)),
@@ -422,6 +449,11 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 			NetworkMode:             aws.String(ecs.NetworkModeAwsvpc),
 			RequiresCompatibilities: aws.StringSlice([]string{ecs.CompatibilityFargate}),
 			TaskRoleArn:             aws.String(input.TaskRole),
+			Volumes: []*ecs.Volume{
+				{
+					Name: aws.String("test-volume"),
+				},
+			},
 		},
 	)
 
