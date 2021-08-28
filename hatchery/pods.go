@@ -1,15 +1,18 @@
 package hatchery
 
 import (
+	"os"
 	"context"
 	"fmt"
 	"math/rand"
+	"path/filepath"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
+	clientcmd "k8s.io/client-go/tools/clientcmd"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 )
@@ -52,10 +55,19 @@ type WorkspaceStatus struct {
 }
 
 func getPodClient() corev1.CoreV1Interface {
-	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		panic(err.Error())
+	// attempt to create config using $HOME/.kube/config
+	home, exists := os.LookupEnv("HOME")
+  if !exists {
+      home = "/root"
+  }
+  configPath := filepath.Join(home, ".kube", "config")
+  config, err := clientcmd.BuildConfigFromFlags("", configPath)
+  if err != nil {
+		//if the kube config file is not avalible, use the InCluster config
+		config, err = rest.InClusterConfig()
+		if err != nil {
+			panic(err.Error())
+		}
 	}
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
