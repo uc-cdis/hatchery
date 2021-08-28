@@ -63,6 +63,8 @@ type HatcheryConfig struct {
 	UserVolumeSize string           `json:"user-volume-size"`
 	Sidecar        SidecarContainer `json:"sidecar"`
 	MoreConfigs    []AppConfigInfo  `json:"more-configs"`
+
+	ServerPort     int              `json:"server-port"`
 }
 
 // FullHatcheryConfig bucket result from loadConfig
@@ -92,6 +94,11 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	data.Logger.Printf("loaded config: %v", string(plan))
 	data.ContainersMap = make(map[string]Container)
 	_ = yaml.Unmarshal(plan, &data.Config)
+	//fill in defaults
+	if data.Config.ServerPort == 0 {
+		data.Config.ServerPort = 8000
+	}
+
 	if nil != data.Config.MoreConfigs && 0 < len(data.Config.MoreConfigs) {
 		for _, info := range data.Config.MoreConfigs {
 			if info.AppType == "dockstore-compose:1.0.0" {
