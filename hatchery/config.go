@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+
+	"github.com/ghodss/yaml"
 )
 
 // Container Struct to hold the configuration for Pod Container
@@ -89,7 +91,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	}
 	data.Logger.Printf("loaded config: %v", string(plan))
 	data.ContainersMap = make(map[string]Container)
-	_ = json.Unmarshal(plan, &data.Config)
+	_ = yaml.Unmarshal(plan, &data.Config)
 	if nil != data.Config.MoreConfigs && 0 < len(data.Config.MoreConfigs) {
 		for _, info := range data.Config.MoreConfigs {
 			if info.AppType == "dockstore-compose:1.0.0" {

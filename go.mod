@@ -6,6 +6,7 @@ require (
 	github.com/DataDog/datadog-go v4.8.1+incompatible // indirect
 	github.com/DataDog/sketches-go v1.1.0 // indirect
 	github.com/Microsoft/go-winio v0.5.0 // indirect
+	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.0.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
