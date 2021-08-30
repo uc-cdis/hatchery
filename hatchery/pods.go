@@ -22,21 +22,6 @@ var (
 	falseVal = false
 )
 
-const ambassadorYaml = `---
-apiVersion: ambassador/v1
-kind:  Mapping
-name:  %s
-prefix: /
-headers:
-  remote_user: %s
-service: %s.%s.svc.cluster.local:80
-bypass_auth: true
-timeout_ms: 300000
-use_websocket: true
-rewrite: %s
-tls: %s
-`
-
 type PodConditions struct {
 	Type   string `json:"type"`
 	Status string `json:"status"`
@@ -368,7 +353,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			RestartPolicy:    k8sv1.RestartPolicyNever,
 			ImagePullSecrets: []k8sv1.LocalObjectReference{},
 			NodeSelector: map[string]string{
-				"role": "jupyter",
+	//			"role": "jupyter",  //TODO: need a 'node selector' config, so this isn't hard coded
 			},
 			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}},
 			Volumes:     volumes,
@@ -430,8 +415,22 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	return pod, nil
 }
 
+func setupServiceMapping(userName string, pathRewrite string, useTLS string, service *k8sv1.Service ) error {
+	if Config.Config.ServiceMapper.AmbassadorV2Mapper != nil {
+		return Config.Config.ServiceMapper.AmbassadorV2Mapper.Start(userName, pathRewrite, useTLS, service)
+	}
+	if Config.Config.ServiceMapper.AmbassadorV1Mapper != nil {
+		return Config.Config.ServiceMapper.AmbassadorV1Mapper.Start(userName, pathRewrite, useTLS, service)
+	}
+	return fmt.Errorf("Service mapper not found")
+}
+
+
 func createK8sPod(hash string, accessToken string, userName string) error {
-	hatchApp := Config.ContainersMap[hash]
+	hatchApp, ok := Config.ContainersMap[hash]
+	if !ok {
+		return fmt.Errorf("Container %s not found", hash)
+	}
 	pod, err := buildPod(Config, &hatchApp, userName)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
@@ -481,8 +480,6 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 	serviceName := userToResourceName(userName, "service")
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
-	annotationsService := make(map[string]string)
-	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userToResourceName(userName, "mapping"), userName, serviceName, Config.Config.UserNamespace, hatchApp.PathRewrite, hatchApp.UseTLS)
 
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if err == nil {
@@ -500,7 +497,7 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 			Name:        serviceName,
 			Namespace:   Config.Config.UserNamespace,
 			Labels:      labelsService,
-			Annotations: annotationsService,
+			Annotations: make(map[string]string),
 		},
 		Spec: k8sv1.ServiceSpec{
 			Type:     k8sv1.ServiceTypeClusterIP,
@@ -517,6 +514,12 @@ func createK8sPod(hash string, accessToken string, userName string) error {
 				},
 			},
 		},
+	}
+
+	err = setupServiceMapping( userName, hatchApp.PathRewrite, hatchApp.UseTLS, service )
+	if err != nil {
+		fmt.Printf("Failed set up mapping: %s\n", err)
+		return err
 	}
 
 	_, err = podClient.Services(Config.Config.UserNamespace).Create(context.TODO(), service, metav1.CreateOptions{})

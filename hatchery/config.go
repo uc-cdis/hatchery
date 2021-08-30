@@ -11,6 +11,8 @@ import (
 	"os"
 
 	"github.com/ghodss/yaml"
+
+	"github.com/uc-cdis/hatchery/hatchery/mapping"
 )
 
 // Container Struct to hold the configuration for Pod Container
@@ -55,6 +57,11 @@ type AppConfigInfo struct {
 	Name    string
 }
 
+type ServiceMapperConfig struct {
+	AmbassadorV1Mapper  *mapping.AmbassadorV1Mapper  `json:"ambassador-v1-mapper"`
+	AmbassadorV2Mapper  *mapping.AmbassadorV2Mapper  `json:"ambassador-v2-mapper"`
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace  string           `json:"user-namespace"`
@@ -65,6 +72,7 @@ type HatcheryConfig struct {
 	MoreConfigs    []AppConfigInfo  `json:"more-configs"`
 
 	ServerPort     int              `json:"server-port"`
+	ServiceMapper  ServiceMapperConfig `json:"service-mapper"`
 }
 
 // FullHatcheryConfig bucket result from loadConfig
@@ -91,12 +99,16 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.Logger.Printf("failed to load %v from cwd %v got - %v", configFilePath, cwd, err)
 		return data, err
 	}
-	data.Logger.Printf("loaded config: %v", string(plan))
 	data.ContainersMap = make(map[string]Container)
 	_ = yaml.Unmarshal(plan, &data.Config)
+	y, _ := yaml.Marshal(data.Config)
+	data.Logger.Printf("loaded config: %s", string(y))
 	//fill in defaults
 	if data.Config.ServerPort == 0 {
 		data.Config.ServerPort = 8000
+	}
+	if data.Config.ServiceMapper.AmbassadorV1Mapper == nil && data.Config.ServiceMapper.AmbassadorV2Mapper == nil {
+		data.Config.ServiceMapper.AmbassadorV1Mapper = &mapping.AmbassadorV1Mapper{}
 	}
 
 	if nil != data.Config.MoreConfigs && 0 < len(data.Config.MoreConfigs) {
@@ -128,6 +140,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		jsonBytes, _ := json.Marshal(container)
 		hash := fmt.Sprintf("%x", md5.Sum([]byte(jsonBytes)))
 		data.ContainersMap[hash] = container
+		data.Logger.Printf("Avalible container: %s %s (%s)", hash, container.Name, container.Image)
 	}
 	return data, nil
 }
