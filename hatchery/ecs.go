@@ -413,7 +413,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 
 	containerDefinition := &ecs.ContainerDefinition{
 		Environment:      input.Environment(),
-		StopTimeout:      aws.Int64(0),
+		StopTimeout:      aws.Int64(2),
 		Essential:        aws.Bool(true),
 		MountPoints:      input.MountPoints,
 		Image:            aws.String(input.Image),
@@ -426,7 +426,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 	sidecarContainerDefinition := input.SidecarContainer
 	sidecarContainerDefinition.LogConfiguration = logConfiguration
 	sidecarContainerDefinition.Environment = input.Environment()
-	sidecarContainerDefinition.StopTimeout = aws.Int64(0)
+	sidecarContainerDefinition.StopTimeout = aws.Int64(2)
 
 	if input.Port != 0 {
 		containerDefinition.SetPortMappings(
