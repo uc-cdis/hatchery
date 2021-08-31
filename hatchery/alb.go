@@ -51,6 +51,23 @@ func (creds *CREDS) createTargetGroup(userName string, vpcId string, svc *elbv2.
 
 }
 
+func (creds *CREDS) setTargetGroupAttributes(svc *elbv2.ELBV2, targetGroupArn string) (*elbv2.ModifyTargetGroupAttributesOutput, error) {
+	modifyTargetGroupAttributesInput := &elbv2.ModifyTargetGroupAttributesInput{
+		TargetGroupArn: aws.String(targetGroupArn),
+		Attributes: []*elbv2.TargetGroupAttribute{
+			{
+				Key:   aws.String("deregistration_delay.timeout_seconds"),
+				Value: aws.String("0"),
+			},
+		},
+	}
+	modifyTargetGroup, err := svc.ModifyTargetGroupAttributes(modifyTargetGroupAttributesInput)
+	if err != nil {
+		return nil, err
+	}
+	return modifyTargetGroup, nil
+}
+
 func (creds *CREDS) createListener(svc *elbv2.ELBV2, loadBalancer string, targetGroup string) (*elbv2.CreateListenerOutput, error) {
 	input := &elbv2.CreateListenerInput{
 		DefaultActions: []*elbv2.Action{
@@ -179,6 +196,16 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 	}
 
 	targetGroup, err := creds.createTargetGroup(userName, *vpcs.Vpcs[0].VpcId, svc)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	_, err = creds.setTargetGroupAttributes(svc, *targetGroup.TargetGroups[0].TargetGroupArn)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	listener, err := creds.createListener(svc, *loadBalancer.LoadBalancers[0].LoadBalancerArn, *targetGroup.TargetGroups[0].TargetGroupArn)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	return loadBalancer, targetGroup.TargetGroups[0].TargetGroupArn, listener, nil
 }
