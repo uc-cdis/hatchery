@@ -326,7 +326,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 						RunAsUser:  &sideCarRunAsUser,
 						RunAsGroup: &sideCarRunAsGroup,
 					},
-					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways),
+					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways), //TODO: make this configurable
 					Env:             sidecarEnvVars,
 					Command:         hatchConfig.Config.Sidecar.Command,
 					Args:            hatchConfig.Config.Sidecar.Args,

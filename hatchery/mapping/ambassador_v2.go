@@ -19,7 +19,7 @@ import (
 
 
 type AmbassadorV2Mapper struct {
-
+  HostDomain string `json:"host-domain"`
 }
 
 
@@ -46,10 +46,12 @@ func getMapperClient() (*MappingClient, error) {
   return mappingClient, nil
 }
 
-func (a *AmbassadorV2Mapper) Start(userName string, pathRewrite string, useTLS string, srv *k8sv1.Service) error {
+func (a *AmbassadorV2Mapper) Start(serviceName string, pathRewrite string, useTLS string, srv *k8sv1.Service) error {
   m := &ambassador.Mapping{}
-  m.Spec.Prefix = pathRewrite
+  m.Spec.Prefix = "/"
+  //m.Spec.Rewrite = &pathRewrite
   m.Spec.Service = srv.ObjectMeta.Name
+  m.Spec.Host = fmt.Sprintf("%s.%s", srv.ObjectMeta.Name, a.HostDomain)
   m.ObjectMeta.Namespace = srv.ObjectMeta.Namespace
   m.ObjectMeta.Name = srv.ObjectMeta.Name
   client, err := getMapperClient()
