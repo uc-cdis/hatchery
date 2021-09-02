@@ -22,6 +22,7 @@ type CreateTaskDefinitionInput struct {
 	Name             string
 	Port             int64
 	LogGroupName     string
+	Volumes          []*ecs.Volume
 	MountPoints      []*ecs.MountPoint
 	LogRegion        string
 	TaskRole         string
@@ -141,6 +142,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
+		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
 	svc := NewSession(sess, roleARN)
@@ -215,6 +217,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	pm := Config.PayModelMap[userName]
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
+		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
 	svc := NewSession(sess, roleARN)
@@ -270,17 +273,37 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 			})
 		}
 	}
+	volumes, err := svc.EFSFileSystem(userName)
+	if err != nil {
+		return "", err
+	}
 	taskDef := CreateTaskDefinitionInput{
 		Image:      hatchApp.Image,
 		Cpu:        cpu,
 		Memory:     mem,
 		Name:       userToResourceName(userName, "pod"),
-		Type:       "testing-ws",
+		Type:       "ws",
 		EntryPoint: hatchApp.Command,
+		Volumes: []*ecs.Volume{
+			{
+				Name: aws.String("pd"),
+				EfsVolumeConfiguration: &ecs.EFSVolumeConfiguration{
+					FileSystemId:  &volumes.FileSystemId,
+					RootDirectory: aws.String("/"),
+				},
+			},
+			{
+				Name: aws.String("data-volume"),
+			},
+		},
 		MountPoints: []*ecs.MountPoint{
 			{
 				ContainerPath: aws.String("/home/jovyan/data"),
-				SourceVolume:  aws.String("test-volume"),
+				SourceVolume:  aws.String("data-volume"),
+			},
+			{
+				ContainerPath: aws.String("/home/jovyan/pd"),
+				SourceVolume:  aws.String("pd"),
 			},
 		},
 		Args:             hatchApp.Args,
@@ -288,13 +311,16 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		Port:             int64(hatchApp.TargetPort),
 		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", Config.PayModelMap[userName].AWSAccountId), // TODO: Make this configurable?
 		SidecarContainer: ecs.ContainerDefinition{
-			Image:     aws.String("quay.io/cdis/bash:test"),
-			Name:      aws.String("sidecar-container"),
-			Essential: aws.Bool(false),
+			// TODO: make this configurable and proper.
+			Image: aws.String("quay.io/cdis/bash:test"),
+			Name:  aws.String("sidecar-container"),
+			// 2 seconds is the smallest value allowed.
+			StopTimeout: aws.Int64(2),
+			Essential:   aws.Bool(false),
 			MountPoints: []*ecs.MountPoint{
 				{
 					ContainerPath: aws.String("/data"),
-					SourceVolume:  aws.String("test-volume"),
+					SourceVolume:  aws.String("data-volume"),
 				},
 			},
 		},
@@ -380,10 +406,10 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 		return "", err
 	}
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
-	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, int32(80))
-	if err != nil {
-		return "", err
-	}
+	// err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, int32(80))
+	// if err != nil {
+	// 	return "", err
+	// }
 	return *loadBalancer.LoadBalancers[0].DNSName, nil
 }
 
@@ -426,7 +452,6 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 	sidecarContainerDefinition := input.SidecarContainer
 	sidecarContainerDefinition.LogConfiguration = logConfiguration
 	sidecarContainerDefinition.Environment = input.Environment()
-	sidecarContainerDefinition.StopTimeout = aws.Int64(2)
 
 	if input.Port != 0 {
 		containerDefinition.SetPortMappings(
@@ -451,11 +476,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 			NetworkMode:             aws.String(ecs.NetworkModeAwsvpc),
 			RequiresCompatibilities: aws.StringSlice([]string{ecs.CompatibilityFargate}),
 			TaskRoleArn:             aws.String(input.TaskRole),
-			Volumes: []*ecs.Volume{
-				{
-					Name: aws.String("test-volume"),
-				},
-			},
+			Volumes:                 input.Volumes,
 		},
 	)
 

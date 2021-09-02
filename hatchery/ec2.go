@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ecs"
 )
 
+// TODO: return a signle struct of all these instead.
 func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput, defaultSubnets *ec2.DescribeSubnetsOutput, securityGroups *ec2.DescribeSecurityGroupsOutput, err error) {
 	svc := ec2.New(session.New(&aws.Config{
 		Credentials: creds.creds,
@@ -80,6 +81,7 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 		}
 		Config.Logger.Printf("Create Security Grouo: %s", *newSecurityGroup.GroupId)
 
+		// TODO: Make this secure. Right now it's wide open
 		ingressRules := ec2.AuthorizeSecurityGroupIngressInput{
 			GroupId: newSecurityGroup.GroupId,
 			IpPermissions: []*ec2.IpPermission{

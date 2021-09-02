@@ -238,6 +238,7 @@ func ecsCluster(w http.ResponseWriter, r *http.Request) {
 		pm := Config.PayModelMap[userName]
 		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 		sess := session.Must(session.NewSession(&aws.Config{
+			// TODO: Make this configurable
 			Region: aws.String("us-east-1"),
 		}))
 		svc := NewSession(sess, roleARN)
@@ -261,6 +262,7 @@ func statusEcs(w http.ResponseWriter, r *http.Request) {
 		pm := Config.PayModelMap[userName]
 		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 		sess := session.Must(session.NewSession(&aws.Config{
+			// TODO: Make this configurable
 			Region: aws.String("us-east-1"),
 		}))
 		svc := NewSession(sess, roleARN)
