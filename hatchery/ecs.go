@@ -277,12 +277,19 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	if err != nil {
 		return "", err
 	}
+
+	taskRole, err := svc.taskRole(userName)
+	if err != nil {
+		return "", err
+	}
+
 	taskDef := CreateTaskDefinitionInput{
 		Image:      hatchApp.Image,
 		Cpu:        cpu,
 		Memory:     mem,
 		Name:       userToResourceName(userName, "pod"),
 		Type:       "ws",
+		TaskRole:   *taskRole,
 		EntryPoint: hatchApp.Command,
 		Volumes: []*ecs.Volume{
 			{
@@ -290,6 +297,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 				EfsVolumeConfiguration: &ecs.EFSVolumeConfiguration{
 					AuthorizationConfig: &ecs.EFSAuthorizationConfig{
 						AccessPointId: &volumes.AccessPointId,
+						Iam:           aws.String("ENABLED"),
 					},
 					FileSystemId:      &volumes.FileSystemId,
 					RootDirectory:     aws.String("/"),
