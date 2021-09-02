@@ -291,8 +291,9 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 					AuthorizationConfig: &ecs.EFSAuthorizationConfig{
 						AccessPointId: &volumes.AccessPointId,
 					},
-					FileSystemId:  &volumes.FileSystemId,
-					RootDirectory: aws.String("/"),
+					FileSystemId:      &volumes.FileSystemId,
+					RootDirectory:     aws.String("/"),
+					TransitEncryption: aws.String("ENABLED"),
 				},
 			},
 			{
