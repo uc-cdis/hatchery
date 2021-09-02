@@ -10,8 +10,9 @@ import (
 )
 
 type EFS struct {
-	EFSArn       string
-	FileSystemId string
+	EFSArn        string
+	FileSystemId  string
+	AccessPointId string
 }
 
 func (creds *CREDS) getEFSFileSystem(username string, svc *efs.EFS) (*efs.DescribeFileSystemsOutput, error) {
@@ -122,13 +123,21 @@ func (creds *CREDS) EFSFileSystem(username string) (*EFS, error) {
 		Config.Logger.Printf("AccessPoint created: %s", *accessPoint.AccessPointId)
 
 		return &EFS{
-			EFSArn:       *result.FileSystemArn,
-			FileSystemId: *result.FileSystemId,
+			EFSArn:        *result.FileSystemArn,
+			FileSystemId:  *result.FileSystemId,
+			AccessPointId: *accessPoint.AccessPointId,
 		}, nil
 	} else {
+		accessPoint, err := svc.DescribeAccessPoints(&efs.DescribeAccessPointsInput{
+			FileSystemId: exisitingFS.FileSystems[0].FileSystemId,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe accesspoint: %s", err)
+		}
 		return &EFS{
-			EFSArn:       *exisitingFS.FileSystems[0].FileSystemArn,
-			FileSystemId: *exisitingFS.FileSystems[0].FileSystemId,
+			EFSArn:        *exisitingFS.FileSystems[0].FileSystemArn,
+			FileSystemId:  *exisitingFS.FileSystems[0].FileSystemId,
+			AccessPointId: *accessPoint.AccessPoints[0].AccessPointId,
 		}, nil
 	}
 }

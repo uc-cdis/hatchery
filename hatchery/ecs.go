@@ -288,6 +288,9 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 			{
 				Name: aws.String("pd"),
 				EfsVolumeConfiguration: &ecs.EFSVolumeConfiguration{
+					AuthorizationConfig: &ecs.EFSAuthorizationConfig{
+						AccessPointId: &volumes.AccessPointId,
+					},
 					FileSystemId:  &volumes.FileSystemId,
 					RootDirectory: aws.String("/"),
 				},
