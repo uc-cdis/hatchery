@@ -18,7 +18,8 @@ func TestBuildPodFromJSON(t *testing.T) {
 		return
 	}
 	app := &config.Config.Containers[numApps-3]
-	pod, err := buildPod(config, app, "frickjack", nil)
+	baseName := getBaseName("frickjack", "782b6d5f30a25b6ec3d24ea367a3a8b1")
+	pod, err := buildPod(config, app, baseName, "frickjack", nil)
 
 	if nil != err {
 		t.Error(fmt.Sprintf("failed to build a pod - %v", err))
@@ -45,7 +46,8 @@ func TestBuildPodFromDockstore(t *testing.T) {
 		return
 	}
 	app := &config.Config.Containers[numApps-2]
-	pod, err := buildPod(config, app, "frickjack", nil)
+	baseName := getBaseName("frickjack", "782b6d5f30a25b6ec3d24ea367a3a8b1")
+	pod, err := buildPod(config, app, baseName, "frickjack", nil)
 
 	if nil != err {
 		t.Error(fmt.Sprintf("failed to build a pod - %v", err))

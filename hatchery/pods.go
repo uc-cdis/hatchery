@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"crypto/md5"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -50,6 +51,11 @@ type WorkspaceStatus struct {
 	Status          string            `json:"status"`
 	Conditions      []PodConditions   `json:"conditions"`
 	ContainerStates []ContainerStates `json:"containerStates"`
+}
+
+func getBaseName(userName string, hash string) string {
+	x := md5.Sum([]byte(userName))
+	return fmt.Sprintf("%x-%s", x[0:8], []byte(hash)[0:8] )
 }
 
 func getPodClient(ctx context.Context, userName string) (corev1.CoreV1Interface, bool, error) {
@@ -308,8 +314,8 @@ func userToResourceName(userName string, resourceType string) string {
 // buildPod returns a pod ready to pass to the k8s API given
 // a hatchery Container instance, and the name of the user
 // launching the app
-func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName string, extraVars []k8sv1.EnvVar) (pod *k8sv1.Pod, err error) {
-	podName := userToResourceName(userName, "pod")
+func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, baseName string, userName string, extraVars []k8sv1.EnvVar) (pod *k8sv1.Pod, err error) {
+	podName := userToResourceName(baseName, "pod")
 	labels := make(map[string]string)
 	labels["app"] = podName
 	annotations := make(map[string]string)
@@ -425,7 +431,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	}
 
 	if mountUserVolume {
-		claimName := userToResourceName(userName, "claim")
+		claimName := userToResourceName(baseName, "claim")
 		volumes = append(volumes, k8sv1.Volume{
 			Name: "user-data",
 			VolumeSource: k8sv1.VolumeSource{
@@ -641,12 +647,15 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 		return fmt.Errorf("Container %s not found", hash)
 	}
 	var extraVars []k8sv1.EnvVar
-	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
+
+	baseName := getBaseName(userName, hash)
+
+	pod, err := buildPod(Config, &hatchApp, baseName, userName, extraVars)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
 		return err
 	}
-	podName := userToResourceName(userName, "pod")
+	podName := userToResourceName(baseName, "pod")
 	podClient, _, err := getPodClient(ctx, userName)
 	if err != nil {
 		Config.Logger.Panicf("Error in createLocalK8sPod: %v", err)
@@ -655,7 +664,7 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
 	if mountUserVolume {
-		claimName := userToResourceName(userName, "claim")
+		claimName := userToResourceName(baseName, "claim")
 
 		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(ctx, claimName, metav1.GetOptions{})
 		if err != nil {
@@ -691,7 +700,7 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 
 	Config.Logger.Printf("Launched pod %s for user %s. Image: %s, CPU %s, Memory %s\n", hatchApp.Name, userName, hatchApp.Image, hatchApp.CPULimit, hatchApp.MemoryLimit)
 
-	serviceName := userToResourceName(userName, "service")
+	serviceName := userToResourceName(baseName, "service")
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
 
@@ -732,10 +741,10 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 
 	smap, err := Config.Config.GetServiceMapper()
 	if err != nil {
-		fmt.Printf("Failed set up mapping: %s\n", err)
+		fmt.Printf("Failed getting service mapper: %s\n", err)
 		return err
 	}
-	err = smap.Start(userName, hatchApp.PathRewrite, hatchApp.UseTLS, service )
+	err = smap.Start(baseName, hatchApp.PathRewrite, hatchApp.UseTLS, service )
 	if err != nil {
 		fmt.Printf("Failed set up mapping: %s\n", err)
 		return err
@@ -753,7 +762,10 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 }
 
 func createExternalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
-	hatchApp := Config.ContainersMap[hash]
+	hatchApp, ok := Config.ContainersMap[hash]
+	if !ok {
+		return fmt.Errorf("Container %s not found", hash)
+	}
 
 	podClient, err := NewEKSClientset(ctx, userName)
 	if err != nil {
@@ -800,16 +812,17 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 		Value: accessToken,
 	})
 
-	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
+	baseName := getBaseName(userName, hash)
+	pod, err := buildPod(Config, &hatchApp, baseName, userName, extraVars)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
 		return err
 	}
-	podName := userToResourceName(userName, "pod")
+	podName := userToResourceName(baseName, "pod")
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
 	if mountUserVolume {
-		claimName := userToResourceName(userName, "claim")
+		claimName := userToResourceName(baseName, "claim")
 
 		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(ctx, claimName, metav1.GetOptions{})
 		if err != nil {
@@ -846,7 +859,7 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 
 	Config.Logger.Printf("Launched pod %s for user %s. Image: %s, CPU %s, Memory %s\n", hatchApp.Name, userName, hatchApp.Image, hatchApp.CPULimit, hatchApp.MemoryLimit)
 
-	serviceName := userToResourceName(userName, "service")
+	serviceName := userToResourceName(baseName, "service")
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
 	annotationsService := make(map[string]string)
@@ -920,11 +933,16 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 // and route traffic to pod in external cluster.
 func createLocalService(ctx context.Context, userName string, hash string, serviceURL string, servicePort int32) error {
 
-	hatchApp := Config.ContainersMap[hash]
+	hatchApp, ok := Config.ContainersMap[hash]
+	if !ok {
+		return fmt.Errorf("Container %s not found", hash)
+	}
+
 	localPodClient := getLocalPodClient()
 
-	serviceName := userToResourceName(userName, "service")
-	podName := userToResourceName(userName, "pod")
+	baseName := getBaseName(userName, hash)
+	serviceName := userToResourceName(baseName, "service")
+	podName := userToResourceName(baseName, "pod")
 
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName

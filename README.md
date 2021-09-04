@@ -64,7 +64,7 @@ kubectl apply -f https://www.getambassador.io/yaml/aes-crds.yaml && kubectl wait
 Begin port forwarding to the service, so it can be connected to using `localhost`
 as a base domain.
 ```
-microk8s kubectl port-forward -n kube-system service/kubernetes-dashboard 10443:443
+sudo microk8s.kubectl port-forward service/ambassador -n ambassador 80:80 443:443
 ```
 
 
@@ -106,10 +106,10 @@ service-mapper:
     host-domain: localhost
 
 containers:
-  - target-port: 8888
+  - name: "Jupyter Notebook Bio Python"
+    target-port: 8888
     cpu-limit: "1.0"
     memory-limit: "512Mi"
-    name: "Jupyter Notebook Bio Python"
     image: "quay.io/occ_data/jupyternotebook:1.7.2"
     env: {}
     args: ["--NotebookApp.base_url=/lw-workspace/proxy/","--NotebookApp.password=''","--NotebookApp.token=''"]
@@ -121,6 +121,18 @@ containers:
     fs-gid: 100
     user-volume-location: "/home/jovyan/pd"
     friends: []
+  - name: quote-of-the-day
+    target-port: 8080
+    image: docker.io/datawire/quote:0.5.0
+    cpu-limit: "1.0"
+    memory-limit: "512Mi"
+    ready-probe: /
+  - name: echo-server
+    target-port: 8080
+    image: jmalloc/echo-server
+    cpu-limit: "1.0"
+    memory-limit: "512Mi"
+    ready-probe: /
 ```
 
 ### Build hatchery
