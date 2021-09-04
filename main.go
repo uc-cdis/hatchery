@@ -59,6 +59,7 @@ func main() {
 	hatchery.RegisterSystem(mux)
 	hatchery.RegisterHatchery(mux)
 
-	config.Logger.Printf("Running main")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8000", mux))
+	serverHost := fmt.Sprintf("0.0.0.0:%d", config.Config.ServerPort)
+	config.Logger.Printf("Running main on %s", serverHost)
+	log.Fatal(http.ListenAndServe( serverHost, mux))
 }

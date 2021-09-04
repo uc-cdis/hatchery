@@ -7,6 +7,8 @@ require (
 	github.com/DataDog/sketches-go v1.1.0 // indirect
 	github.com/Microsoft/go-winio v0.5.0 // indirect
 	github.com/aws/aws-sdk-go v1.40.15
+	github.com/datawire/ambassador v1.14.1
+	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.0.0 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -38,6 +40,8 @@ require (
 
 replace (
 	github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt v3.2.1+incompatible
+	github.com/docker/distribution => github.com/docker/distribution v0.0.0-20191216044856-a8371794149d
+	github.com/docker/docker => github.com/moby/moby v17.12.0-ce-rc1.0.20200618181300-9dc6525e6118+incompatible
 	github.com/go-logr/logr => github.com/go-logr/logr v0.2.1
 	// lateest gnostic has some API changes that break things
 	github.com/googleapis/gnostic => github.com/googleapis/gnostic v0.5.2

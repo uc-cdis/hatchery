@@ -5,12 +5,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
+	clientcmd "k8s.io/client-go/tools/clientcmd"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 
@@ -32,21 +34,6 @@ var (
 	trueVal  = true
 	falseVal = false
 )
-
-const ambassadorYaml = `---
-apiVersion: ambassador/v1
-kind:  Mapping
-name:  %s
-prefix: /
-headers:
-  remote_user: %s
-service: %s.%s.svc.cluster.local:80
-bypass_auth: true
-timeout_ms: 300000
-use_websocket: true
-rewrite: %s
-tls: %s
-`
 
 type PodConditions struct {
 	Type   string `json:"type"`
@@ -80,12 +67,21 @@ func getPodClient(ctx context.Context, userName string) (corev1.CoreV1Interface,
 }
 
 func getLocalPodClient() corev1.CoreV1Interface {
-	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
-	config.WrapTransport = kubernetestrace.WrapRoundTripper
-	if err != nil {
-		panic(err.Error())
+	// attempt to create config using $HOME/.kube/config
+	home, exists := os.LookupEnv("HOME")
+  if !exists {
+      home = "/root"
+  }
+  configPath := filepath.Join(home, ".kube", "config")
+  config, err := clientcmd.BuildConfigFromFlags("", configPath)
+  if err != nil {
+		//if the kube config file is not avalible, use the InCluster config
+		config, err = rest.InClusterConfig()
+		if err != nil {
+			panic(err.Error())
+		}
 	}
+	config.WrapTransport = kubernetestrace.WrapRoundTripper
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	// Access jobs. We can't do it all in one line, since we need to receive the
@@ -488,7 +484,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 						RunAsUser:  &sideCarRunAsUser,
 						RunAsGroup: &sideCarRunAsGroup,
 					},
-					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways),
+					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways), //TODO: make this configurable
 					Env:             sidecarEnvVars,
 					Command:         hatchConfig.Config.Sidecar.Command,
 					Args:            hatchConfig.Config.Sidecar.Args,
@@ -515,7 +511,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			RestartPolicy:    k8sv1.RestartPolicyNever,
 			ImagePullSecrets: []k8sv1.LocalObjectReference{},
 			NodeSelector: map[string]string{
-				"role": "jupyter",
+	//			"role": "jupyter",  //TODO: need a 'node selector' config, so this isn't hard coded
 			},
 			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}},
 			Volumes:     volumes,
@@ -638,9 +634,12 @@ func createK8sPod(ctx context.Context, hash string, accessToken string, userName
 	}
 }
 
-func createLocalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
-	hatchApp := Config.ContainersMap[hash]
 
+func createLocalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
+	hatchApp, ok := Config.ContainersMap[hash]
+	if !ok {
+		return fmt.Errorf("Container %s not found", hash)
+	}
 	var extraVars []k8sv1.EnvVar
 	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
 	if err != nil {
@@ -695,8 +694,6 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 	serviceName := userToResourceName(userName, "service")
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
-	annotationsService := make(map[string]string)
-	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userToResourceName(userName, "mapping"), userName, serviceName, Config.Config.UserNamespace, hatchApp.PathRewrite, hatchApp.UseTLS)
 
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
@@ -714,7 +711,7 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 			Name:        serviceName,
 			Namespace:   Config.Config.UserNamespace,
 			Labels:      labelsService,
-			Annotations: annotationsService,
+			Annotations: make(map[string]string),
 		},
 		Spec: k8sv1.ServiceSpec{
 			Type:     k8sv1.ServiceTypeClusterIP,
@@ -731,6 +728,17 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 				},
 			},
 		},
+	}
+
+	smap, err := Config.Config.GetServiceMapper()
+	if err != nil {
+		fmt.Printf("Failed set up mapping: %s\n", err)
+		return err
+	}
+	err = smap.Start(userName, hatchApp.PathRewrite, hatchApp.UseTLS, service )
+	if err != nil {
+		fmt.Printf("Failed set up mapping: %s\n", err)
+		return err
 	}
 
 	_, err = podClient.Services(Config.Config.UserNamespace).Create(ctx, service, metav1.CreateOptions{})
@@ -842,7 +850,7 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
 	annotationsService := make(map[string]string)
-	annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userToResourceName(userName, "mapping"), userName, serviceName, Config.Config.UserNamespace, hatchApp.PathRewrite, hatchApp.UseTLS)
+	//annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userToResourceName(userName, "mapping"), userName, serviceName, Config.Config.UserNamespace, hatchApp.PathRewrite, hatchApp.UseTLS)
 	annotationsService["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
@@ -886,6 +894,18 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 		return err
 	}
 
+	smap, err := Config.Config.GetServiceMapper()
+	if err != nil {
+		fmt.Printf("Failed set up mapping: %s\n", err)
+		return err
+	}
+
+	err = smap.Start(userName, hatchApp.PathRewrite, hatchApp.UseTLS, service )
+	if err != nil {
+		fmt.Printf("Failed set up mapping: %s\n", err)
+		return err
+	}
+
 	Config.Logger.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
 	nodes, _ := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
@@ -899,20 +919,7 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 // Creates a local service that portal can reach
 // and route traffic to pod in external cluster.
 func createLocalService(ctx context.Context, userName string, hash string, serviceURL string, servicePort int32) error {
-	const localAmbassadorYaml = `---
-apiVersion: ambassador/v1
-kind:  Mapping
-name:  %s
-prefix: /
-headers:
-  remote_user: %s
-service: %s:%d
-bypass_auth: true
-timeout_ms: 300000
-use_websocket: true
-rewrite: %s
-tls: %s
-`
+
 	hatchApp := Config.ContainersMap[hash]
 	localPodClient := getLocalPodClient()
 
@@ -921,8 +928,8 @@ tls: %s
 
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
-	annotationsService := make(map[string]string)
-	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, serviceURL, servicePort, hatchApp.PathRewrite, hatchApp.UseTLS)
+	//annotationsService := make(map[string]string)
+	//annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, serviceURL, servicePort, hatchApp.PathRewrite, hatchApp.UseTLS)
 
 	_, err := localPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
@@ -941,7 +948,7 @@ tls: %s
 			Name:        serviceName,
 			Namespace:   Config.Config.UserNamespace,
 			Labels:      labelsService,
-			Annotations: annotationsService,
+			Annotations: make(map[string]string),
 		},
 		Spec: k8sv1.ServiceSpec{
 			Type:     k8sv1.ServiceTypeClusterIP,
@@ -963,6 +970,18 @@ tls: %s
 	_, err = localPodClient.Services(Config.Config.UserNamespace).Create(ctx, localService, metav1.CreateOptions{})
 	if err != nil {
 		fmt.Printf("Failed to launch local service %s for user %s forwarding port %d. Error: %s\n", serviceName, userName, hatchApp.TargetPort, err)
+		return err
+	}
+
+	smap, err := Config.Config.GetServiceMapper()
+	if err != nil {
+		fmt.Printf("Failed set up mapping: %s\n", err)
+		return err
+	}
+
+	err = smap.Start(userName, hatchApp.PathRewrite, hatchApp.UseTLS, localService )
+	if err != nil {
+		fmt.Printf("Failed set up mapping: %s\n", err)
 		return err
 	}
 

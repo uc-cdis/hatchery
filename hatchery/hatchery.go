@@ -45,11 +45,12 @@ func home(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, htmlHeader)
 
 	for k, v := range Config.ContainersMap {
-		fmt.Fprintf(w, "<h1><a href=\"%s/launch?hash=%s\">Launch %s - %s CPU - %s Memory</a></h1>", Config.Config.SubDir, k, v.Name, v.CPULimit, v.MemoryLimit)
+		fmt.Fprintf(w, "<h1><a href=\"%s/launch?id=%s\">Launch %s - %s CPU - %s Memory</a></h1>\n", Config.Config.SubDir, k, v.Name, v.CPULimit, v.MemoryLimit)
 	}
 
 	htmlFooter := `</body>
-	</html>`
+	</html>
+`
 	fmt.Fprintf(w, htmlFooter)
 
 }
@@ -133,6 +134,11 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := r.Header.Get("REMOTE_USER")
+
+	if userName == "" {
+		http.Error(w, "Missing REMOTE_USER header", 400)
+		return
+	}
 	pm := Config.PayModelMap[userName]
 	if pm.Ecs == "true" {
 		launchEcs(w, r)
