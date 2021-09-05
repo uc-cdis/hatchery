@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	"github.com/gorilla/mux"
+	//httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
 
 type versionSummary struct {
@@ -13,7 +13,7 @@ type versionSummary struct {
 	Version string `json:"version"`
 }
 
-func RegisterSystem(mux *httptrace.ServeMux) {
+func RegisterSystem(mux *mux.Router) {
 	mux.HandleFunc("/_status", systemStatus)
 	mux.HandleFunc("/_version", systemVersion)
 }

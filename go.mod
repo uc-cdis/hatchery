@@ -16,6 +16,7 @@ require (
 	github.com/google/pprof v0.0.0-20210804190019-f964ff605595 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
+	github.com/gorilla/mux v1.7.3
 	github.com/json-iterator/go v1.1.11 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
