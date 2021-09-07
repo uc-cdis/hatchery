@@ -34,7 +34,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Status'
+                $ref: '#/components/schemas/WorkspaceStatus'
         401:
           $ref: '#/components/responses/UnauthorizedError'
   /terminate:
@@ -68,7 +68,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Status'
+                  $ref: '#/components/schemas/WorkspaceStatus'
         401:
           $ref: '#/components/responses/UnauthorizedError'
   /options:
@@ -121,9 +121,13 @@ components:
       schema:
         type: string
   schemas:
-    Status:
+    WorkspaceStatus:
       type: object
       properties:
+        url:
+          type: string
+          description: >
+            External HTTP/HTTPS address where the service can be reached
         status:
           type: string
           enum: [Launching, Running, Terminating, Stopped]
@@ -143,15 +147,6 @@ components:
           items:
             $ref: '#/components/schemas/ContainerState'
           description: The state of all the containers
-    Service:
-      type: object
-      properties:
-        url:
-          type: string
-          description: >
-            External HTTP/HTTPS address where the service can be reached
-        status:
-          $ref: '#/components/schemas/Status'
     Container:
       type: object
       properties:
@@ -185,8 +180,45 @@ components:
           type: string
           description: Name of this container
         state:
-          type: object
           description: Details about the container's current condition
+          $ref: "#/components/responses/ContainerStateDetail"
+        ready:
+          type: boolean
+    ContainerStateDetail:
+      type: object
+      properties:
+        running:
+          nullable: true
+          type: object
+          properties:
+            StartedAt:
+              type: string
+        waiting:
+          nullable: true
+          type: object
+          properties:
+            reason:
+              type: string
+            message:
+              type: string
+        terminated:
+          nullable: true
+          type: object
+          properties:
+            exitCode:
+              type: int32
+            signal:
+              type: int32
+            reason:
+              type: string
+            message:
+              type: string
+            startedAt:
+              type: string
+            finishedAt:
+              type: string
+            containerID:
+              type: string
     PayModel:
       type: object
       properties:

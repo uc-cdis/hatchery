@@ -14,12 +14,16 @@ type ContainerState struct {
 	// Name of this container
 	Name string `json:"name,omitempty"`
 
-	// Details about the container's current condition
-	State map[string]interface{} `json:"state,omitempty"`
+	State ContainerStateDetail `json:"state,omitempty"`
+
+	Ready bool `json:"ready,omitempty"`
 }
 
 // AssertContainerStateRequired checks if the required fields are not zero-ed
 func AssertContainerStateRequired(obj ContainerState) error {
+	if err := AssertContainerStateDetailRequired(obj.State); err != nil {
+		return err
+	}
 	return nil
 }
 

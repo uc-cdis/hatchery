@@ -11,7 +11,7 @@ import (
 func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput, defaultSubnets *ec2.DescribeSubnetsOutput, securityGroups *ec2.DescribeSecurityGroupsOutput, err error) {
 	svc := ec2.New(session.New(&aws.Config{
 		Credentials: creds.creds,
-		Region:      aws.String("us-east-1"),
+		Region:      aws.String("us-east-1"), //TODO: make this configurable
 	}))
 	vpcInput := &ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{

@@ -31,8 +31,8 @@ func (s *WorkspaceApiService) Launch(ctx context.Context, id string, rEMOTEUSER 
 	// TODO - update Launch with the required logic for this service method.
 	// Add api_workspace_service.go to the .openapi-generator-ignore to avoid overwriting this service implementation when updating open api generation.
 
-	//TODO: Uncomment the next line to return response Response(200, Status{}) or use other options such as http.Ok ...
-	//return Response(200, Status{}), nil
+	//TODO: Uncomment the next line to return response Response(200, WorkspaceStatus{}) or use other options such as http.Ok ...
+	//return Response(200, WorkspaceStatus{}), nil
 
 	//TODO: Uncomment the next line to return response Response(401, {}) or use other options such as http.Ok ...
 	//return Response(401, nil),nil
@@ -73,8 +73,8 @@ func (s *WorkspaceApiService) Status(ctx context.Context, rEMOTEUSER string, aut
 	// TODO - update Status with the required logic for this service method.
 	// Add api_workspace_service.go to the .openapi-generator-ignore to avoid overwriting this service implementation when updating open api generation.
 
-	//TODO: Uncomment the next line to return response Response(200, []Status{}) or use other options such as http.Ok ...
-	//return Response(200, []Status{}), nil
+	//TODO: Uncomment the next line to return response Response(200, []WorkspaceStatus{}) or use other options such as http.Ok ...
+	//return Response(200, []WorkspaceStatus{}), nil
 
 	//TODO: Uncomment the next line to return response Response(401, {}) or use other options such as http.Ok ...
 	//return Response(401, nil),nil

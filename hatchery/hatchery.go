@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	//"github.com/aws/aws-sdk-go/aws"
+	//"github.com/aws/aws-sdk-go/aws/session"
+	//httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"github.com/gorilla/mux"
 )
 
@@ -26,6 +26,7 @@ type APIKeyStruct struct {
 // Config package-global shared hatchery config
 var Config *FullHatcheryConfig
 
+/*
 // RegisterHatchery setup endpoints with the http engine
 func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/", home)
@@ -38,6 +39,7 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	// ECS functions
 	mux.HandleFunc("/create-ecs-cluster", ecsCluster)
 }
+*/
 
 func RegisterUI(mux *mux.Router) {
 	mux.HandleFunc("/", home)
@@ -74,6 +76,7 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+/*
 func status(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
 
@@ -294,6 +297,7 @@ func statusEcs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Paymodel has not been setup for user", 404)
 	}
 }
+*/
 
 // API key related helper functions
 // Make http request with header and body

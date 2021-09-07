@@ -11,7 +11,7 @@ import (
 func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Credentials) (string, error) {
 	c := cloudwatchlogs.New(session.New(&aws.Config{
 		Credentials: creds,
-		Region:      aws.String("us-east-1"),
+		Region:      aws.String("us-east-1"), //TODO: make this configurable?
 	}))
 
 	describeLogGroupIn := &cloudwatchlogs.DescribeLogGroupsInput{

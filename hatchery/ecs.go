@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/uc-cdis/hatchery/hatchery/openapi"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -104,8 +106,8 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 }
 
 // Status of workspace running in ECS
-func (sess *CREDS) statusEcsWorkspace(userName string) (*WorkspaceStatus, error) {
-	status := WorkspaceStatus{}
+func (sess *CREDS) statusEcsWorkspace(userName string) (*openapi.WorkspaceStatus, error) {
+	status := openapi.WorkspaceStatus{}
 	cluster, err := sess.findEcsCluster(userName)
 	if err != nil {
 		return nil, err
