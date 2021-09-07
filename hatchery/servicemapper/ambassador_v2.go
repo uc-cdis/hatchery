@@ -22,7 +22,6 @@ type AmbassadorV2Mapper struct {
   HostDomain string `json:"host-domain"`
 }
 
-
 func getMapperClient() (*MappingClient, error) {
   //Some of this code should be centralized into a common util module
 	// attempt to create config using $HOME/.kube/config
@@ -46,7 +45,16 @@ func getMapperClient() (*MappingClient, error) {
   return mappingClient, nil
 }
 
-func (a *AmbassadorV2Mapper) Start(serviceName string, pathRewrite string, useTLS string, srv *k8sv1.Service) error {
+
+func (a *AmbassadorV2Mapper) GetURL(namespace string, serviceName string) (string, error) {
+  hostDomain := a.HostDomain
+  if hostDomain == "" {
+    hostDomain = "svc.cluster.local:80"
+  }
+  return fmt.Sprintf("%s.%s", serviceName, hostDomain), nil
+}
+
+func (a *AmbassadorV2Mapper) Start(namespace string, serviceName string, userName string, pathRewrite string, useTLS string, srv *k8sv1.Service) error {
   m := &ambassador.Mapping{}
   m.Spec.Prefix = "/"
   //m.Spec.Rewrite = &pathRewrite
@@ -67,7 +75,7 @@ func (a *AmbassadorV2Mapper) Start(serviceName string, pathRewrite string, useTL
   return nil
 }
 
-func (a *AmbassadorV2Mapper) Stop(namespace string, name string) error {
+func (a *AmbassadorV2Mapper) Stop(namespace string, serviceName string) error {
   return nil
 }
 

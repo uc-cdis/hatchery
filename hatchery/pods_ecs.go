@@ -136,10 +136,10 @@ func scaleEKSNodes(ctx context.Context, userName string, scale int) {
 }
 
 
-func createExternalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
-	hatchApp, ok := Config.ContainersMap[hash]
+func createExternalK8sPod(ctx context.Context, appID string, accessToken string, userName string) error {
+	hatchApp, ok := Config.ContainersMap[appID]
 	if !ok {
-		return fmt.Errorf("Container %s not found", hash)
+		return fmt.Errorf("Container %s not found", appID)
 	}
 
 	podClient, err := NewEKSClientset(ctx, userName)
@@ -187,8 +187,8 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 		Value: accessToken,
 	})
 
-	baseName := getBaseName(userName, hash)
-	pod, err := buildPod(Config, &hatchApp, baseName, hash, userName, extraVars)
+	baseName := getBaseName(userName, appID)
+	pod, err := buildPod(Config, &hatchApp, baseName, userName, appID, extraVars)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
 		return err
@@ -238,7 +238,7 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 	labelsService := make(map[string]string)
 	labelsService[LABEL_POD] = podName
 	labelsService[LABEL_USER] = escapism(userName)
-	labelsService[LABEL_APPID] = hash
+	labelsService[LABEL_APPID] = appID
 	annotationsService := make(map[string]string)
 	//annotationsService["getambassador.io/config"] = fmt.Sprintf(ambassadorYaml, userToResourceName(userName, "mapping"), userName, serviceName, Config.Config.UserNamespace, hatchApp.PathRewrite, hatchApp.UseTLS)
 	annotationsService["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
@@ -290,7 +290,7 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 		return err
 	}
 
-	err = smap.Start(userName, hatchApp.PathRewrite, hatchApp.UseTLS, service )
+	err = smap.Start(Config.Config.UserNamespace, userName, appID, hatchApp.PathRewrite, hatchApp.UseTLS, service )
 	if err != nil {
 		fmt.Printf("Failed set up mapping: %s\n", err)
 		return err
@@ -301,7 +301,7 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 	nodes, _ := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
 	NodeIP := nodes.Items[0].Status.Addresses[0].Address
 	NodePort := service.Spec.Ports[0].NodePort
-	createLocalService(ctx, userName, hash, NodeIP, NodePort)
+	createLocalService(ctx, userName, appID, NodeIP, NodePort)
 
 	return nil
 }
@@ -310,23 +310,23 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 
 // Creates a local service that portal can reach
 // and route traffic to pod in external cluster.
-func createLocalService(ctx context.Context, userName string, hash string, serviceURL string, servicePort int32) error {
+func createLocalService(ctx context.Context, userName string, appID string, serviceURL string, servicePort int32) error {
 
-	hatchApp, ok := Config.ContainersMap[hash]
+	hatchApp, ok := Config.ContainersMap[appID]
 	if !ok {
-		return fmt.Errorf("Container %s not found", hash)
+		return fmt.Errorf("Container %s not found", appID)
 	}
 
 	localPodClient := getLocalPodClient()
 
-	baseName := getBaseName(userName, hash)
+	baseName := getBaseName(userName, appID)
 	serviceName := userToResourceName(baseName, "service")
 	podName := userToResourceName(baseName, "pod")
 
 	labelsService := make(map[string]string)
 	labelsService[LABEL_POD] = podName
 	labelsService[LABEL_USER] = escapism(userName)
-	labelsService[LABEL_APPID] = hash
+	labelsService[LABEL_APPID] = appID
 	//annotationsService := make(map[string]string)
 	//annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, serviceURL, servicePort, hatchApp.PathRewrite, hatchApp.UseTLS)
 
@@ -378,7 +378,7 @@ func createLocalService(ctx context.Context, userName string, hash string, servi
 		return err
 	}
 
-	err = smap.Start(userName, hatchApp.PathRewrite, hatchApp.UseTLS, localService )
+	err = smap.Start(Config.Config.UserNamespace, userName, appID, hatchApp.PathRewrite, hatchApp.UseTLS, localService )
 	if err != nil {
 		fmt.Printf("Failed set up mapping: %s\n", err)
 		return err

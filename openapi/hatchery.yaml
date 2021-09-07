@@ -124,6 +124,10 @@ components:
     WorkspaceStatus:
       type: object
       properties:
+        appID:
+          type: string
+        workspaceID:
+          type: string
         url:
           type: string
           description: >

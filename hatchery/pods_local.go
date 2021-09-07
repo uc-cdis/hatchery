@@ -92,6 +92,11 @@ func listWorkspacePods(ctx context.Context, userName string ) ([]*openapi.Worksp
 
 	_ = isExternalClient
 
+	serviceMapper, err := Config.Config.GetServiceMapper()
+	if err != nil {
+		return nil, err
+	}
+
 	labelSelect := fmt.Sprintf("%s=%s", LABEL_USER, escapism(userName))
 	podList, err := podClient.Pods(Config.Config.UserNamespace).List(ctx, metav1.ListOptions{LabelSelector:labelSelect})
 	if err != nil {
@@ -135,12 +140,18 @@ func listWorkspacePods(ctx context.Context, userName string ) ([]*openapi.Worksp
 			default:
 				fmt.Printf("Unknown pod status for %s: %s\n", pod.Name, string(pod.Status.Phase))
 			}
+			status.WorkspaceID = pod.Labels[LABEL_POD]
+			status.AppID = pod.Labels[LABEL_APPID]
+			if s, err := serviceMapper.GetURL(Config.Config.UserNamespace, status.WorkspaceID); err == nil {
+				status.Url = s
+			}
 		}
 		out = append(out, &status)
 	}
 	return out, nil
 }
 
+/*
 func workspacePodStatus(ctx context.Context, userName string) (*openapi.WorkspaceStatus, error) {
 	status := openapi.WorkspaceStatus{}
 	podClient, isExternalClient, err := getPodClient(ctx, userName)
@@ -210,6 +221,7 @@ func workspacePodStatus(ctx context.Context, userName string) (*openapi.Workspac
 
 	return &status, nil
 }
+*/
 
 /*
 func statusK8sPod(ctx context.Context, userName string) (*openapi.WorkspaceStatus, error) {
@@ -559,25 +571,25 @@ func payModelExistsForUser(userName string) (result bool) {
 }
 
 
-func createK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
+func createK8sPod(ctx context.Context, appID string, accessToken string, userName string) error {
 	if payModelExistsForUser(userName) {
-		return createExternalK8sPod(ctx, hash, accessToken, userName)
+		return createExternalK8sPod(ctx, appID, accessToken, userName)
 	} else {
-		return createLocalK8sPod(ctx, hash, accessToken, userName)
+		return createLocalK8sPod(ctx, appID, accessToken, userName)
 	}
 }
 
 
-func createLocalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
-	hatchApp, ok := Config.ContainersMap[hash]
+func createLocalK8sPod(ctx context.Context, appID string, accessToken string, userName string) error {
+	hatchApp, ok := Config.ContainersMap[appID]
 	if !ok {
-		return fmt.Errorf("Container %s not found", hash)
+		return fmt.Errorf("Container %s not found", appID)
 	}
 	var extraVars []k8sv1.EnvVar
 
-	baseName := getBaseName(userName, hash)
+	baseName := getBaseName(userName, appID)
 
-	pod, err := buildPod(Config, &hatchApp, baseName, hash, userName, extraVars)
+	pod, err := buildPod(Config, &hatchApp, baseName, userName, appID, extraVars)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
 		return err
@@ -631,7 +643,7 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 	labelsService := make(map[string]string)
 	labelsService[LABEL_POD] = podName
 	labelsService[LABEL_USER] = escapism(userName)
-	labelsService[LABEL_APPID] = hash
+	labelsService[LABEL_APPID] = appID
 
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
@@ -673,7 +685,7 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 		fmt.Printf("Failed getting service mapper: %s\n", err)
 		return err
 	}
-	err = smap.Start(baseName, hatchApp.PathRewrite, hatchApp.UseTLS, service )
+	err = smap.Start(Config.Config.UserNamespace, userName, appID, hatchApp.PathRewrite, hatchApp.UseTLS, service )
 	if err != nil {
 		fmt.Printf("Failed set up mapping: %s\n", err)
 		return err

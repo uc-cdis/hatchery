@@ -1,6 +1,7 @@
 package servicemapper
 
 import (
+  "fmt"
   "bytes"
   "text/template"
   "github.com/ghodss/yaml"
@@ -31,7 +32,16 @@ tls: {{.useTLS}}
 `
 
 
-func (a *AmbassadorV1Mapper) Start(userName string, pathRewrite string, useTLS string, srv *k8sv1.Service) error {
+func (a *AmbassadorV1Mapper) GetURL(namespace string, serviceName string) (string, error) {
+  hostDomain := a.HostDomain
+  if hostDomain == "" {
+    hostDomain = "svc.cluster.local:80"
+  }
+  return fmt.Sprintf("%s.%s", serviceName, hostDomain), nil
+}
+
+
+func (a *AmbassadorV1Mapper) Start(namespace string, serviceName string, userName string, pathRewrite string, useTLS string, srv *k8sv1.Service) error {
   var tmpl *template.Template
   var err error
 	if a.MappingTemplate == nil {
@@ -71,7 +81,7 @@ func (a *AmbassadorV1Mapper) Start(userName string, pathRewrite string, useTLS s
   return nil
 }
 
-func (a *AmbassadorV1Mapper) Stop(namespace string, name string) error {
+func (a *AmbassadorV1Mapper) Stop(namespace string, serviceName string) error {
   //nothing to do
   return nil
 }

@@ -11,6 +11,10 @@ package openapi
 
 type WorkspaceStatus struct {
 
+	AppID string `json:"appID,omitempty"`
+
+	WorkspaceID string `json:"workspaceID,omitempty"`
+
 	// External HTTP/HTTPS address where the service can be reached 
 	Url string `json:"url,omitempty"`
 
