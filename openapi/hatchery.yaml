@@ -46,6 +46,11 @@ paths:
       parameters:
       - $ref: '#/components/parameters/User'
       - $ref: '#/components/parameters/Authorization'
+      - in: query
+        name: id
+        schema:
+          type: string
+        description: Workspace ID to be deleted
       responses:
         200:
           description: successfully started terminating

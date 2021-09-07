@@ -37,5 +37,5 @@ type WorkspaceApiServicer interface {
 	Options(context.Context, string, string) (ImplResponse, error)
 	Paymodels(context.Context, string) (ImplResponse, error)
 	Status(context.Context, string, string) (ImplResponse, error)
-	Terminate(context.Context, string, string) (ImplResponse, error)
+	Terminate(context.Context, string, string, string) (ImplResponse, error)
 }

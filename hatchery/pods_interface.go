@@ -42,9 +42,9 @@ type WorkspaceManager interface {
   Create(ctx context.Context, hash string, accessToken string, userName string)
 }
 
-func getBaseName(userName string, hash string) string {
+func getBaseName(userName string, appID string) string {
 	x := md5.Sum([]byte(userName))
-	return fmt.Sprintf("%x-%s", x[0:8], []byte(hash)[0:8] )
+	return fmt.Sprintf("%x-%s", x[0:8], []byte(appID)[0:8] )
 }
 
 

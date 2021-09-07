@@ -83,7 +83,7 @@ func (s *WorkspaceApiService) Status(ctx context.Context, rEMOTEUSER string, aut
 }
 
 // Terminate - Terminate the actively running workspace
-func (s *WorkspaceApiService) Terminate(ctx context.Context, rEMOTEUSER string, authorization string) (ImplResponse, error) {
+func (s *WorkspaceApiService) Terminate(ctx context.Context, rEMOTEUSER string, authorization string, id string) (ImplResponse, error) {
 	// TODO - update Terminate with the required logic for this service method.
 	// Add api_workspace_service.go to the .openapi-generator-ignore to avoid overwriting this service implementation when updating open api generation.
 

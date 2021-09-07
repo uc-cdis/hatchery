@@ -146,9 +146,11 @@ func (c *WorkspaceApiController) Status(w http.ResponseWriter, r *http.Request) 
 
 // Terminate - Terminate the actively running workspace
 func (c *WorkspaceApiController) Terminate(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
 	rEMOTEUSER := r.Header.Get("REMOTE_USER")
 	authorization := r.Header.Get("Authorization")
-	result, err := c.service.Terminate(r.Context(), rEMOTEUSER, authorization)
+	id := query.Get("id")
+	result, err := c.service.Terminate(r.Context(), rEMOTEUSER, authorization, id)
 	// If an error occurred, encode the error with the status code
 	if err != nil {
 		c.errorHandler(w, r, err, &result)

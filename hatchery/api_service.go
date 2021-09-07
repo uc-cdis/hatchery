@@ -89,7 +89,7 @@ func (s *HatcheryAPIService) Status(ctx context.Context, userName string, author
   } else {
     stats, err := listWorkspacePods(ctx, userName)
     if err != nil {
-      return openapi.Response(500, nil), nil       
+      return openapi.Response(500, nil), nil
     }
     return openapi.Response(200, stats), nil
   }
@@ -110,7 +110,7 @@ func (s *HatcheryAPIService) Paymodels(ctx context.Context, userName string) (op
   return openapi.Response(404, nil),nil
 }
 
-func (s *HatcheryAPIService) Terminate(ctx context.Context, userName string, authorization string) (openapi.ImplResponse, error) {
+func (s *HatcheryAPIService) Terminate(ctx context.Context, userName string, authorization string, workspaceID string) (openapi.ImplResponse, error) {
   accessToken := readBearerToken(authorization)
   if userName == "" {
     return openapi.ImplResponse{}, fmt.Errorf("Missing REMOTE_USER header")
@@ -126,7 +126,7 @@ func (s *HatcheryAPIService) Terminate(ctx context.Context, userName string, aut
       return openapi.Response(404, nil), nil //Paymodel has not been setup for user
   	}
 	} else {
-		err := deleteK8sPod(ctx, accessToken, userName)
+		err := deleteK8sPod(ctx, accessToken, userName, workspaceID)
 		if err != nil {
       return openapi.Response(500, nil), nil
 		}

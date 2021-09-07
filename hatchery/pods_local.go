@@ -234,7 +234,7 @@ func statusK8sPod(ctx context.Context, userName string) (*openapi.WorkspaceStatu
 }
 */
 
-func deleteK8sPod(ctx context.Context, accessToken string, userName string) error {
+func deleteK8sPod(ctx context.Context, accessToken string, userName string, workspaceID string) error {
 	podClient, _, err := getPodClient(ctx, userName)
 	if err != nil {
 		return err
@@ -247,8 +247,8 @@ func deleteK8sPod(ctx context.Context, accessToken string, userName string) erro
 		GracePeriodSeconds: &grace,
 	}
 
-	podName := userToResourceName(userName, "pod")
-	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
+	//podName := userToResourceName(userName, "pod")
+	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, workspaceID, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace pod was not found: %s", err)
 	}
@@ -275,16 +275,16 @@ func deleteK8sPod(ctx context.Context, accessToken string, userName string) erro
 		}
 	}
 
-	fmt.Printf("Attempting to delete pod %s for user %s\n", podName, userName)
-	podClient.Pods(Config.Config.UserNamespace).Delete(ctx, podName, deleteOptions)
+	fmt.Printf("Attempting to delete pod %s for user %s\n", workspaceID, userName)
+	podClient.Pods(Config.Config.UserNamespace).Delete(ctx, workspaceID, deleteOptions)
 
-	serviceName := userToResourceName(userName, "service")
-	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
+	//serviceName := userToResourceName(userName, "service")
+	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, workspaceID, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("A workspace service was not found: %s", err)
 	}
-	fmt.Printf("Attempting to delete service %s for user %s\n", serviceName, userName)
-	podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
+	fmt.Printf("Attempting to delete service %s for user %s\n", workspaceID, userName)
+	podClient.Services(Config.Config.UserNamespace).Delete(ctx, workspaceID, deleteOptions)
 
 	return nil
 }
@@ -292,10 +292,11 @@ func deleteK8sPod(ctx context.Context, accessToken string, userName string) erro
 // buildPod returns a pod ready to pass to the k8s API given
 // a hatchery Container instance, and the name of the user
 // launching the app
-func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, baseName string, appID string, userName string, extraVars []k8sv1.EnvVar) (pod *k8sv1.Pod, err error) {
-	podName := userToResourceName(baseName, "pod")
+func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName string, appID string, extraVars []k8sv1.EnvVar) (pod *k8sv1.Pod, err error) {
+	workspaceID := getBaseName(userName, appID)
+
 	labels := make(map[string]string)
-	labels[LABEL_POD] = podName
+	labels[LABEL_POD] = workspaceID
 	labels[LABEL_USER] = escapism(userName)
 	labels[LABEL_APPID] = appID
 
@@ -412,12 +413,12 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, baseName str
 	}
 
 	if mountUserVolume {
-		claimName := userToResourceName(baseName, "claim")
+		//claimName := userToResourceName(baseName, "claim")
 		volumes = append(volumes, k8sv1.Volume{
 			Name: "user-data",
 			VolumeSource: k8sv1.VolumeSource{
 				PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
-					ClaimName: claimName,
+					ClaimName: workspaceID,
 				},
 			},
 		})
@@ -454,7 +455,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, baseName str
 
 	pod = &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        podName,
+			Name:        workspaceID,
 			Namespace:   hatchConfig.Config.UserNamespace,
 			Labels:      labels,
 			Annotations: annotations,
@@ -587,14 +588,14 @@ func createLocalK8sPod(ctx context.Context, appID string, accessToken string, us
 	}
 	var extraVars []k8sv1.EnvVar
 
-	baseName := getBaseName(userName, appID)
+	workspaceID := getBaseName(userName, appID)
 
-	pod, err := buildPod(Config, &hatchApp, baseName, userName, appID, extraVars)
+	pod, err := buildPod(Config, &hatchApp, userName, appID, extraVars)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
 		return err
 	}
-	podName := userToResourceName(baseName, "pod")
+	//podName := userToResourceName(baseName, "pod")
 	podClient, _, err := getPodClient(ctx, userName)
 	if err != nil {
 		Config.Logger.Panicf("Error in createLocalK8sPod: %v", err)
@@ -603,14 +604,14 @@ func createLocalK8sPod(ctx context.Context, appID string, accessToken string, us
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
 	if mountUserVolume {
-		claimName := userToResourceName(baseName, "claim")
+		//claimName := userToResourceName(baseName, "claim")
 
-		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(ctx, claimName, metav1.GetOptions{})
+		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(ctx, workspaceID, metav1.GetOptions{})
 		if err != nil {
-			Config.Logger.Printf("Creating PersistentVolumeClaim %s.\n", claimName)
+			Config.Logger.Printf("Creating PersistentVolumeClaim %s.\n", workspaceID)
 			pvc := &k8sv1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        claimName,
+					Name:        workspaceID,
 					Annotations: pod.Annotations,
 					Labels:      pod.Labels,
 				},
@@ -625,7 +626,7 @@ func createLocalK8sPod(ctx context.Context, appID string, accessToken string, us
 			}
 			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(ctx, pvc, metav1.CreateOptions{})
 			if err != nil {
-				Config.Logger.Printf("Failed to create PVC %s. Error: %s\n", claimName, err)
+				Config.Logger.Printf("Failed to create PVC %s. Error: %s\n", workspaceID, err)
 				return err
 			}
 		}
@@ -639,13 +640,13 @@ func createLocalK8sPod(ctx context.Context, appID string, accessToken string, us
 
 	Config.Logger.Printf("Launched pod %s for user %s. Image: %s, CPU %s, Memory %s\n", hatchApp.Name, userName, hatchApp.Image, hatchApp.CPULimit, hatchApp.MemoryLimit)
 
-	serviceName := userToResourceName(baseName, "service")
+	//serviceName := userToResourceName(baseName, "service")
 	labelsService := make(map[string]string)
-	labelsService[LABEL_POD] = podName
+	labelsService[LABEL_POD] = workspaceID
 	labelsService[LABEL_USER] = escapism(userName)
 	labelsService[LABEL_APPID] = appID
 
-	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
+	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, workspaceID, metav1.GetOptions{})
 	if err == nil {
 		// This probably happened as the result of some error... there was no pod but was a service
 		// Lets just clean it up and proceed
@@ -653,22 +654,22 @@ func createLocalK8sPod(ctx context.Context, appID string, accessToken string, us
 		deleteOptions := metav1.DeleteOptions{
 			PropagationPolicy: &policy,
 		}
-		podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
+		podClient.Services(Config.Config.UserNamespace).Delete(ctx, workspaceID, deleteOptions)
 	}
 
 	service := &k8sv1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        serviceName,
+			Name:        workspaceID,
 			Namespace:   Config.Config.UserNamespace,
 			Labels:      labelsService,
 			Annotations: make(map[string]string),
 		},
 		Spec: k8sv1.ServiceSpec{
 			Type:     k8sv1.ServiceTypeClusterIP,
-			Selector: map[string]string{"app": podName},
+			Selector: map[string]string{LABEL_POD: workspaceID},
 			Ports: []k8sv1.ServicePort{
 				{
-					Name:     podName,
+					Name:     workspaceID,
 					Protocol: k8sv1.ProtocolTCP,
 					Port:     80,
 					TargetPort: intstr.IntOrString{
@@ -693,11 +694,11 @@ func createLocalK8sPod(ctx context.Context, appID string, accessToken string, us
 
 	_, err = podClient.Services(Config.Config.UserNamespace).Create(ctx, service, metav1.CreateOptions{})
 	if err != nil {
-		fmt.Printf("Failed to launch service %s for user %s forwarding port %d. Error: %s\n", serviceName, userName, hatchApp.TargetPort, err)
+		fmt.Printf("Failed to launch service %s for user %s forwarding port %d. Error: %s\n", workspaceID, userName, hatchApp.TargetPort, err)
 		return err
 	}
 
-	fmt.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
+	fmt.Printf("Launched service %s for user %s forwarding port %d\n", workspaceID, userName, hatchApp.TargetPort)
 
 	return nil
 }
