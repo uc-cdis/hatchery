@@ -76,7 +76,11 @@ func (a *AmbassadorV2Mapper) Start(namespace string, serviceName string, userNam
 }
 
 func (a *AmbassadorV2Mapper) Stop(namespace string, serviceName string) error {
-  return nil
+  client, err := getMapperClient()
+  if err != nil {
+    return err
+  }
+  return client.Delete(namespace, serviceName)
 }
 
 

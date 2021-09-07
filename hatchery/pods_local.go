@@ -275,6 +275,14 @@ func deleteK8sPod(ctx context.Context, accessToken string, userName string, work
 		}
 	}
 
+	smap, err := Config.Config.GetServiceMapper()
+	if err != nil {
+		fmt.Printf("Failed getting service mapper: %s\n", err)
+	} else {
+		err = smap.Stop(Config.Config.UserNamespace, workspaceID )
+		fmt.Printf("Failed stopping service mapper: %s\n", err)
+	}
+
 	fmt.Printf("Attempting to delete pod %s for user %s\n", workspaceID, userName)
 	podClient.Pods(Config.Config.UserNamespace).Delete(ctx, workspaceID, deleteOptions)
 
