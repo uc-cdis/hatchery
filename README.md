@@ -154,27 +154,69 @@ Which returns:
 ```html
 <html>
 	<head>Gen3 Hatchery</head>
-	<body><h1><a href="/launch?id=782b6d5f30a25b6ec3d24ea367a3a8b1">Launch Jupyter Notebook Bio Python - 1.0 CPU - 512Mi Memory</a></h1>
+	<body>
+<h1><a href="/lw-workspace/launch?id=782b6d5f30a25b6ec3d24ea367a3a8b1">Launch Jupyter Notebook Bio Python - 1.0 CPU - 512Mi Memory</a></h1>
+<h1><a href="/lw-workspace/launch?id=3ad95e7cbe1d4d189bff98a63b978cde">Launch Galaxy - 1.0 CPU - 2048Mi Memory</a></h1>
+<h1><a href="/lw-workspace/launch?id=cec8d8db7e204455bd1936ef051650df">Launch quote-of-the-day - 1.0 CPU - 512Mi Memory</a></h1>
+<h1><a href="/lw-workspace/launch?id=5534aff7a8e008760b9be093e5f78844">Launch echo-server - 1.0 CPU - 512Mi Memory</a></h1>
 </body>
 	</html>
+
 ```
 
-Using the launch id, we can start an instance of the Jupyter notebook
+Using the launch id, we can start an instance of the Quote of the day server
 
 ```bash
-curl -X POST -H "REMOTE_USER: test@test.com" "http://localhost:8000/launch?id=782b6d5f30a25b6ec3d24ea367a3a8b1"
+curl -X POST -H "REMOTE_USER: test@test.com" "http://localhost:8000/lw-workspace/launch?id=cec8d8db7e204455bd1936ef051650df"
 ```
 
-Get the URL using the command
+Get the status of the workspace using the command
 ```bash
-kubectl get mapping -n hatch-test
+curl -H "REMOTE_USER: test@test.com" "http://localhost:8000/lw-workspace/status"
 ```
-Which should return something like:
-```
-NAME                         SOURCE HOST                            SOURCE PREFIX   DEST SERVICE                 STATE   REASON
-h-test-40test-2ecom-s   h-test-40test-2ecom-s.localhost   /               h-test-40test-2ecom-s           
+Which returns
+```json
+[
+  {
+    "appID": "cec8d8db7e204455bd1936ef051650df",
+    "workspaceID": "b642b4217b34b1e8-cec8d8db",
+    "url": "b642b4217b34b1e8-cec8d8db.localhost",
+    "status": "Running"
+  }
+]
 ```
 
-In a web browser go to `http://h-test-40test-2ecom-s.localhost` to see the launched site.
+In a web browser go to `http://b642b4217b34b1e8-cec8d8db.localhost` to see the launched site.
 
-## Reference
+To terminate the system, use the command
+```bash
+curl -X POST -H "REMOTE_USER: test@test.com" "http://localhost:8000/lw-workspace/terminate?id=b642b4217b34b1e8-cec8d8db"
+```
+
+## Developer Notes
+
+### Rebuilding OpenAPI generated code
+
+The code in hatchery/openapi is automatically generated from the OpenAPI YAML
+file `openapi/hatchery.yaml`. If changes are made to the OpenAPI configuration,
+the code can be generated.
+
+Get the OpenAPI generation tool:
+```
+make openapi-depends
+```
+
+Run the code generator:
+```
+make
+```
+
+NOTE: For some reason, the code generation template for `hatcher/openapi/api_workspace.go`
+includes some imports that aren't used (which is not allowed in GO), so comment out the lines:
+```
+13:  	//"encoding/json"
+```
+and
+```
+17:   //"github.com/gorilla/mux"
+```

@@ -48,11 +48,14 @@ func RegisterUI(mux *mux.Router) {
 func home(w http.ResponseWriter, r *http.Request) {
 	htmlHeader := `<html>
 	<head>Gen3 Hatchery</head>
-	<body>`
+	<body>
+`
 	fmt.Fprintf(w, htmlHeader)
 
+	subDir := "/lw-workspace"
+	// subDir = Config.Config.SubDir //Subdirs aren't working
 	for k, v := range Config.ContainersMap {
-		fmt.Fprintf(w, "<h1><a href=\"%s/launch?id=%s\">Launch %s - %s CPU - %s Memory</a></h1>\n", Config.Config.SubDir, k, v.Name, v.CPULimit, v.MemoryLimit)
+		fmt.Fprintf(w, "<h1><a href=\"%s/launch?id=%s\">Launch %s - %s CPU - %s Memory</a></h1>\n", subDir, k, v.Name, v.CPULimit, v.MemoryLimit)
 	}
 
 	htmlFooter := `</body>
