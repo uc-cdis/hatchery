@@ -84,10 +84,11 @@ func status(w http.ResponseWriter, r *http.Request) {
 
 func options(w http.ResponseWriter, r *http.Request) {
 	type container struct {
-		Name        string `json:"name"`
-		CPULimit    string `json:"cpu-limit"`
-		MemoryLimit string `json:"memory-limit"`
-		ID          string `json:"id"`
+		Name          string `json:"name"`
+		CPULimit      string `json:"cpu-limit"`
+		MemoryLimit   string `json:"memory-limit"`
+		ID            string `json:"id"`
+		IdleTimeLimit int    `json:"idle-time-limit"`
 	}
 	var options []container
 	for k, v := range Config.ContainersMap {
@@ -96,6 +97,16 @@ func options(w http.ResponseWriter, r *http.Request) {
 			CPULimit:    v.CPULimit,
 			MemoryLimit: v.MemoryLimit,
 			ID:          k,
+		}
+		for _, arg := range v.Args {
+			if strings.Contains(arg, "shutdown_no_activity_timeout=") {
+				argSplit := strings.Split(arg, "=")
+				idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
+				if err == nil {
+					c.IdleTimeLimit = idleTimeLimit
+				}
+				break
+			}
 		}
 		options = append(options, c)
 	}
