@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
 
@@ -31,6 +33,9 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/status", status)
 	mux.HandleFunc("/options", options)
 	mux.HandleFunc("/paymodels", paymodels)
+
+	// ECS functions
+	mux.HandleFunc("/create-ecs-cluster", ecsCluster)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -66,20 +71,24 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 func status(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
 
-	result, err := statusK8sPod(r.Context(), userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
+	pm := Config.PayModelMap[userName]
+	if pm.Ecs == "true" {
+		statusEcs(w, r)
+	} else {
+		result, err := statusK8sPod(r.Context(), userName)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		out, err := json.Marshal(result)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		fmt.Fprintf(w, string(out))
 	}
-
-	out, err := json.Marshal(result)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-
-	fmt.Fprintf(w, string(out))
-
 }
 
 func options(w http.ResponseWriter, r *http.Request) {
@@ -135,13 +144,17 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := r.Header.Get("REMOTE_USER")
-	err := createK8sPod(r.Context(), string(hash), accessToken, userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
+	pm := Config.PayModelMap[userName]
+	if pm.Ecs == "true" {
+		launchEcs(w, r)
+	} else {
+		err := createK8sPod(r.Context(), string(hash), accessToken, userName)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		fmt.Fprintf(w, "Success")
 	}
-
-	fmt.Fprintf(w, "Success")
 }
 
 func terminate(w http.ResponseWriter, r *http.Request) {
@@ -151,14 +164,17 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 	accessToken := getBearerToken(r)
 	userName := r.Header.Get("REMOTE_USER")
-
-	err := deleteK8sPod(r.Context(), accessToken, userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
+	pm := Config.PayModelMap[userName]
+	if pm.Ecs == "true" {
+		terminateEcs(w, r)
+	} else {
+		err := deleteK8sPod(r.Context(), accessToken, userName)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		fmt.Fprintf(w, "Terminated workspace")
 	}
-
-	fmt.Fprintf(w, "Terminated workspace")
 }
 
 func getBearerToken(r *http.Request) string {
@@ -173,13 +189,120 @@ func getBearerToken(r *http.Request) string {
 	return ""
 }
 
+// ECS functions
+
+// Function to terminate workspace in ECS
+func terminateEcs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Not Found", 404)
+		return
+	}
+	accessToken := getBearerToken(r)
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken)
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("%s", svc))
+		}
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", 404)
+	}
+}
+
+// Function to launch workspace in ECS
+// TODO: Evaluate this functionality
+func launchEcs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Not Found", 404)
+		return
+	}
+	hash := r.URL.Query().Get("id")
+
+	if hash == "" {
+		http.Error(w, "Missing ID argument", 400)
+		return
+	}
+
+	accessToken := getBearerToken(r)
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		result, err := launchEcsWorkspace(r.Context(), userName, hash, accessToken)
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+			Config.Logger.Printf("Error: %s", err)
+		}
+
+		fmt.Fprintf(w, fmt.Sprintf("%+v", result))
+
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", 404)
+	}
+}
+
+// Function to create ECS cluster.
+// TODO: Evaluate the need for this!! Delete?
+func ecsCluster(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		pm := Config.PayModelMap[userName]
+		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+		sess := session.Must(session.NewSession(&aws.Config{
+			// TODO: Make this configurable
+			Region: aws.String("us-east-1"),
+		}))
+		svc := NewSession(sess, roleARN)
+
+		result, err := svc.launchEcsCluster(userName)
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+			Config.Logger.Printf("Error: %s", err)
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("%s", result))
+		}
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", 404)
+	}
+}
+
+// Function to check status of ECS workspace.
+func statusEcs(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+	if payModelExistsForUser(userName) {
+		pm := Config.PayModelMap[userName]
+		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+		sess := session.Must(session.NewSession(&aws.Config{
+			// TODO: Make this configurable
+			Region: aws.String("us-east-1"),
+		}))
+		svc := NewSession(sess, roleARN)
+		result, err := svc.statusEcsWorkspace(userName)
+		if err != nil {
+			Config.Logger.Printf("Error: %s", err)
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+		} else {
+			out, err := json.Marshal(result)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			fmt.Fprintf(w, string(out))
+		}
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", 404)
+	}
+}
+
+// API key related helper functions
 // Make http request with header and body
-func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint string, accessKey string, contentType string, headers map[string]string, body *bytes.Buffer) (*http.Response, error) {
+func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint string, accessToken string, contentType string, headers map[string]string, body *bytes.Buffer) (*http.Response, error) {
 	if headers == nil {
 		headers = make(map[string]string)
 	}
-	if accessKey != "" {
-		headers["Authorization"] = "Bearer " + accessKey
+	if accessToken != "" {
+		headers["Authorization"] = "Bearer " + accessToken
 	}
 	if contentType != "" {
 		headers["Content-Type"] = contentType
@@ -208,9 +331,9 @@ func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint str
 
 func getFenceURL() string {
 	fenceURL := "http://fence-service/"
-	_, ok := os.LookupEnv("HOSTNAME")
+	_, ok := os.LookupEnv("BASE_URL")
 	if ok {
-		fenceURL = "https://" + os.Getenv("HOSTNAME") + "/user"
+		fenceURL = "https://" + os.Getenv("BASE_URL") + "/user"
 	}
 	if !strings.HasSuffix(fenceURL, "/") {
 		fenceURL += "/"

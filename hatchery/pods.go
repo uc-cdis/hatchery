@@ -888,14 +888,17 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 
 	Config.Logger.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
-	createLocalService(ctx, userName, hash)
+	nodes, _ := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
+	NodeIP := nodes.Items[0].Status.Addresses[0].Address
+	NodePort := service.Spec.Ports[0].NodePort
+	createLocalService(ctx, userName, hash, NodeIP, NodePort)
 
 	return nil
 }
 
 // Creates a local service that portal can reach
 // and route traffic to pod in external cluster.
-func createLocalService(ctx context.Context, userName string, hash string) error {
+func createLocalService(ctx context.Context, userName string, hash string, serviceURL string, servicePort int32) error {
 	const localAmbassadorYaml = `---
 apiVersion: ambassador/v1
 kind:  Mapping
@@ -912,20 +915,16 @@ tls: %s
 `
 	hatchApp := Config.ContainersMap[hash]
 	localPodClient := getLocalPodClient()
-	externalPodClient, err := NewEKSClientset(ctx, userName)
+
 	serviceName := userToResourceName(userName, "service")
 	podName := userToResourceName(userName, "pod")
-	service, err := externalPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 
-	nodes, _ := externalPodClient.Nodes().List(ctx, metav1.ListOptions{})
-	NodeIP := nodes.Items[0].Status.Addresses[0].Address
-	NodePort := service.Spec.Ports[0].NodePort
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
 	annotationsService := make(map[string]string)
-	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, NodeIP, NodePort, hatchApp.PathRewrite, hatchApp.UseTLS)
+	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, serviceURL, servicePort, hatchApp.PathRewrite, hatchApp.UseTLS)
 
-	_, err = localPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
+	_, err := localPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
 		// This probably happened as the result of some error... there was no pod but was a service
 		// Lets just clean it up and proceed
@@ -969,28 +968,4 @@ tls: %s
 
 	Config.Logger.Printf("Launched local service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 	return nil
-}
-
-// Escapism escapes characters not allowed into hex with -
-func escapism(input string) string {
-	safeBytes := "abcdefghijklmnopqrstuvwxyz0123456789"
-	var escaped string
-	for _, v := range input {
-		if !characterInString(v, safeBytes) {
-			hexCode := fmt.Sprintf("%2x", v)
-			escaped += "-" + hexCode
-		} else {
-			escaped += string(v)
-		}
-	}
-	return escaped
-}
-
-func characterInString(a rune, list string) bool {
-	for _, b := range list {
-		if b == a {
-			return true
-		}
-	}
-	return false
 }
