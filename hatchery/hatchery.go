@@ -22,6 +22,10 @@ type APIKeyStruct struct {
 	KeyID  string `json:"key_id"`
 }
 
+type WorkspaceKernelStatusStruct struct {
+	LastActivityTime string `json:"last_activity"`
+}
+
 // Config package-global shared hatchery config
 var Config *FullHatcheryConfig
 
@@ -70,12 +74,13 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 
 func status(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
+	accessToken := getBearerToken(r)
 
 	pm := Config.PayModelMap[userName]
 	if pm.Ecs == "true" {
-		statusEcs(w, r)
+		statusEcs(r.Context(), w, userName, accessToken)
 	} else {
-		result, err := statusK8sPod(r.Context(), userName)
+		result, err := statusK8sPod(r.Context(), userName, accessToken)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -107,6 +112,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 			MemoryLimit: v.MemoryLimit,
 			ID:          k,
 		}
+		c.IdleTimeLimit = -1
 		for _, arg := range v.Args {
 			if strings.Contains(arg, "shutdown_no_activity_timeout=") {
 				argSplit := strings.Split(arg, "=")
@@ -148,7 +154,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	if pm.Ecs == "true" {
 		launchEcs(w, r)
 	} else {
-		err := createK8sPod(r.Context(), string(hash), accessToken, userName)
+		err := createK8sPod(r.Context(), string(hash), userName, accessToken)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -168,7 +174,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	if pm.Ecs == "true" {
 		terminateEcs(w, r)
 	} else {
-		err := deleteK8sPod(r.Context(), accessToken, userName)
+		err := deleteK8sPod(r.Context(), userName, accessToken)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -267,8 +273,7 @@ func ecsCluster(w http.ResponseWriter, r *http.Request) {
 }
 
 // Function to check status of ECS workspace.
-func statusEcs(w http.ResponseWriter, r *http.Request) {
-	userName := r.Header.Get("REMOTE_USER")
+func statusEcs(ctx context.Context, w http.ResponseWriter, userName string, accessToken string) {
 	if payModelExistsForUser(userName) {
 		pm := Config.PayModelMap[userName]
 		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
@@ -277,7 +282,7 @@ func statusEcs(w http.ResponseWriter, r *http.Request) {
 			Region: aws.String("us-east-1"),
 		}))
 		svc := NewSession(sess, roleARN)
-		result, err := svc.statusEcsWorkspace(userName)
+		result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
 		if err != nil {
 			Config.Logger.Printf("Error: %s", err)
 			fmt.Fprintf(w, fmt.Sprintf("%s", err))
@@ -333,10 +338,16 @@ func getFenceURL() string {
 	fenceURL := "http://fence-service/"
 	_, ok := os.LookupEnv("BASE_URL")
 	if ok {
-		fenceURL = "https://" + os.Getenv("BASE_URL") + "/user"
+		fenceURL = "https://" + os.Getenv("BASE_URL") + "/user/"
 	}
-	if !strings.HasSuffix(fenceURL, "/") {
-		fenceURL += "/"
+	return fenceURL
+}
+
+func getAmbassadorURL() string {
+	fenceURL := "http://ambassador-service/"
+	_, ok := os.LookupEnv("BASE_URL")
+	if ok {
+		fenceURL = "https://" + os.Getenv("BASE_URL") + "/lw-workspace/proxy/"
 	}
 	return fenceURL
 }
@@ -373,7 +384,7 @@ func deleteAPIKeyWithContext(ctx context.Context, accessToken string, apiKeyID s
 	}
 
 	fenceDeleteAPIKeyURL := getFenceURL() + "credentials/api/" + apiKeyID
-	resp, err := MakeARequestWithContext(ctx, "DELETE", fenceDeleteAPIKeyURL, accessToken, "application/json", nil, nil)
+	resp, err := MakeARequestWithContext(ctx, "DELETE", fenceDeleteAPIKeyURL, accessToken, "", nil, nil)
 	if err != nil {
 		return err
 	}
@@ -381,4 +392,31 @@ func deleteAPIKeyWithContext(ctx context.Context, accessToken string, apiKeyID s
 		return errors.New("Error occurred when deleting API key with error code " + strconv.Itoa(resp.StatusCode))
 	}
 	return nil
+}
+
+func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (lastActivityTime int64, err error) {
+	if accessToken == "" {
+		return -1, errors.New("No valid access token")
+	}
+
+	workspaceKernelStatusURL := getAmbassadorURL() + "api/status"
+	resp, err := MakeARequestWithContext(ctx, "GET", workspaceKernelStatusURL, accessToken, "", nil, nil)
+	if err != nil {
+		return -1, err
+	}
+	if resp != nil && resp.StatusCode != 200 {
+		return -1, errors.New("Error occurred when getting workspace kernel status with error code " + strconv.Itoa(resp.StatusCode))
+	}
+	defer resp.Body.Close()
+
+	workspaceKernelStatusResponse := new(WorkspaceKernelStatusStruct)
+	err = json.NewDecoder(resp.Body).Decode(workspaceKernelStatusResponse)
+	if err != nil {
+		return -1, errors.New("Unable to decode workspace kernel status response: " + err.Error())
+	}
+	lastAct, err := time.Parse(time.RFC3339, workspaceKernelStatusResponse.LastActivityTime)
+	if err != nil {
+		return -1, errors.New("Unable to parse last activity time: " + err.Error())
+	}
+	return lastAct.Unix(), nil
 }

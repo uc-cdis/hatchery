@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
+	"strconv"
+	"strings"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -60,9 +63,11 @@ type ContainerStates struct {
 }
 
 type WorkspaceStatus struct {
-	Status          string            `json:"status"`
-	Conditions      []PodConditions   `json:"conditions"`
-	ContainerStates []ContainerStates `json:"containerStates"`
+	Status           string            `json:"status"`
+	Conditions       []PodConditions   `json:"conditions"`
+	ContainerStates  []ContainerStates `json:"containerStates"`
+	IdleTimeLimit    int               `json:"idleTimeLimit"`
+	LastActivityTime int64             `json:"lastActivityTime"`
 }
 
 func getPodClient(ctx context.Context, userName string) (corev1.CoreV1Interface, bool, error) {
@@ -157,7 +162,7 @@ func checkPodReadiness(pod *k8sv1.Pod) bool {
 	return true
 }
 
-func podStatus(ctx context.Context, userName string) (*WorkspaceStatus, error) {
+func podStatus(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
 	podClient, isExternalClient, err := getPodClient(ctx, userName)
 	if err != nil {
@@ -220,6 +225,25 @@ func podStatus(ctx context.Context, userName string) (*WorkspaceStatus, error) {
 			}
 			status.ContainerStates = containerStates
 		}
+		for _, container := range pod.Spec.Containers {
+			for _, arg := range container.Args {
+				if strings.Contains(arg, "shutdown_no_activity_timeout=") {
+					argSplit := strings.Split(arg, "=")
+					idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
+					if err == nil {
+						status.IdleTimeLimit = idleTimeLimit
+						lastActivityTime, err := getKernelIdleTimeWithContext(ctx, accessToken)
+						status.LastActivityTime = lastActivityTime
+						if err != nil {
+							log.Println(err.Error())
+						}
+					} else {
+						log.Println(err.Error())
+					}
+					break
+				}
+			}
+		}
 	default:
 		fmt.Printf("Unknown pod status for %s: %s\n", podName, string(pod.Status.Phase))
 	}
@@ -227,8 +251,8 @@ func podStatus(ctx context.Context, userName string) (*WorkspaceStatus, error) {
 	return &status, nil
 }
 
-func statusK8sPod(ctx context.Context, userName string) (*WorkspaceStatus, error) {
-	status, err := podStatus(ctx, userName)
+func statusK8sPod(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
+	status, err := podStatus(ctx, userName, accessToken)
 	if err != nil {
 		status.Status = fmt.Sprintf("%v", err)
 		Config.Logger.Printf("Error getting status: %v", err)
@@ -236,7 +260,7 @@ func statusK8sPod(ctx context.Context, userName string) (*WorkspaceStatus, error
 	return status, nil
 }
 
-func deleteK8sPod(ctx context.Context, accessToken string, userName string) error {
+func deleteK8sPod(ctx context.Context, userName string, accessToken string) error {
 	podClient, _, err := getPodClient(ctx, userName)
 	if err != nil {
 		return err
@@ -630,15 +654,15 @@ func scaleEKSNodes(ctx context.Context, userName string, scale int) {
 	}
 }
 
-func createK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
+func createK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
 	if payModelExistsForUser(userName) {
-		return createExternalK8sPod(ctx, hash, accessToken, userName)
+		return createExternalK8sPod(ctx, hash, userName, accessToken)
 	} else {
-		return createLocalK8sPod(ctx, hash, accessToken, userName)
+		return createLocalK8sPod(ctx, hash, userName, accessToken)
 	}
 }
 
-func createLocalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
+func createLocalK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
 	hatchApp := Config.ContainersMap[hash]
 
 	var extraVars []k8sv1.EnvVar
@@ -744,7 +768,7 @@ func createLocalK8sPod(ctx context.Context, hash string, accessToken string, use
 	return nil
 }
 
-func createExternalK8sPod(ctx context.Context, hash string, accessToken string, userName string) error {
+func createExternalK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
 	hatchApp := Config.ContainersMap[hash]
 
 	podClient, err := NewEKSClientset(ctx, userName)
