@@ -286,15 +286,14 @@ func statusEcs(ctx context.Context, w http.ResponseWriter, userName string, acce
 		if err != nil {
 			Config.Logger.Printf("Error: %s", err)
 			fmt.Fprintf(w, fmt.Sprintf("%s", err))
-		} else {
-			out, err := json.Marshal(result)
-			if err != nil {
-				http.Error(w, err.Error(), 500)
-				return
-			}
-
-			fmt.Fprintf(w, string(out))
 		}
+		out, err := json.Marshal(result)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+
+		fmt.Fprintf(w, string(out))
 	} else {
 		http.Error(w, "Paymodel has not been setup for user", 404)
 	}

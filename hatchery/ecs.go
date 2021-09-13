@@ -107,9 +107,20 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 // Status of workspace running in ECS
 func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
+	statusMap := map[string]string{
+		"ACTIVE":   "Running",
+		"DRAINING": "Terminating",
+		"STOPPED":  "Not Found",
+		"INACTIVE": "Not Found",
+	}
+	statusMessage := "INACTIVE"
+	status.Status = statusMap[statusMessage]
+	status.IdleTimeLimit = -1
+	status.LastActivityTime = -1
+
 	cluster, err := sess.findEcsCluster(userName)
 	if err != nil {
-		return nil, err
+		return &status, err
 	}
 	service, err := sess.svc.DescribeServices(&ecs.DescribeServicesInput{
 		Cluster: cluster.ClusterName,
@@ -118,12 +129,9 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 		},
 	})
 	if err != nil {
-		return nil, err
+		return &status, err
 	}
 
-	statusMessage := "INACTIVE"
-	status.IdleTimeLimit = -1
-	status.LastActivityTime = -1
 	var taskDefName string
 	if len(service.Services) > 0 {
 		statusMessage = *service.Services[0].Status
@@ -170,13 +178,6 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 		}
 	} else {
 		Config.Logger.Printf("No service found for user %s", userName)
-	}
-
-	statusMap := map[string]string{
-		"ACTIVE":   "Running",
-		"DRAINING": "Terminating",
-		"STOPPED":  "Not Found",
-		"INACTIVE": "Not Found",
 	}
 
 	status.Status = statusMap[statusMessage]
