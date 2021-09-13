@@ -344,12 +344,12 @@ func getFenceURL() string {
 }
 
 func getAmbassadorURL() string {
-	fenceURL := "http://ambassador-service/"
+	ambassadorURL := "http://ambassador-service/"
 	_, ok := os.LookupEnv("BASE_URL")
 	if ok {
-		fenceURL = "https://" + os.Getenv("BASE_URL") + "/lw-workspace/proxy/"
+		ambassadorURL = "https://" + os.Getenv("BASE_URL") + "/lw-workspace/proxy/"
 	}
-	return fenceURL
+	return ambassadorURL
 }
 
 func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIKeyStruct, err error) {
