@@ -285,7 +285,6 @@ func statusEcs(ctx context.Context, w http.ResponseWriter, userName string, acce
 		result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
 		if err != nil {
 			Config.Logger.Printf("Error: %s", err)
-			fmt.Fprintf(w, fmt.Sprintf("%s", err))
 		}
 		out, err := json.Marshal(result)
 		if err != nil {
