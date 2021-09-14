@@ -154,7 +154,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 									argSplit := strings.Split(*arg, "=")
 									idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
 									if err == nil {
-										status.IdleTimeLimit = idleTimeLimit
+										status.IdleTimeLimit = idleTimeLimit * 1000
 										lastActivityTime, err := getKernelIdleTimeWithContext(ctx, accessToken)
 										status.LastActivityTime = lastActivityTime
 										if err != nil {
