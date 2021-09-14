@@ -135,44 +135,46 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 	var taskDefName string
 	if len(service.Services) > 0 {
 		statusMessage = *service.Services[0].Status
-		taskDefName = *service.Services[0].TaskDefinition
-		if taskDefName == "" {
-			Config.Logger.Printf("No task definition found for user %s", userName)
-		} else {
-			desTaskDefOutput, err := sess.svc.DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
-				TaskDefinition: &taskDefName,
-			})
-			if err == nil {
-				containerDefs := desTaskDefOutput.TaskDefinition.ContainerDefinitions
-				if len(containerDefs) > 0 {
-					args := containerDefs[0].Command
-					if len(args) > 0 {
-						for i, arg := range args {
-							if strings.Contains(*arg, "shutdown_no_activity_timeout=") {
-								Config.Logger.Printf("Found kernel idle shutdown time in args. Attempting to get last activity time\n")
-								argSplit := strings.Split(*arg, "=")
-								idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
-								if err == nil {
-									status.IdleTimeLimit = idleTimeLimit
-									lastActivityTime, err := getKernelIdleTimeWithContext(ctx, accessToken)
-									status.LastActivityTime = lastActivityTime
-									if err != nil {
+		if statusMessage == "ACTIVE" {
+			taskDefName = *service.Services[0].TaskDefinition
+			if taskDefName == "" {
+				Config.Logger.Printf("No task definition found for user %s", userName)
+			} else {
+				desTaskDefOutput, err := sess.svc.DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
+					TaskDefinition: &taskDefName,
+				})
+				if err == nil {
+					containerDefs := desTaskDefOutput.TaskDefinition.ContainerDefinitions
+					if len(containerDefs) > 0 {
+						args := containerDefs[0].Command
+						if len(args) > 0 {
+							for i, arg := range args {
+								if strings.Contains(*arg, "shutdown_no_activity_timeout=") {
+									Config.Logger.Printf("Found kernel idle shutdown time in args. Attempting to get last activity time\n")
+									argSplit := strings.Split(*arg, "=")
+									idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
+									if err == nil {
+										status.IdleTimeLimit = idleTimeLimit
+										lastActivityTime, err := getKernelIdleTimeWithContext(ctx, accessToken)
+										status.LastActivityTime = lastActivityTime
+										if err != nil {
+											Config.Logger.Println(err.Error())
+										}
+									} else {
 										Config.Logger.Println(err.Error())
 									}
-								} else {
-									Config.Logger.Println(err.Error())
+									break
 								}
-								break
+								if i == len(args)-1 {
+									Config.Logger.Printf("Unable to find kernel idle shutdown time in args\n")
+								}
 							}
-							if i == len(args)-1 {
-								Config.Logger.Printf("Unable to find kernel idle shutdown time in args\n")
-							}
+						} else {
+							Config.Logger.Printf("No env vars found for task definition %s\n", taskDefName)
 						}
 					} else {
-						Config.Logger.Printf("No env vars found for task definition %s\n", taskDefName)
+						Config.Logger.Printf("No container definition found for task definition %s\n", taskDefName)
 					}
-				} else {
-					Config.Logger.Printf("No container definition found for task definition %s\n", taskDefName)
 				}
 			}
 		}

@@ -236,7 +236,7 @@ func launchEcs(w http.ResponseWriter, r *http.Request) {
 	if payModelExistsForUser(userName) {
 		result, err := launchEcsWorkspace(r.Context(), userName, hash, accessToken)
 		if err != nil {
-			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+			http.Error(w, fmt.Sprintf("%s", err), 500)
 			Config.Logger.Printf("Error: %s", err)
 		}
 

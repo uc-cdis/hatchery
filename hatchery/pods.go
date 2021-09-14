@@ -209,6 +209,25 @@ func podStatus(ctx context.Context, userName string, accessToken string) (*Works
 		allReady := checkPodReadiness(pod)
 		if allReady == true {
 			status.Status = "Running"
+			for _, container := range pod.Spec.Containers {
+				for _, arg := range container.Args {
+					if strings.Contains(arg, "shutdown_no_activity_timeout=") {
+						argSplit := strings.Split(arg, "=")
+						idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
+						if err == nil {
+							status.IdleTimeLimit = idleTimeLimit
+							lastActivityTime, err := getKernelIdleTimeWithContext(ctx, accessToken)
+							status.LastActivityTime = lastActivityTime
+							if err != nil {
+								log.Println(err.Error())
+							}
+						} else {
+							log.Println(err.Error())
+						}
+						break
+					}
+				}
+			}
 		} else {
 			status.Status = "Launching"
 			conditions := make([]PodConditions, len(pod.Status.Conditions))
@@ -224,25 +243,6 @@ func podStatus(ctx context.Context, userName string, accessToken string) (*Works
 				containerStates[i].Ready = cs.Ready
 			}
 			status.ContainerStates = containerStates
-		}
-		for _, container := range pod.Spec.Containers {
-			for _, arg := range container.Args {
-				if strings.Contains(arg, "shutdown_no_activity_timeout=") {
-					argSplit := strings.Split(arg, "=")
-					idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
-					if err == nil {
-						status.IdleTimeLimit = idleTimeLimit
-						lastActivityTime, err := getKernelIdleTimeWithContext(ctx, accessToken)
-						status.LastActivityTime = lastActivityTime
-						if err != nil {
-							log.Println(err.Error())
-						}
-					} else {
-						log.Println(err.Error())
-					}
-					break
-				}
-			}
 		}
 	default:
 		fmt.Printf("Unknown pod status for %s: %s\n", podName, string(pod.Status.Phase))
