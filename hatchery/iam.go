@@ -36,7 +36,7 @@ func (creds *CREDS) taskRole(username string) (*string, error) {
 					}
 				]
 			}`),
-			PolicyName: aws.String("ws-task-policy"),
+			PolicyName: aws.String(fmt.Sprintf("ws-task-policy-%s", username)),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create policy: %s", err)
