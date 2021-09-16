@@ -416,5 +416,5 @@ func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (last
 	if err != nil {
 		return -1, errors.New("Unable to parse last activity time: " + err.Error())
 	}
-	return lastAct.UnixMilli(), nil
+	return lastAct.Unix() * 1000, nil
 }

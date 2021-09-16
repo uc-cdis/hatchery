@@ -183,7 +183,6 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 	}
 
 	status.Status = statusMap[statusMessage]
-	// TODO: last activity time for ECS
 	return &status, nil
 }
 
