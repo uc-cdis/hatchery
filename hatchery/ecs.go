@@ -57,9 +57,9 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 // TODO: Evaluate if this is still this needed..
 func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
-	cluster_name := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
+	clusterName := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
 	input := &ecs.CreateClusterInput{
-		ClusterName: aws.String(cluster_name),
+		ClusterName: aws.String(clusterName),
 	}
 
 	result, err := svc.CreateCluster(input)
@@ -77,16 +77,37 @@ func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 
 func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
-	cluster_name := strings.ReplaceAll(Config.Config.Sidecar.Env["HOSTNAME"], ".", "-") + "-cluster"
-	cluster_input := &ecs.DescribeClustersInput{
+	clusterName := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
+	clusterInput := &ecs.DescribeClustersInput{
 		Clusters: []*string{
-			aws.String(cluster_name),
+			aws.String(clusterName),
 		},
 	}
-	result, err := svc.DescribeClusters(cluster_input)
+	describeClusterResult, err := svc.DescribeClusters(clusterInput)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
+			case ecs.ErrCodeClusterNotFoundException:
+				input := &ecs.CreateClusterInput{
+					ClusterName: aws.String(clusterName),
+				}
+
+				_, err := svc.CreateCluster(input)
+				if err != nil {
+					if aerr, ok := err.(awserr.Error); ok {
+						switch aerr.Code() {
+						default:
+							return nil, aerr
+						}
+					}
+					return nil, err
+				}
+				Config.Logger.Printf("ECS cluster %s created for user %s", clusterName, userName)
+				describeClusterResult, err = svc.DescribeClusters(clusterInput)
+				if err != nil {
+					Config.Logger.Printf("Error: %s", err)
+					return nil, err
+				}
 			default:
 				return nil, aerr
 			}
@@ -96,11 +117,11 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 			Config.Logger.Println(err.Error())
 		}
 	}
-	if len(result.Failures) > 0 {
-		Config.Logger.Printf("ECS cluster named %s not found", cluster_name)
-		return nil, errors.New(fmt.Sprintf("ECS cluster named %s not found", cluster_name))
+	if len(describeClusterResult.Failures) > 0 {
+		Config.Logger.Printf("ECS cluster named %s not found", clusterName)
+		return nil, errors.New(fmt.Sprintf("ECS cluster named %s not found", clusterName))
 	} else {
-		return result.Clusters[0], nil
+		return describeClusterResult.Clusters[0], nil
 	}
 }
 
