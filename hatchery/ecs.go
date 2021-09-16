@@ -87,27 +87,6 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
-			case ecs.ErrCodeClusterNotFoundException:
-				input := &ecs.CreateClusterInput{
-					ClusterName: aws.String(clusterName),
-				}
-
-				_, err := svc.CreateCluster(input)
-				if err != nil {
-					if aerr, ok := err.(awserr.Error); ok {
-						switch aerr.Code() {
-						default:
-							return nil, aerr
-						}
-					}
-					return nil, err
-				}
-				Config.Logger.Printf("ECS cluster %s created for user %s", clusterName, userName)
-				describeClusterResult, err = svc.DescribeClusters(clusterInput)
-				if err != nil {
-					Config.Logger.Printf("Error: %s", err)
-					return nil, err
-				}
 			default:
 				return nil, aerr
 			}
@@ -118,8 +97,33 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 		}
 	}
 	if len(describeClusterResult.Failures) > 0 {
-		Config.Logger.Printf("ECS cluster named %s not found", clusterName)
-		return nil, errors.New(fmt.Sprintf("ECS cluster named %s not found", clusterName))
+		for _, failure := range describeClusterResult.Failures {
+			if *failure.Reason == "MISSING" {
+				Config.Logger.Printf("ECS cluster named %s not found, trying to create this ECS cluster", clusterName)
+				input := &ecs.CreateClusterInput{
+					ClusterName: aws.String(clusterName),
+				}
+
+				_, err := svc.CreateCluster(input)
+				if err != nil {
+					if aerr, ok := err.(awserr.Error); ok {
+						switch aerr.Code() {
+						default:
+							return nil, errors.New(fmt.Sprintf("Cannot create ECS cluster named %s: %s", clusterName, aerr.Code()))
+						}
+					}
+					return nil, errors.New(fmt.Sprintf("Cannot create ECS cluster named %s: %s", clusterName, err.Error()))
+				}
+				Config.Logger.Printf("ECS cluster %s created for user %s", clusterName, userName)
+				describeClusterResult, err = svc.DescribeClusters(clusterInput)
+				if err != nil || len(describeClusterResult.Failures) > 0 {
+					return nil, errors.New(fmt.Sprintf("Still cannot find ECS cluster named %s: %s", clusterName, err.Error()))
+				}
+				return describeClusterResult.Clusters[0], nil
+			}
+		}
+		Config.Logger.Printf("ECS cluster named %s cannot be described", clusterName)
+		return nil, errors.New(fmt.Sprintf("ECS cluster named %s cannot be described", clusterName))
 	} else {
 		return describeClusterResult.Clusters[0], nil
 	}
@@ -410,11 +414,13 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	}
 	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash)
 	if err != nil {
+		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		return "", err
 	}
 
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash)
 	if err != nil {
+		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		return "", err
 	}
 
