@@ -328,12 +328,19 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	if err != nil {
 		return "", err
 	}
+
+	taskRole, err := svc.taskRole(userName)
+	if err != nil {
+		return "", err
+	}
+
 	taskDef := CreateTaskDefinitionInput{
 		Image:      hatchApp.Image,
 		Cpu:        cpu,
 		Memory:     mem,
 		Name:       userToResourceName(userName, "pod"),
 		Type:       "ws",
+		TaskRole:   *taskRole,
 		EntryPoint: hatchApp.Command,
 		Volumes: []*ecs.Volume{
 			{
@@ -341,6 +348,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 				EfsVolumeConfiguration: &ecs.EFSVolumeConfiguration{
 					AuthorizationConfig: &ecs.EFSAuthorizationConfig{
 						AccessPointId: &volumes.AccessPointId,
+						Iam:           aws.String("ENABLED"),
 					},
 					FileSystemId:      &volumes.FileSystemId,
 					RootDirectory:     aws.String("/"),
@@ -461,10 +469,10 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 		return "", err
 	}
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
-	// err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, int32(80))
-	// if err != nil {
-	// 	return "", err
-	// }
+	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, int32(80))
+	if err != nil {
+		return "", err
+	}
 	return *loadBalancer.LoadBalancers[0].DNSName, nil
 }
 
