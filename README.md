@@ -64,7 +64,7 @@ kubectl apply -f https://www.getambassador.io/yaml/aes-crds.yaml && kubectl wait
 Begin port forwarding to the service, so it can be connected to using `localhost`
 as a base domain.
 ```
-sudo microk8s.kubectl port-forward service/ambassador -n ambassador 80:80 443:443
+sudo kubectl port-forward service/ambassador -n ambassador 80:80 443:443
 ```
 
 
@@ -78,6 +78,11 @@ metadata:
   name: hatch-test
   labels:
       name: development
+```
+
+Apply the namespace with
+```
+kubectl apply -f namespace.yaml
 ```
 
 

@@ -13,13 +13,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
-	clientcmd "k8s.io/client-go/tools/clientcmd"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
+	clientcmd "k8s.io/client-go/tools/clientcmd"
 
 	kubernetestrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/client-go/kubernetes"
 )
-
 
 func getPodClient(ctx context.Context, userName string) (corev1.CoreV1Interface, bool, error) {
 	if payModelExistsForUser(userName) {
@@ -38,12 +37,12 @@ func getPodClient(ctx context.Context, userName string) (corev1.CoreV1Interface,
 func getLocalPodClient() corev1.CoreV1Interface {
 	// attempt to create config using $HOME/.kube/config
 	home, exists := os.LookupEnv("HOME")
-  if !exists {
-      home = "/root"
-  }
-  configPath := filepath.Join(home, ".kube", "config")
-  config, err := clientcmd.BuildConfigFromFlags("", configPath)
-  if err != nil {
+	if !exists {
+		home = "/root"
+	}
+	configPath := filepath.Join(home, ".kube", "config")
+	config, err := clientcmd.BuildConfigFromFlags("", configPath)
+	if err != nil {
 		//if the kube config file is not avalible, use the InCluster config
 		config, err = rest.InClusterConfig()
 		if err != nil {
@@ -59,32 +58,30 @@ func getLocalPodClient() corev1.CoreV1Interface {
 	return podClient
 }
 
-
 func containerState2ToOpenAPI(state k8sv1.ContainerState) openapi.ContainerStateDetail {
 	out := openapi.ContainerStateDetail{}
 	if state.Running != nil {
-		out.Running = &openapi.ContainerStateDetailRunning{ StartedAt: state.Running.StartedAt.String() }
+		out.Running = &openapi.ContainerStateDetailRunning{StartedAt: state.Running.StartedAt.String()}
 	} else if state.Terminated != nil {
 		out.Terminated = &openapi.ContainerStateDetailTerminated{
-			ExitCode: state.Terminated.ExitCode,
-			Signal: state.Terminated.Signal,
-			Reason: state.Terminated.Reason,
-			Message: state.Terminated.Message,
-			StartedAt: state.Terminated.StartedAt.String(),
-			FinishedAt: state.Terminated.FinishedAt.String(),
+			ExitCode:    state.Terminated.ExitCode,
+			Signal:      state.Terminated.Signal,
+			Reason:      state.Terminated.Reason,
+			Message:     state.Terminated.Message,
+			StartedAt:   state.Terminated.StartedAt.String(),
+			FinishedAt:  state.Terminated.FinishedAt.String(),
 			ContainerID: state.Terminated.ContainerID,
 		}
 	} else if state.Waiting != nil {
 		out.Waiting = &openapi.ContainerStateDetailWaiting{
-			Reason: state.Waiting.Reason,
+			Reason:  state.Waiting.Reason,
 			Message: state.Waiting.Message,
 		}
 	}
 	return out
 }
 
-
-func listWorkspacePods(ctx context.Context, userName string ) ([]*openapi.WorkspaceStatus, error) {
+func listWorkspacePods(ctx context.Context, userName string) ([]*openapi.WorkspaceStatus, error) {
 	podClient, isExternalClient, err := getPodClient(ctx, userName)
 	if err != nil {
 		return nil, err
@@ -98,7 +95,7 @@ func listWorkspacePods(ctx context.Context, userName string ) ([]*openapi.Worksp
 	}
 
 	labelSelect := fmt.Sprintf("%s=%s", LABEL_USER, escapism(userName))
-	podList, err := podClient.Pods(Config.Config.UserNamespace).List(ctx, metav1.ListOptions{LabelSelector:labelSelect})
+	podList, err := podClient.Pods(Config.Config.UserNamespace).List(ctx, metav1.ListOptions{LabelSelector: labelSelect})
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +276,7 @@ func deleteK8sPod(ctx context.Context, accessToken string, userName string, work
 	if err != nil {
 		fmt.Printf("Failed getting service mapper: %s\n", err)
 	} else {
-		err = smap.Stop(Config.Config.UserNamespace, workspaceID )
+		err = smap.Stop(Config.Config.UserNamespace, workspaceID)
 		fmt.Printf("Failed stopping service mapper: %s\n", err)
 	}
 
@@ -330,12 +327,14 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	//hatchConfig.Logger.Printf("environment configured")
 
 	var sidecarEnvVars []k8sv1.EnvVar
-	for key, value := range hatchConfig.Config.Sidecar.Env {
-		envVar := k8sv1.EnvVar{
-			Name:  key,
-			Value: value,
+	if hatchConfig.Config.Sidecar != nil {
+		for key, value := range hatchConfig.Config.Sidecar.Env {
+			envVar := k8sv1.EnvVar{
+				Name:  key,
+				Value: value,
+			}
+			sidecarEnvVars = append(sidecarEnvVars, envVar)
 		}
-		sidecarEnvVars = append(sidecarEnvVars, envVar)
 	}
 	for _, value := range extraVars {
 		sidecarEnvVars = append(sidecarEnvVars, value)
@@ -469,49 +468,51 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			Annotations: annotations,
 		},
 		Spec: k8sv1.PodSpec{
-			SecurityContext: &securityContext,
-			InitContainers:  []k8sv1.Container{},
-			Containers: []k8sv1.Container{
-				{
-					Name:  "fuse-container",
-					Image: hatchConfig.Config.Sidecar.Image,
-					SecurityContext: &k8sv1.SecurityContext{
-						Privileged: &trueVal,
-						RunAsUser:  &sideCarRunAsUser,
-						RunAsGroup: &sideCarRunAsGroup,
-					},
-					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways), //TODO: make this configurable
-					Env:             sidecarEnvVars,
-					Command:         hatchConfig.Config.Sidecar.Command,
-					Args:            hatchConfig.Config.Sidecar.Args,
-					VolumeMounts:    volumeMounts,
-					Resources: k8sv1.ResourceRequirements{
-						Limits: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(hatchConfig.Config.Sidecar.MemoryLimit),
-						},
-						Requests: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(hatchConfig.Config.Sidecar.MemoryLimit),
-						},
-					},
-					Lifecycle: &k8sv1.Lifecycle{
-						PreStop: &k8sv1.Handler{
-							Exec: &k8sv1.ExecAction{
-								Command: hatchConfig.Config.Sidecar.LifecyclePreStop,
-							},
-						},
-					},
-				},
-			},
+			SecurityContext:  &securityContext,
+			InitContainers:   []k8sv1.Container{},
+			Containers:       []k8sv1.Container{},
 			RestartPolicy:    k8sv1.RestartPolicyNever,
 			ImagePullSecrets: []k8sv1.LocalObjectReference{},
-			NodeSelector: map[string]string{
-	//			"role": "jupyter",  //TODO: need a 'node selector' config, so this isn't hard coded
+			NodeSelector:     map[string]string{
+				//			"role": "jupyter",  //TODO: need a 'node selector' config, so this isn't hard coded
 			},
 			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}},
 			Volumes:     volumes,
 		},
+	}
+
+	if hatchConfig.Config.Sidecar != nil {
+		pod.Spec.Containers = append(pod.Spec.Containers, k8sv1.Container{
+			Name:  "fuse-container",
+			Image: hatchConfig.Config.Sidecar.Image,
+			SecurityContext: &k8sv1.SecurityContext{
+				Privileged: &trueVal,
+				RunAsUser:  &sideCarRunAsUser,
+				RunAsGroup: &sideCarRunAsGroup,
+			},
+			ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways), //TODO: make this configurable
+			Env:             sidecarEnvVars,
+			Command:         hatchConfig.Config.Sidecar.Command,
+			Args:            hatchConfig.Config.Sidecar.Args,
+			VolumeMounts:    volumeMounts,
+			Resources: k8sv1.ResourceRequirements{
+				Limits: k8sv1.ResourceList{
+					k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),
+					k8sv1.ResourceMemory: resource.MustParse(hatchConfig.Config.Sidecar.MemoryLimit),
+				},
+				Requests: k8sv1.ResourceList{
+					k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),
+					k8sv1.ResourceMemory: resource.MustParse(hatchConfig.Config.Sidecar.MemoryLimit),
+				},
+			},
+			Lifecycle: &k8sv1.Lifecycle{
+				PreStop: &k8sv1.Handler{
+					Exec: &k8sv1.ExecAction{
+						Command: hatchConfig.Config.Sidecar.LifecyclePreStop,
+					},
+				},
+			},
+		})
 	}
 
 	// some pods (ex - dockstore apps) only have "Friend" containers
@@ -579,7 +580,6 @@ func payModelExistsForUser(userName string) (result bool) {
 	return result
 }
 
-
 func createK8sPod(ctx context.Context, appID string, accessToken string, userName string) error {
 	if payModelExistsForUser(userName) {
 		return createExternalK8sPod(ctx, appID, accessToken, userName)
@@ -587,7 +587,6 @@ func createK8sPod(ctx context.Context, appID string, accessToken string, userNam
 		return createLocalK8sPod(ctx, appID, accessToken, userName)
 	}
 }
-
 
 func createLocalK8sPod(ctx context.Context, appID string, accessToken string, userName string) error {
 	hatchApp, ok := Config.ContainersMap[appID]
@@ -694,7 +693,7 @@ func createLocalK8sPod(ctx context.Context, appID string, accessToken string, us
 		fmt.Printf("Failed getting service mapper: %s\n", err)
 		return err
 	}
-	err = smap.Start(Config.Config.UserNamespace, userName, appID, hatchApp.PathRewrite, hatchApp.UseTLS, service )
+	err = smap.Start(Config.Config.UserNamespace, userName, appID, hatchApp.PathRewrite, hatchApp.UseTLS, service)
 	if err != nil {
 		fmt.Printf("Failed set up mapping: %s\n", err)
 		return err

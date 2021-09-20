@@ -67,22 +67,22 @@ type PayModel struct {
 }
 
 type ServiceMapperConfig struct {
-	AmbassadorV1Mapper  *servicemapper.AmbassadorV1Mapper  `json:"ambassador-v1-mapper"`
-	AmbassadorV2Mapper  *servicemapper.AmbassadorV2Mapper  `json:"ambassador-v2-mapper"`
+	AmbassadorV1Mapper *servicemapper.AmbassadorV1Mapper `json:"ambassador-v1-mapper"`
+	AmbassadorV2Mapper *servicemapper.AmbassadorV2Mapper `json:"ambassador-v2-mapper"`
 }
 
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
-	UserNamespace  string           `json:"user-namespace"`
-	PayModels      []PayModel       `json:"pay-models"`
-	SubDir         string           `json:"sub-dir"`
-	Containers     []Container      `json:"containers"`
-	UserVolumeSize string           `json:"user-volume-size"`
-	Sidecar        SidecarContainer `json:"sidecar"`
-	MoreConfigs    []AppConfigInfo  `json:"more-configs"`
+	UserNamespace  string            `json:"user-namespace"`
+	PayModels      []PayModel        `json:"pay-models"`
+	SubDir         string            `json:"sub-dir"`
+	Containers     []Container       `json:"containers"`
+	UserVolumeSize string            `json:"user-volume-size"`
+	Sidecar        *SidecarContainer `json:"sidecar"`
+	MoreConfigs    []AppConfigInfo   `json:"more-configs"`
 
-	ServerPort     int              `json:"server-port"`
-	ServiceMapper  ServiceMapperConfig `json:"service-mapper"`
+	ServerPort    int                 `json:"server-port"`
+	ServiceMapper ServiceMapperConfig `json:"service-mapper"`
 }
 
 // FullHatcheryConfig bucket result from loadConfig
