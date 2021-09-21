@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -56,9 +57,9 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 // TODO: Evaluate if this is still this needed..
 func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
-	cluster_name := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
+	clusterName := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
 	input := &ecs.CreateClusterInput{
-		ClusterName: aws.String(cluster_name),
+		ClusterName: aws.String(clusterName),
 	}
 
 	result, err := svc.CreateCluster(input)
@@ -76,13 +77,13 @@ func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 
 func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
-	cluster_name := strings.ReplaceAll(Config.Config.Sidecar.Env["HOSTNAME"], ".", "-") + "-cluster"
-	cluster_input := &ecs.DescribeClustersInput{
+	clusterName := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
+	clusterInput := &ecs.DescribeClustersInput{
 		Clusters: []*string{
-			aws.String(cluster_name),
+			aws.String(clusterName),
 		},
 	}
-	result, err := svc.DescribeClusters(cluster_input)
+	describeClusterResult, err := svc.DescribeClusters(clusterInput)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
@@ -95,20 +96,56 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 			Config.Logger.Println(err.Error())
 		}
 	}
-	if len(result.Failures) > 0 {
-		Config.Logger.Printf("ECS cluster named %s not found", cluster_name)
-		return nil, errors.New(fmt.Sprintf("ECS cluster named %s not found", cluster_name))
+	if len(describeClusterResult.Failures) > 0 {
+		for _, failure := range describeClusterResult.Failures {
+			if *failure.Reason == "MISSING" {
+				Config.Logger.Printf("ECS cluster named %s not found, trying to create this ECS cluster", clusterName)
+				input := &ecs.CreateClusterInput{
+					ClusterName: aws.String(clusterName),
+				}
+
+				_, err := svc.CreateCluster(input)
+				if err != nil {
+					if aerr, ok := err.(awserr.Error); ok {
+						switch aerr.Code() {
+						default:
+							return nil, errors.New(fmt.Sprintf("Cannot create ECS cluster named %s: %s", clusterName, aerr.Code()))
+						}
+					}
+					return nil, errors.New(fmt.Sprintf("Cannot create ECS cluster named %s: %s", clusterName, err.Error()))
+				}
+				Config.Logger.Printf("ECS cluster %s created for user %s", clusterName, userName)
+				describeClusterResult, err = svc.DescribeClusters(clusterInput)
+				if err != nil || len(describeClusterResult.Failures) > 0 {
+					return nil, errors.New(fmt.Sprintf("Still cannot find ECS cluster named %s: %s", clusterName, err.Error()))
+				}
+				return describeClusterResult.Clusters[0], nil
+			}
+		}
+		Config.Logger.Printf("ECS cluster named %s cannot be described", clusterName)
+		return nil, errors.New(fmt.Sprintf("ECS cluster named %s cannot be described", clusterName))
 	} else {
-		return result.Clusters[0], nil
+		return describeClusterResult.Clusters[0], nil
 	}
 }
 
 // Status of workspace running in ECS
-func (sess *CREDS) statusEcsWorkspace(userName string) (*WorkspaceStatus, error) {
+func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
+	statusMap := map[string]string{
+		"ACTIVE":   "Running",
+		"DRAINING": "Terminating",
+		"STOPPED":  "Not Found",
+		"INACTIVE": "Not Found",
+	}
+	statusMessage := "INACTIVE"
+	status.Status = statusMap[statusMessage]
+	status.IdleTimeLimit = -1
+	status.LastActivityTime = -1
+
 	cluster, err := sess.findEcsCluster(userName)
 	if err != nil {
-		return nil, err
+		return &status, err
 	}
 	service, err := sess.svc.DescribeServices(&ecs.DescribeServicesInput{
 		Cluster: cluster.ClusterName,
@@ -117,19 +154,57 @@ func (sess *CREDS) statusEcsWorkspace(userName string) (*WorkspaceStatus, error)
 		},
 	})
 	if err != nil {
-		return nil, err
+		return &status, err
 	}
 
-	statusMessage := "INACTIVE"
+	var taskDefName string
 	if len(service.Services) > 0 {
 		statusMessage = *service.Services[0].Status
-	}
-
-	statusMap := map[string]string{
-		"ACTIVE":   "Running",
-		"DRAINING": "Terminating",
-		"STOPPED":  "Not Found",
-		"INACTIVE": "Not Found",
+		if statusMessage == "ACTIVE" {
+			taskDefName = *service.Services[0].TaskDefinition
+			if taskDefName == "" {
+				Config.Logger.Printf("No task definition found for user %s", userName)
+			} else {
+				desTaskDefOutput, err := sess.svc.DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
+					TaskDefinition: &taskDefName,
+				})
+				if err == nil {
+					containerDefs := desTaskDefOutput.TaskDefinition.ContainerDefinitions
+					if len(containerDefs) > 0 {
+						args := containerDefs[0].Command
+						if len(args) > 0 {
+							for i, arg := range args {
+								if strings.Contains(*arg, "shutdown_no_activity_timeout=") {
+									Config.Logger.Printf("Found kernel idle shutdown time in args. Attempting to get last activity time\n")
+									argSplit := strings.Split(*arg, "=")
+									idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
+									if err == nil {
+										status.IdleTimeLimit = idleTimeLimit * 1000
+										lastActivityTime, err := getKernelIdleTimeWithContext(ctx, accessToken)
+										status.LastActivityTime = lastActivityTime
+										if err != nil {
+											Config.Logger.Println(err.Error())
+										}
+									} else {
+										Config.Logger.Println(err.Error())
+									}
+									break
+								}
+								if i == len(args)-1 {
+									Config.Logger.Printf("Unable to find kernel idle shutdown time in args\n")
+								}
+							}
+						} else {
+							Config.Logger.Printf("No env vars found for task definition %s\n", taskDefName)
+						}
+					} else {
+						Config.Logger.Printf("No container definition found for task definition %s\n", taskDefName)
+					}
+				}
+			}
+		}
+	} else {
+		Config.Logger.Printf("No service found for user %s", userName)
 	}
 
 	status.Status = statusMap[statusMessage]
@@ -188,7 +263,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 						break
 					}
 					if i == len(envVars)-1 {
-						Config.Logger.Printf("Unable to fund API Key ID in env vars for user %s\n", userName)
+						Config.Logger.Printf("Unable to find API Key ID in env vars for user %s\n", userName)
 					}
 				}
 			} else {
@@ -339,11 +414,13 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	}
 	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash)
 	if err != nil {
+		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		return "", err
 	}
 
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash)
 	if err != nil {
+		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		return "", err
 	}
 
