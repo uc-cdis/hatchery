@@ -142,7 +142,8 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 
 	vpcs, subnets, securityGroups, err := creds.describeDefaultNetwork()
 	input := &elbv2.CreateLoadBalancerInput{
-		Name: aws.String(userToResourceName(userName, "service")),
+		Name:   aws.String(userToResourceName(userName, "service")),
+		Scheme: aws.String("internal"),
 		SecurityGroups: []*string{
 			securityGroups.SecurityGroups[0].GroupId,
 		},

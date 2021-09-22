@@ -40,6 +40,19 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 
 	// ECS functions
 	mux.HandleFunc("/create-ecs-cluster", ecsCluster)
+
+	// Test functions
+	mux.HandleFunc("/tt", tt)
+}
+
+func tt(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+	tt, err := createTransitGateway(userName)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+	} else {
+		fmt.Fprintf(w, fmt.Sprintf("%s", *tt))
+	}
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -248,7 +261,7 @@ func launchEcs(w http.ResponseWriter, r *http.Request) {
 }
 
 // Function to create ECS cluster.
-// TODO: Evaluate the need for this!! Delete?
+// TODO: NEED TO CALL THIS FUNCTION IF IT DOESN'T EXIST!!!
 func ecsCluster(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
 	if payModelExistsForUser(userName) {
