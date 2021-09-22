@@ -398,8 +398,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		Port:             int64(hatchApp.TargetPort),
 		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", Config.PayModelMap[userName].AWSAccountId), // TODO: Make this configurable?
 		SidecarContainer: ecs.ContainerDefinition{
-			// TODO: make this configurable and proper.
-			Image: aws.String("quay.io/cdis/bash:test"),
+			Image: &Config.Config.Sidecar.Image,
 			Name:  aws.String("sidecar-container"),
 			// 2 seconds is the smallest value allowed.
 			StopTimeout: aws.Int64(2),
