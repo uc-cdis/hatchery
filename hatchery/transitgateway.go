@@ -16,13 +16,16 @@ import (
 1. Create Transit Gateway if it doesn't exist
 2. Share transit gateway with workspace account
 3. Add main VPC to transit gateway if it isn't already
+
 # workspace account
 4. Accept shared transit gateway
 5. Add default VPC to transit gateway
 6. Add routes back to main VPC for the default route table.
+
 # Main account
 7. Add routes to worksapces via transit gateway to squid route table
 
+ TODO: MAKE SURE ALL THIS IS IDEMPOTENT!!! NEEDS TESTING!
 */
 
 type NetworkInfo struct {
@@ -219,14 +222,64 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 		}
 		list_principals, err := svc.ListPrincipals(listPrincipalsInput)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to ListPrincipals: %s", err)
+			return nil, fmt.Errorf("failed to ListPrincipals: %s", err)
 		}
 		if len(list_principals.Principals) == 0 {
-			Config.Logger.Printf("TODO: Add AWS account as principal to existing resource share here")
+			associateResourceShareInput := &ram.AssociateResourceShareInput{
+				Principals:       []*string{aws.String(accountid)},
+				ResourceShareArn: ex_rs.ResourceShares[len(ex_rs.ResourceShares)-1].ResourceShareArn,
+			}
+			_, err := svc.AssociateResourceShare(associateResourceShareInput)
+			if err != nil {
+				return nil, err
+			}
 		} else {
 			Config.Logger.Printf("TransitGateway is already shared with AWS account %s ", *list_principals.Principals[0].Id)
 		}
-
 		return ex_rs.ResourceShares[len(ex_rs.ResourceShares)-1].ResourceShareArn, nil
+	}
+}
+
+func setupRemoteAccount(userName string) error {
+	pm := Config.PayModelMap[userName]
+	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	sess := session.Must(session.NewSession(&aws.Config{
+		// TODO: Make this configurable
+		Region: aws.String("us-east-1"),
+	}))
+	svc := NewSession(sess, roleARN)
+
+	err := svc.acceptTGWShare()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (creds *CREDS) acceptTGWShare() error {
+	session := session.New(&aws.Config{
+		Credentials: creds.creds,
+		Region:      aws.String("us-east-1"),
+	})
+	svc := ram.New(session)
+
+	resourceShareInvitation, err := svc.GetResourceShareInvitations(&ram.GetResourceShareInvitationsInput{})
+	if err != nil {
+		return err
+	}
+
+	if len(resourceShareInvitation.ResourceShareInvitations) == 0 {
+		return nil
+	} else {
+		if *resourceShareInvitation.ResourceShareInvitations[0].Status != "ACCEPTED" {
+			_, err := svc.AcceptResourceShareInvitation(&ram.AcceptResourceShareInvitationInput{
+				ResourceShareInvitationArn: resourceShareInvitation.ResourceShareInvitations[0].ResourceShareInvitationArn,
+			})
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+		return nil
 	}
 }

@@ -50,6 +50,10 @@ func tt(w http.ResponseWriter, r *http.Request) {
 	tt, err := createTransitGateway(userName)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
+	}
+	err = setupRemoteAccount(userName)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
 	} else {
 		fmt.Fprintf(w, fmt.Sprintf("%s", *tt))
 	}
