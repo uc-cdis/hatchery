@@ -34,7 +34,6 @@ type NetworkInfo struct {
 }
 
 func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
-
 	network_info := NetworkInfo{}
 	vpcInput := &ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{
@@ -81,10 +80,10 @@ func createTransitGateway(userName string) (*string, error) {
 				Name:   aws.String("state"),
 				Values: []*string{aws.String("available"), aws.String("pending")},
 			},
-			{
-				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String("MainTransitGateway")},
-			},
+			// {
+			// 	Name:   aws.String("tag:Name"),
+			// 	Values: []*string{aws.String("MainTransitGateway")},
+			// },
 		},
 	})
 	if err != nil {
@@ -253,6 +252,38 @@ func setupRemoteAccount(userName string) error {
 	if err != nil {
 		return err
 	}
+
+	ec2_remote := ec2.New(session.New(&aws.Config{
+		Credentials: svc.creds,
+		Region:      aws.String("us-east-1"),
+	}))
+	network_info, err := svc.describeDefaultNetwork()
+	if err != nil {
+		return err
+	}
+	ex_tg, err := ec2_remote.DescribeTransitGateways(&ec2.DescribeTransitGatewaysInput{})
+	// ex_tg, err := ec2_remote.DescribeTransitGateways(&ec2.DescribeTransitGatewaysInput{
+	// 	// Filters: []*ec2.Filter{
+	// 	// 	// {
+	// 	// 	// 	Name:   aws.String("state"),
+	// 	// 	// 	Values: []*string{aws.String("available")},
+	// 	// 	// },
+	// 	// 	// {
+	// 	// 	// 	Name:   aws.String("tag:Name"),
+	// 	// 	// 	Values: []*string{aws.String("MainTransitGateway")},
+	// 	// 	// },
+	// 	// },
+	// })
+	if err != nil {
+		return err
+	}
+	Config.Logger.Printf("ex_tg: %s", *ex_tg)
+	vpc := *network_info.vpc
+	tgw_attachment, err := createLocalTransitGatewayAttachments(ec2_remote, *vpc.Vpcs[0].VpcId, *ex_tg.TransitGateways[0].TransitGatewayId)
+	if err != nil {
+		return err
+	}
+	Config.Logger.Printf("tgw_attachment: %s", *tgw_attachment)
 	return nil
 }
 

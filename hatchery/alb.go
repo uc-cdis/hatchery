@@ -140,16 +140,16 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 		Region:      aws.String("us-east-1"),
 	}))
 
-	vpcs, subnets, securityGroups, err := creds.describeDefaultNetwork()
+	networkInfo, err := creds.describeDefaultNetwork()
 	input := &elbv2.CreateLoadBalancerInput{
 		Name:   aws.String(userToResourceName(userName, "service")),
 		Scheme: aws.String("internal"),
 		SecurityGroups: []*string{
-			securityGroups.SecurityGroups[0].GroupId,
+			networkInfo.securityGroups.SecurityGroups[0].GroupId,
 		},
 		Subnets: []*string{
-			subnets.Subnets[0].SubnetId,
-			subnets.Subnets[1].SubnetId,
+			networkInfo.subnets.Subnets[0].SubnetId,
+			networkInfo.subnets.Subnets[1].SubnetId,
 		},
 	}
 
@@ -195,7 +195,7 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 		return nil, nil, nil, err
 	}
 
-	targetGroup, err := creds.createTargetGroup(userName, *vpcs.Vpcs[0].VpcId, svc)
+	targetGroup, err := creds.createTargetGroup(userName, *networkInfo.vpc.Vpcs[0].VpcId, svc)
 	if err != nil {
 		return nil, nil, nil, err
 	}

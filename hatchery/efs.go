@@ -31,14 +31,14 @@ func (creds *CREDS) getEFSFileSystem(username string, svc *efs.EFS) (*efs.Descri
 }
 
 func (creds *CREDS) createMountTarget(FileSystemId string, svc *efs.EFS) (*efs.MountTargetDescription, error) {
-	_, subnets, securityGroups, err := creds.describeDefaultNetwork()
+	network_info, err := creds.describeDefaultNetwork()
 
 	input := &efs.CreateMountTargetInput{
 		FileSystemId: aws.String(FileSystemId),
-		SubnetId:     subnets.Subnets[0].SubnetId,
+		SubnetId:     network_info.subnets.Subnets[0].SubnetId,
 		// TODO: Make this correct, currently it's all using the same SG
 		SecurityGroups: []*string{
-			securityGroups.SecurityGroups[0].GroupId,
+			network_info.securityGroups.SecurityGroups[0].GroupId,
 		},
 	}
 

@@ -7,8 +7,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/ecs"
 )
 
-// TODO: return a signle struct of all these instead.
-func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput, defaultSubnets *ec2.DescribeSubnetsOutput, securityGroups *ec2.DescribeSecurityGroupsOutput, err error) {
+type WorkspaceNetworkInfo struct {
+	vpc            *ec2.DescribeVpcsOutput
+	subnets        *ec2.DescribeSubnetsOutput
+	securityGroups *ec2.DescribeSecurityGroupsOutput
+}
+
+func (creds *CREDS) describeDefaultNetwork() (*WorkspaceNetworkInfo, error) {
 	svc := ec2.New(session.New(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
@@ -24,7 +29,7 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 
 	vpcs, err := svc.DescribeVpcs(vpcInput)
 	if err != nil {
-		return &ec2.DescribeVpcsOutput{}, &ec2.DescribeSubnetsOutput{}, &ec2.DescribeSecurityGroupsOutput{}, err
+		return nil, err
 	}
 
 	subnetInput := &ec2.DescribeSubnetsInput{
@@ -38,7 +43,7 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 
 	subnets, err := svc.DescribeSubnets(subnetInput)
 	if err != nil {
-		return &ec2.DescribeVpcsOutput{}, &ec2.DescribeSubnetsOutput{}, &ec2.DescribeSecurityGroupsOutput{}, err
+		return nil, err
 	}
 
 	securityGroupInput := ec2.DescribeSecurityGroupsInput{
@@ -55,7 +60,7 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 	}
 	securityGroup, err := svc.DescribeSecurityGroups(&securityGroupInput)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	// Create security group if it doesn't exist
 	if len(securityGroup.SecurityGroups) == 0 {
@@ -77,9 +82,9 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 
 		newSecurityGroup, err := svc.CreateSecurityGroup(&createSecurityGroupInput)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
-		Config.Logger.Printf("Create Security Grouo: %s", *newSecurityGroup.GroupId)
+		Config.Logger.Printf("Create Security Group: %s", *newSecurityGroup.GroupId)
 
 		// TODO: Make this secure. Right now it's wide open
 		ingressRules := ec2.AuthorizeSecurityGroupIngressInput{
@@ -105,18 +110,22 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 		}
 		_, err = svc.AuthorizeSecurityGroupIngress(&ingressRules)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 
 		securityGroup, _ = svc.DescribeSecurityGroups(&securityGroupInput)
 	}
-
-	return vpcs, subnets, securityGroup, nil
+	network_info := WorkspaceNetworkInfo{
+		vpc:            vpcs,
+		subnets:        subnets,
+		securityGroups: securityGroup,
+	}
+	return &network_info, nil
 }
 
 func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 
-	_, subnets, securityGroup, err := creds.describeDefaultNetwork()
+	network_info, err := creds.describeDefaultNetwork()
 	if err != nil {
 		return ecs.NetworkConfiguration{}, err
 	}
@@ -131,7 +140,7 @@ func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 			// used. There is a limit of 5 security groups that can be specified per AwsVpcConfiguration.
 			//
 			// All specified security groups must be from the same VPC.
-			SecurityGroups: []*string{aws.String(*securityGroup.SecurityGroups[0].GroupId)},
+			SecurityGroups: []*string{aws.String(*network_info.securityGroups.SecurityGroups[0].GroupId)},
 			//
 			// The IDs of the subnets associated with the task or service. There is a limit
 			// of 16 subnets that can be specified per AwsVpcConfiguration.
@@ -139,7 +148,7 @@ func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 			// All specified subnets must be from the same VPC.
 			//
 			// Subnets is a required field
-			Subnets: []*string{aws.String(*subnets.Subnets[0].SubnetId)},
+			Subnets: []*string{aws.String(*network_info.subnets.Subnets[0].SubnetId)},
 			// contains filtered or unexported fields
 		},
 	}
