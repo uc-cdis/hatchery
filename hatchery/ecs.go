@@ -254,7 +254,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 			envVars := containerDefs[0].Environment
 			if len(envVars) > 0 {
 				for i, ev := range envVars {
-					if *ev.Name == "API_KEY_ID" {
+					if *ev.Name == "GEN3_API_KEY_ID" {
 						Config.Logger.Printf("Found mounted API key. Attempting to delete API Key with ID %s for user %s\n", *ev.Value, userName)
 						err := deleteAPIKeyWithContext(ctx, accessToken, *ev.Value)
 						if err != nil {
@@ -323,11 +323,11 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		})
 	}
 	envVars = append(envVars, EnvVar{
-		Key:   "API_KEY",
+		Key:   "GEN3_API_KEY",
 		Value: apiKey.APIKey,
 	})
 	envVars = append(envVars, EnvVar{
-		Key:   "API_KEY_ID",
+		Key:   "GEN3_API_KEY_ID",
 		Value: apiKey.KeyID,
 	})
 	// TODO: still mounting access token for now, remove this when fully switched to use API key
@@ -398,8 +398,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		Port:             int64(hatchApp.TargetPort),
 		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", Config.PayModelMap[userName].AWSAccountId), // TODO: Make this configurable?
 		SidecarContainer: ecs.ContainerDefinition{
-			// TODO: make this configurable and proper.
-			Image: aws.String("quay.io/cdis/bash:test"),
+			Image: &Config.Config.Sidecar.Image,
 			Name:  aws.String("sidecar-container"),
 			// 2 seconds is the smallest value allowed.
 			StopTimeout: aws.Int64(2),
