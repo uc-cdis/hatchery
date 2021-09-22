@@ -283,7 +283,7 @@ func deleteK8sPod(ctx context.Context, userName string, accessToken string) erro
 	for i := range containers {
 		if containers[i].Name == "hatchery-container" {
 			for j := range containers[i].Env {
-				if containers[i].Env[j].Name == "API_KEY_ID" {
+				if containers[i].Env[j].Name == "GEN3_API_KEY_ID" {
 					mountedAPIKeyID = containers[i].Env[j].Value
 					break
 				}
@@ -803,11 +803,11 @@ func createExternalK8sPod(ctx context.Context, hash string, userName string, acc
 		Value: "https://" + os.Getenv("HOSTNAME") + "/wts",
 	})
 	extraVars = append(extraVars, k8sv1.EnvVar{
-		Name:  "API_KEY",
+		Name:  "GEN3_API_KEY",
 		Value: apiKey.APIKey,
 	})
 	extraVars = append(extraVars, k8sv1.EnvVar{
-		Name:  "API_KEY_ID",
+		Name:  "GEN3_API_KEY_ID",
 		Value: apiKey.KeyID,
 	})
 	// TODO: still mounting access token for now, remove this when fully switched to use API key
