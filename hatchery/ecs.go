@@ -316,7 +316,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
 
 	envVars := []EnvVar{}
-	for k, v := range Config.Config.Sidecar.Env {
+	for k, v := range hatchApp.Env {
 		envVars = append(envVars, EnvVar{
 			Key:   k,
 			Value: v,
