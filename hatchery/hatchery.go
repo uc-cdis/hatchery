@@ -43,6 +43,7 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 
 	// Test functions
 	mux.HandleFunc("/tt", tt)
+	mux.HandleFunc("/tt_del", tt_delete)
 }
 
 func tt(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +53,16 @@ func tt(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 	} else {
 		fmt.Fprintf(w, fmt.Sprintf("TransitGateway setup"))
+	}
+}
+
+func tt_delete(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+	err := deleteTransitGatewayAttachment(userName)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+	} else {
+		fmt.Fprintf(w, fmt.Sprintf("TransitGatewayAttachment deleted"))
 	}
 }
 

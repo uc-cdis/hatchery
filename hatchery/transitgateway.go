@@ -25,6 +25,18 @@ import (
 # Main account
 7. Add routes to worksapces via transit gateway to squid route table
 
+
+
+main function order:
+	Local account resources
+	sharing and accepting.
+	remote account resources
+	setup routing
+
+	Delete:
+	teardown attachment
+	delete route in squid route table
+
  TODO: MAKE SURE ALL THIS IS IDEMPOTENT!!! NEEDS TESTING!
 */
 
@@ -52,6 +64,9 @@ func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
 		},
 	}
 	vpc, _ := svc.DescribeVpcs(vpcInput)
+	if len(vpc.Vpcs) == 0 {
+		return nil, fmt.Errorf("No VPC's found: %s", vpc)
+	}
 	subnetInput := &ec2.DescribeSubnetsInput{
 		Filters: []*ec2.Filter{
 			{
@@ -98,14 +113,13 @@ func createTransitGateway(userName string) (*string, error) {
 	}
 
 	// Create Transit Gateway if it doesn't exist
-	if len(ex_tg.TransitGateways) <= 0 {
+	if len(ex_tg.TransitGateways) == 0 {
 		Config.Logger.Printf("No transit gateway found. Creating one...")
 		tg, err := ec2_local.CreateTransitGateway(&ec2.CreateTransitGatewayInput{
 			DryRun:      aws.Bool(false),
 			Description: aws.String("Transit gateway to connect external VPC's"),
 			Options: &ec2.TransitGatewayRequestOptions{
 				AutoAcceptSharedAttachments:  aws.String("enable"),
-				DefaultRouteTableAssociation: aws.String("disable"),
 				DefaultRouteTablePropagation: aws.String("disable"),
 			},
 			TagSpecifications: []*ec2.TagSpecification{
@@ -130,6 +144,11 @@ func createTransitGateway(userName string) (*string, error) {
 			return nil, err
 		}
 		Config.Logger.Printf("Attachment created: %s", *tgw_attachment)
+		resourceshare, err := shareTransitGateway(sess, *tg.TransitGateway.TransitGatewayArn, pm.AWSAccountId)
+		if err != nil {
+			return nil, err
+		}
+		Config.Logger.Printf("Resources shared: %s", *resourceshare)
 		return tg.TransitGateway.TransitGatewayId, nil
 	} else {
 		tgw_attachment, err := createTransitGatewayAttachments(ec2_local, pm.VpcId, *ex_tg.TransitGateways[len(ex_tg.TransitGateways)-1].TransitGatewayId, true, nil)
@@ -137,10 +156,11 @@ func createTransitGateway(userName string) (*string, error) {
 			return nil, err
 		}
 		Config.Logger.Printf("Attachment created: %s", *tgw_attachment)
-		_, err = shareTransitGateway(sess, *ex_tg.TransitGateways[len(ex_tg.TransitGateways)-1].TransitGatewayArn, pm.AWSAccountId)
+		resourceshare, err := shareTransitGateway(sess, *ex_tg.TransitGateways[len(ex_tg.TransitGateways)-1].TransitGatewayArn, pm.AWSAccountId)
 		if err != nil {
 			return nil, err
 		}
+		Config.Logger.Printf("Resources shared: %s", *resourceshare)
 		return ex_tg.TransitGateways[len(ex_tg.TransitGateways)-1].TransitGatewayId, nil
 	}
 }
@@ -219,6 +239,42 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 	} else {
 		return ex_tgw_attachment.TransitGatewayAttachments[0].TransitGatewayAttachmentId, nil
 	}
+}
+
+func deleteTransitGatewayAttachment(userName string) error {
+	pm := Config.PayModelMap[userName]
+	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	sess := session.Must(session.NewSession(&aws.Config{
+		// TODO: Make this configurable
+		Region: aws.String("us-east-1"),
+	}))
+	svc := NewSession(sess, roleARN)
+
+	ec2_remote := ec2.New(session.New(&aws.Config{
+		Credentials: svc.creds,
+		Region:      aws.String("us-east-1"),
+	}))
+
+	ex_tgw_attachment_input := &ec2.DescribeTransitGatewayAttachmentsInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String("MainTGWAttachment")},
+			},
+			{
+				Name:   aws.String("state"),
+				Values: []*string{aws.String("available"), aws.String("pending")},
+			},
+		},
+	}
+	ex_tgw_attachment, err := ec2_remote.DescribeTransitGatewayAttachments(ex_tgw_attachment_input)
+	if err != nil {
+		return err
+	}
+	if len(ex_tgw_attachment.TransitGatewayAttachments) == 0 {
+		return fmt.Errorf("No transit gateway attachments found")
+	}
+	return nil
 }
 
 func shareTransitGateway(session *session.Session, tgwArn string, accountid string) (*string, error) {
