@@ -28,9 +28,17 @@ import (
  TODO: MAKE SURE ALL THIS IS IDEMPOTENT!!! NEEDS TESTING!
 */
 
-type NetworkInfo struct {
-	Vpc     ec2.DescribeVpcsOutput
-	Subnets ec2.DescribeSubnetsOutput
+func setupTransitGateway(username string) error {
+	_, err := createTransitGateway(username)
+	if err != nil {
+		return err
+	}
+	Config.Logger.Printf("Setting up remote account ")
+	err = setupRemoteAccount(username)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
@@ -57,9 +65,8 @@ func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
 		},
 	}
 	subnets, _ := svc.DescribeSubnets(subnetInput)
-	Config.Logger.Printf("Subnets: %s", subnets)
-	network_info.Vpc = *vpc
-	network_info.Subnets = *subnets
+	network_info.vpc = vpc
+	network_info.subnets = subnets
 	return &network_info, nil
 }
 
@@ -80,10 +87,10 @@ func createTransitGateway(userName string) (*string, error) {
 				Name:   aws.String("state"),
 				Values: []*string{aws.String("available"), aws.String("pending")},
 			},
-			// {
-			// 	Name:   aws.String("tag:Name"),
-			// 	Values: []*string{aws.String("MainTransitGateway")},
-			// },
+			{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String("MainTransitGateway")},
+			},
 		},
 	})
 	if err != nil {
@@ -97,7 +104,9 @@ func createTransitGateway(userName string) (*string, error) {
 			DryRun:      aws.Bool(false),
 			Description: aws.String("Transit gateway to connect external VPC's"),
 			Options: &ec2.TransitGatewayRequestOptions{
-				AutoAcceptSharedAttachments: aws.String("enable"),
+				AutoAcceptSharedAttachments:  aws.String("enable"),
+				DefaultRouteTableAssociation: aws.String("disable"),
+				DefaultRouteTablePropagation: aws.String("disable"),
 			},
 			TagSpecifications: []*ec2.TagSpecification{
 				{
@@ -116,15 +125,19 @@ func createTransitGateway(userName string) (*string, error) {
 		}
 
 		Config.Logger.Printf("Transit gateway created: %s", *tg.TransitGateway.TransitGatewayId)
-		tgw_attachment, err := createLocalTransitGatewayAttachments(ec2_local, pm.VpcId, *ex_tg.TransitGateways[len(ex_tg.TransitGateways)-1].TransitGatewayId)
+		tgw_attachment, err := createTransitGatewayAttachments(ec2_local, pm.VpcId, *tg.TransitGateway.TransitGatewayId, true, nil)
 		if err != nil {
 			return nil, err
 		}
 		Config.Logger.Printf("Attachment created: %s", *tgw_attachment)
 		return tg.TransitGateway.TransitGatewayId, nil
 	} else {
-		Config.Logger.Printf("Existing TGW found: %s", *ex_tg.TransitGateways[len(ex_tg.TransitGateways)-1].TransitGatewayId)
-		_, err := shareTransitGateway(sess, *ex_tg.TransitGateways[len(ex_tg.TransitGateways)-1].TransitGatewayArn, pm.AWSAccountId)
+		tgw_attachment, err := createTransitGatewayAttachments(ec2_local, pm.VpcId, *ex_tg.TransitGateways[len(ex_tg.TransitGateways)-1].TransitGatewayId, true, nil)
+		if err != nil {
+			return nil, err
+		}
+		Config.Logger.Printf("Attachment created: %s", *tgw_attachment)
+		_, err = shareTransitGateway(sess, *ex_tg.TransitGateways[len(ex_tg.TransitGateways)-1].TransitGatewayArn, pm.AWSAccountId)
 		if err != nil {
 			return nil, err
 		}
@@ -132,17 +145,14 @@ func createTransitGateway(userName string) (*string, error) {
 	}
 }
 
-func createLocalTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string) (*string, error) {
+func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, local bool, sess *CREDS) (*string, error) {
 	// Check for existing transit gateway
 	tg_input := &ec2.DescribeTransitGatewaysInput{
+		TransitGatewayIds: []*string{aws.String(tgwid)},
 		Filters: []*ec2.Filter{
 			{
 				Name:   aws.String("state"),
 				Values: []*string{aws.String("available"), aws.String("pending")},
-			},
-			{
-				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String("MainTransitGateway")},
 			},
 		},
 	}
@@ -156,34 +166,59 @@ func createLocalTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid stri
 		time.Sleep(10 * time.Second)
 		ex_tg, _ = svc.DescribeTransitGateways(tg_input)
 	}
-	network_info, err := describeMainNetwork(vpcid, svc)
+	network_info := &NetworkInfo{}
+	if local {
+		network_info, err = describeMainNetwork(vpcid, svc)
+	} else {
+		network_info, err = sess.describeWorkspaceNetwork()
+	}
 	if err != nil {
 		return nil, err
 	}
-	tgw_attachment_input := &ec2.CreateTransitGatewayVpcAttachmentInput{
-		TransitGatewayId: ex_tg.TransitGateways[0].TransitGatewayId,
-		VpcId:            network_info.Vpc.Vpcs[len(network_info.Vpc.Vpcs)-1].VpcId,
-		TagSpecifications: []*ec2.TagSpecification{
+	ex_tgw_attachment_input := &ec2.DescribeTransitGatewayAttachmentsInput{
+		Filters: []*ec2.Filter{
 			{
-				ResourceType: aws.String("transit-gateway-attachment"),
-				Tags: []*ec2.Tag{
-					{
-						Key:   aws.String("Name"),
-						Value: aws.String("MainTGWAttachment"),
-					},
-				},
+				Name:   aws.String("resource-id"),
+				Values: []*string{network_info.vpc.Vpcs[0].VpcId},
+			},
+			{
+				Name:   aws.String("state"),
+				Values: []*string{aws.String("available"), aws.String("pending")},
 			},
 		},
 	}
-	for i := range network_info.Subnets.Subnets {
-		tgw_attachment_input.SubnetIds = append(tgw_attachment_input.SubnetIds, network_info.Subnets.Subnets[i].SubnetId)
-	}
-
-	tgw_attachment, err := svc.CreateTransitGatewayVpcAttachment(tgw_attachment_input)
+	ex_tgw_attachment, err := svc.DescribeTransitGatewayAttachments(ex_tgw_attachment_input)
 	if err != nil {
 		return nil, err
 	}
-	return tgw_attachment.TransitGatewayVpcAttachment.TransitGatewayAttachmentId, nil
+	if len(ex_tgw_attachment.TransitGatewayAttachments) == 0 {
+		tgw_attachment_input := &ec2.CreateTransitGatewayVpcAttachmentInput{
+			TransitGatewayId: ex_tg.TransitGateways[0].TransitGatewayId,
+			VpcId:            network_info.vpc.Vpcs[len(network_info.vpc.Vpcs)-1].VpcId,
+			TagSpecifications: []*ec2.TagSpecification{
+				{
+					ResourceType: aws.String("transit-gateway-attachment"),
+					Tags: []*ec2.Tag{
+						{
+							Key:   aws.String("Name"),
+							Value: aws.String("MainTGWAttachment"),
+						},
+					},
+				},
+			},
+		}
+		for i := range network_info.subnets.Subnets {
+			tgw_attachment_input.SubnetIds = append(tgw_attachment_input.SubnetIds, network_info.subnets.Subnets[i].SubnetId)
+		}
+
+		tgw_attachment, err := svc.CreateTransitGatewayVpcAttachment(tgw_attachment_input)
+		if err != nil {
+			return nil, fmt.Errorf("cannot create transitgatewayattachment: %s", err.Error())
+		}
+		return tgw_attachment.TransitGatewayVpcAttachment.TransitGatewayAttachmentId, nil
+	} else {
+		return ex_tgw_attachment.TransitGatewayAttachments[0].TransitGatewayAttachmentId, nil
+	}
 }
 
 func shareTransitGateway(session *session.Session, tgwArn string, accountid string) (*string, error) {
@@ -214,6 +249,12 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 		}
 		return resource_share.ResourceShare.ResourceShareArn, nil
 	} else {
+		listResourcesInput := &ram.ListResourcesInput{
+			ResourceOwner: aws.String("SELF"),
+			ResourceArns:  []*string{&tgwArn},
+		}
+		list_resources, err := svc.ListResources(listResourcesInput)
+
 		listPrincipalsInput := &ram.ListPrincipalsInput{
 			ResourceArn:   aws.String(tgwArn),
 			Principals:    []*string{aws.String(accountid)},
@@ -223,9 +264,10 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 		if err != nil {
 			return nil, fmt.Errorf("failed to ListPrincipals: %s", err)
 		}
-		if len(list_principals.Principals) == 0 {
+		if len(list_principals.Principals) == 0 || len(list_resources.Resources) == 0 {
 			associateResourceShareInput := &ram.AssociateResourceShareInput{
 				Principals:       []*string{aws.String(accountid)},
+				ResourceArns:     []*string{&tgwArn},
 				ResourceShareArn: ex_rs.ResourceShares[len(ex_rs.ResourceShares)-1].ResourceShareArn,
 			}
 			_, err := svc.AssociateResourceShare(associateResourceShareInput)
@@ -257,29 +299,40 @@ func setupRemoteAccount(userName string) error {
 		Credentials: svc.creds,
 		Region:      aws.String("us-east-1"),
 	}))
-	network_info, err := svc.describeDefaultNetwork()
+
 	if err != nil {
 		return err
 	}
-	ex_tg, err := ec2_remote.DescribeTransitGateways(&ec2.DescribeTransitGatewaysInput{})
-	// ex_tg, err := ec2_remote.DescribeTransitGateways(&ec2.DescribeTransitGatewaysInput{
-	// 	// Filters: []*ec2.Filter{
-	// 	// 	// {
-	// 	// 	// 	Name:   aws.String("state"),
-	// 	// 	// 	Values: []*string{aws.String("available")},
-	// 	// 	// },
-	// 	// 	// {
-	// 	// 	// 	Name:   aws.String("tag:Name"),
-	// 	// 	// 	Values: []*string{aws.String("MainTransitGateway")},
-	// 	// 	// },
-	// 	// },
-	// })
+	exTgInput := &ec2.DescribeTransitGatewaysInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("state"),
+				Values: []*string{aws.String("available"), aws.String("pending")},
+			},
+		},
+	}
+	ex_tg, err := ec2_remote.DescribeTransitGateways(exTgInput)
 	if err != nil {
 		return err
 	}
-	Config.Logger.Printf("ex_tg: %s", *ex_tg)
+	for len(ex_tg.TransitGateways) == 0 {
+		Config.Logger.Printf("Waiting to find ex_tgw")
+		err := svc.acceptTGWShare()
+		if err != nil {
+			return err
+		}
+		ex_tg, err = ec2_remote.DescribeTransitGateways(exTgInput)
+		if err != nil {
+			return err
+		}
+		time.Sleep(5 * time.Second)
+	}
+	network_info, err := svc.describeWorkspaceNetwork()
+	if err != nil {
+		return err
+	}
 	vpc := *network_info.vpc
-	tgw_attachment, err := createLocalTransitGatewayAttachments(ec2_remote, *vpc.Vpcs[0].VpcId, *ex_tg.TransitGateways[0].TransitGatewayId)
+	tgw_attachment, err := createTransitGatewayAttachments(ec2_remote, *vpc.Vpcs[0].VpcId, *ex_tg.TransitGateways[0].TransitGatewayId, false, &svc)
 	if err != nil {
 		return err
 	}

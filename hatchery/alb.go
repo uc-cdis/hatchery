@@ -140,7 +140,7 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 		Region:      aws.String("us-east-1"),
 	}))
 
-	networkInfo, err := creds.describeDefaultNetwork()
+	networkInfo, err := creds.describeWorkspaceNetwork()
 	input := &elbv2.CreateLoadBalancerInput{
 		Name:   aws.String(userToResourceName(userName, "service")),
 		Scheme: aws.String("internal"),

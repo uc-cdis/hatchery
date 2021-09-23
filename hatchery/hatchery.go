@@ -47,15 +47,11 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 
 func tt(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
-	tt, err := createTransitGateway(userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-	}
-	err = setupRemoteAccount(userName)
+	err := setupTransitGateway(userName)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 	} else {
-		fmt.Fprintf(w, fmt.Sprintf("%s", *tt))
+		fmt.Fprintf(w, fmt.Sprintf("TransitGateway setup"))
 	}
 }
 

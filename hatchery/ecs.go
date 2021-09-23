@@ -203,8 +203,6 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 				}
 			}
 		}
-	} else {
-		Config.Logger.Printf("No service found for user %s", userName)
 	}
 
 	status.Status = statusMap[statusMessage]

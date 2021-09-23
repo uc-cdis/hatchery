@@ -7,13 +7,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/ecs"
 )
 
-type WorkspaceNetworkInfo struct {
+type NetworkInfo struct {
 	vpc            *ec2.DescribeVpcsOutput
 	subnets        *ec2.DescribeSubnetsOutput
 	securityGroups *ec2.DescribeSecurityGroupsOutput
 }
 
-func (creds *CREDS) describeDefaultNetwork() (*WorkspaceNetworkInfo, error) {
+func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 	svc := ec2.New(session.New(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
@@ -115,7 +115,7 @@ func (creds *CREDS) describeDefaultNetwork() (*WorkspaceNetworkInfo, error) {
 
 		securityGroup, _ = svc.DescribeSecurityGroups(&securityGroupInput)
 	}
-	network_info := WorkspaceNetworkInfo{
+	network_info := NetworkInfo{
 		vpc:            vpcs,
 		subnets:        subnets,
 		securityGroups: securityGroup,
@@ -125,7 +125,7 @@ func (creds *CREDS) describeDefaultNetwork() (*WorkspaceNetworkInfo, error) {
 
 func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 
-	network_info, err := creds.describeDefaultNetwork()
+	network_info, err := creds.describeWorkspaceNetwork()
 	if err != nil {
 		return ecs.NetworkConfiguration{}, err
 	}
