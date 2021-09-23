@@ -382,6 +382,9 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 			{
 				Name: aws.String("data-volume"),
 			},
+			{
+				Name: aws.String("gen3"),
+			},
 		},
 		MountPoints: []*ecs.MountPoint{
 			{
