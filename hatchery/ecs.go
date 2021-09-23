@@ -57,7 +57,7 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 // TODO: Evaluate if this is still this needed..
 func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
-	clusterName := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
+	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
 	input := &ecs.CreateClusterInput{
 		ClusterName: aws.String(clusterName),
 	}
@@ -77,7 +77,7 @@ func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 
 func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
-	clusterName := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
+	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
 	clusterInput := &ecs.DescribeClustersInput{
 		Clusters: []*string{
 			aws.String(clusterName),
@@ -335,19 +335,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		Key:   "ACCESS_TOKEN",
 		Value: accessToken,
 	})
-	// append 'BASE_URL' env var if missing
-	envVarsCopy := envVars[:0]
-	for i, value := range envVarsCopy {
-		if value.Key == "BASE_URL" {
-			break
-		}
-		if i == len(envVarsCopy)-1 {
-			envVars = append(envVars, EnvVar{
-				Key:   "BASE_URL",
-				Value: os.Getenv("BASE_URL"),
-			})
-		}
-	}
+	envVars = append(envVars, EnvVar{
+		Key:   "GEN3_ENDPOINT",
+		Value: os.Getenv("GEN3_ENDPOINT"),
+	})
 	volumes, err := svc.EFSFileSystem(userName)
 	if err != nil {
 		return "", err
