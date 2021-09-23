@@ -395,6 +395,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 				ContainerPath: aws.String("/home/jovyan/pd"),
 				SourceVolume:  aws.String("pd"),
 			},
+			{
+				ContainerPath: aws.String("/home/jovyan/.gen3"),
+				SourceVolume:  aws.String("gen3"),
+			},
 		},
 		Args:             hatchApp.Args,
 		EnvVars:          envVars,
