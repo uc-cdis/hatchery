@@ -408,6 +408,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 					ContainerPath: aws.String("/data"),
 					SourceVolume:  aws.String("data-volume"),
 				},
+				{
+					ContainerPath: aws.String("/.gen3"),
+					SourceVolume:  aws.String("gen3"),
+				},
 			},
 		},
 	}
