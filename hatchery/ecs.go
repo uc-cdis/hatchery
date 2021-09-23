@@ -57,7 +57,7 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 // TODO: Evaluate if this is still this needed..
 func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
-	clusterName := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
+	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
 	input := &ecs.CreateClusterInput{
 		ClusterName: aws.String(clusterName),
 	}
@@ -77,7 +77,7 @@ func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 
 func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
-	clusterName := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-cluster"
+	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
 	clusterInput := &ecs.DescribeClustersInput{
 		Clusters: []*string{
 			aws.String(clusterName),
@@ -254,7 +254,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 			envVars := containerDefs[0].Environment
 			if len(envVars) > 0 {
 				for i, ev := range envVars {
-					if *ev.Name == "GEN3_API_KEY_ID" {
+					if *ev.Name == "API_KEY_ID" {
 						Config.Logger.Printf("Found mounted API key. Attempting to delete API Key with ID %s for user %s\n", *ev.Value, userName)
 						err := deleteAPIKeyWithContext(ctx, accessToken, *ev.Value)
 						if err != nil {
@@ -316,18 +316,18 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
 
 	envVars := []EnvVar{}
-	for k, v := range Config.Config.Sidecar.Env {
+	for k, v := range hatchApp.Env {
 		envVars = append(envVars, EnvVar{
 			Key:   k,
 			Value: v,
 		})
 	}
 	envVars = append(envVars, EnvVar{
-		Key:   "GEN3_API_KEY",
+		Key:   "API_KEY",
 		Value: apiKey.APIKey,
 	})
 	envVars = append(envVars, EnvVar{
-		Key:   "GEN3_API_KEY_ID",
+		Key:   "API_KEY_ID",
 		Value: apiKey.KeyID,
 	})
 	// TODO: still mounting access token for now, remove this when fully switched to use API key
@@ -335,19 +335,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		Key:   "ACCESS_TOKEN",
 		Value: accessToken,
 	})
-	// append 'BASE_URL' env var if missing
-	envVarsCopy := envVars[:0]
-	for i, value := range envVarsCopy {
-		if value.Key == "BASE_URL" {
-			break
-		}
-		if i == len(envVarsCopy)-1 {
-			envVars = append(envVars, EnvVar{
-				Key:   "BASE_URL",
-				Value: os.Getenv("BASE_URL"),
-			})
-		}
-	}
+	envVars = append(envVars, EnvVar{
+		Key:   "GEN3_ENDPOINT",
+		Value: os.Getenv("GEN3_ENDPOINT"),
+	})
 	volumes, err := svc.EFSFileSystem(userName)
 	if err != nil {
 		return "", err
@@ -382,6 +373,9 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 			{
 				Name: aws.String("data-volume"),
 			},
+			{
+				Name: aws.String("gen3"),
+			},
 		},
 		MountPoints: []*ecs.MountPoint{
 			{
@@ -391,6 +385,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 			{
 				ContainerPath: aws.String("/home/jovyan/pd"),
 				SourceVolume:  aws.String("pd"),
+			},
+			{
+				ContainerPath: aws.String("/home/jovyan/.gen3"),
+				SourceVolume:  aws.String("gen3"),
 			},
 		},
 		Args:             hatchApp.Args,
@@ -407,6 +405,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 				{
 					ContainerPath: aws.String("/data"),
 					SourceVolume:  aws.String("data-volume"),
+				},
+				{
+					ContainerPath: aws.String("/.gen3"),
+					SourceVolume:  aws.String("gen3"),
 				},
 			},
 		},

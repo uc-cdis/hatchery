@@ -334,18 +334,18 @@ func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint str
 
 func getFenceURL() string {
 	fenceURL := "http://fence-service/"
-	_, ok := os.LookupEnv("BASE_URL")
+	_, ok := os.LookupEnv("GEN3_ENDPOINT")
 	if ok {
-		fenceURL = "https://" + os.Getenv("BASE_URL") + "/user/"
+		fenceURL = "https://" + os.Getenv("GEN3_ENDPOINT") + "/user/"
 	}
 	return fenceURL
 }
 
 func getAmbassadorURL() string {
 	ambassadorURL := "http://ambassador-service/"
-	_, ok := os.LookupEnv("BASE_URL")
+	_, ok := os.LookupEnv("GEN3_ENDPOINT")
 	if ok {
-		ambassadorURL = "https://" + os.Getenv("BASE_URL") + "/lw-workspace/proxy/"
+		ambassadorURL = "https://" + os.Getenv("GEN3_ENDPOINT") + "/lw-workspace/proxy/"
 	}
 	return ambassadorURL
 }
