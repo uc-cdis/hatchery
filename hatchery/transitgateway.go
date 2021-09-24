@@ -50,6 +50,7 @@ func setupTransitGateway(username string) error {
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -79,9 +80,31 @@ func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
 			},
 		},
 	}
-	subnets, _ := svc.DescribeSubnets(subnetInput)
+	subnets, err := svc.DescribeSubnets(subnetInput)
+	if err != nil {
+		return nil, err
+	}
+
+	routeTableInput := &ec2.DescribeRouteTablesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []*string{vpc.Vpcs[0].VpcId},
+			},
+			{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String("main")},
+			},
+		},
+	}
+	routeTable, err := svc.DescribeRouteTables(routeTableInput)
+	if err != nil {
+		return nil, err
+	}
+
 	network_info.vpc = vpc
 	network_info.subnets = subnets
+	network_info.routeTable = routeTable
 	return &network_info, nil
 }
 
@@ -137,13 +160,16 @@ func createTransitGateway(userName string) (*string, error) {
 		if err != nil {
 			return nil, err
 		}
-
 		Config.Logger.Printf("Transit gateway created: %s", *tg.TransitGateway.TransitGatewayId)
 		tgw_attachment, err := createTransitGatewayAttachments(ec2_local, pm.VpcId, *tg.TransitGateway.TransitGatewayId, true, nil)
 		if err != nil {
 			return nil, err
 		}
 		Config.Logger.Printf("Attachment created: %s", *tgw_attachment)
+		_, err = setupTGWRoutes(userName, tg.TransitGateway.Options.AssociationDefaultRouteTableId, tgw_attachment, ec2_local, true, nil)
+		if err != nil {
+			return nil, err
+		}
 		resourceshare, err := shareTransitGateway(sess, *tg.TransitGateway.TransitGatewayArn, pm.AWSAccountId)
 		if err != nil {
 			return nil, err
@@ -350,7 +376,7 @@ func setupRemoteAccount(userName string) error {
 	if err != nil {
 		return err
 	}
-
+	ec2_local := ec2.New(sess)
 	ec2_remote := ec2.New(session.New(&aws.Config{
 		Credentials: svc.creds,
 		Region:      aws.String("us-east-1"),
@@ -393,6 +419,23 @@ func setupRemoteAccount(userName string) error {
 		return err
 	}
 	Config.Logger.Printf("tgw_attachment: %s", *tgw_attachment)
+
+	main_network_info, err := describeMainNetwork(pm.VpcId, ec2_local)
+	if err != nil {
+		return err
+	}
+
+	// Transit Gateway Route Table
+	_, err = setupTGWRoutes(userName, ex_tg.TransitGateways[0].Options.AssociationDefaultRouteTableId, tgw_attachment, ec2_local, false, &svc)
+	if err != nil {
+		return err
+	}
+	// VPC Route Table
+	err = setupVPCRoutes(network_info, main_network_info, ex_tg.TransitGateways[0].TransitGatewayId, ec2_remote, ec2_local)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -422,4 +465,102 @@ func (creds *CREDS) acceptTGWShare() error {
 		}
 		return nil
 	}
+}
+
+func setupTGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string, svc *ec2.EC2, local bool, sess *CREDS) (*string, error) {
+	pm := Config.PayModelMap[userName]
+	network_info := &NetworkInfo{}
+	err := *new(error)
+	if local {
+		network_info, err = describeMainNetwork(pm.VpcId, svc)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		network_info, err = sess.describeWorkspaceNetwork()
+		if err != nil {
+			return nil, err
+		}
+	}
+	tgwAttachmentInput := &ec2.DescribeTransitGatewayAttachmentsInput{
+		TransitGatewayAttachmentIds: []*string{tgwAttachmentId},
+	}
+	tgwAttachment, err := svc.DescribeTransitGatewayAttachments(tgwAttachmentInput)
+	if err != nil {
+		return nil, err
+	}
+	for *tgwAttachment.TransitGatewayAttachments[0].State != "available" {
+		Config.Logger.Printf("Transit Gateway Attachment is not ready...")
+		tgwAttachment, err = svc.DescribeTransitGatewayAttachments(tgwAttachmentInput)
+		if err != nil {
+			return nil, err
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	exRoutesInput := &ec2.SearchTransitGatewayRoutesInput{
+		TransitGatewayRouteTableId: tgwRoutetableId,
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("route-search.subnet-of-match"),
+				Values: []*string{network_info.vpc.Vpcs[0].CidrBlock},
+			},
+		},
+	}
+	exRoutes, err := svc.SearchTransitGatewayRoutes(exRoutesInput)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(exRoutes.Routes) == 1 {
+		delRouteInput := &ec2.DeleteTransitGatewayRouteInput{
+			DestinationCidrBlock:       network_info.vpc.Vpcs[0].CidrBlock,
+			TransitGatewayRouteTableId: tgwRoutetableId,
+		}
+		_, err := svc.DeleteTransitGatewayRoute(delRouteInput)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	tgRouteInput := &ec2.CreateTransitGatewayRouteInput{
+		TransitGatewayRouteTableId: tgwRoutetableId,
+		DestinationCidrBlock:       network_info.vpc.Vpcs[0].CidrBlock,
+		TransitGatewayAttachmentId: tgwAttachmentId,
+	}
+	tgRoute, err := svc.CreateTransitGatewayRoute(tgRouteInput)
+	if err != nil {
+		return nil, err
+	}
+
+	return tgRoute.Route.PrefixListId, nil
+}
+
+func setupVPCRoutes(remote_network_info *NetworkInfo, main_network_info *NetworkInfo, tgwId *string, ec2_remote *ec2.EC2, ec2_local *ec2.EC2) error {
+
+	remoteCreateRouteInput := &ec2.CreateRouteInput{
+		DestinationCidrBlock: main_network_info.vpc.Vpcs[0].CidrBlock,
+		RouteTableId:         remote_network_info.routeTable.RouteTables[0].RouteTableId,
+		TransitGatewayId:     tgwId,
+	}
+
+	remote_route, err := ec2_remote.CreateRoute(remoteCreateRouteInput)
+	if err != nil {
+		return err
+	}
+	Config.Logger.Printf("Route added to remote VPC. %s", remote_route)
+
+	localCreateRouteInput := &ec2.CreateRouteInput{
+		DestinationCidrBlock: remote_network_info.vpc.Vpcs[0].CidrBlock,
+		RouteTableId:         main_network_info.routeTable.RouteTables[0].RouteTableId,
+		TransitGatewayId:     tgwId,
+	}
+
+	local_route, err := ec2_local.CreateRoute(localCreateRouteInput)
+	if err != nil {
+		return err
+	}
+	Config.Logger.Printf("Route added to local VPC. %s", local_route)
+
+	return nil
 }

@@ -11,6 +11,7 @@ type NetworkInfo struct {
 	vpc            *ec2.DescribeVpcsOutput
 	subnets        *ec2.DescribeSubnetsOutput
 	securityGroups *ec2.DescribeSecurityGroupsOutput
+	routeTable     *ec2.DescribeRouteTablesOutput
 }
 
 func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
@@ -20,7 +21,7 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 	}))
 	vpcInput := &ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{
-			&ec2.Filter{
+			{
 				Name:   aws.String("is-default"),
 				Values: []*string{aws.String("true")},
 			},
@@ -34,7 +35,7 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 
 	subnetInput := &ec2.DescribeSubnetsInput{
 		Filters: []*ec2.Filter{
-			&ec2.Filter{
+			{
 				Name:   aws.String("vpc-id"),
 				Values: []*string{aws.String(*vpcs.Vpcs[0].VpcId)},
 			},
@@ -48,11 +49,11 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 
 	securityGroupInput := ec2.DescribeSecurityGroupsInput{
 		Filters: []*ec2.Filter{
-			&ec2.Filter{
+			{
 				Name:   aws.String("vpc-id"),
 				Values: []*string{aws.String(*vpcs.Vpcs[0].VpcId)},
 			},
-			&ec2.Filter{
+			{
 				Name:   aws.String("group-name"),
 				Values: []*string{aws.String("ws-security-group")},
 			},
@@ -115,10 +116,29 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 
 		securityGroup, _ = svc.DescribeSecurityGroups(&securityGroupInput)
 	}
+
+	routeTableInput := &ec2.DescribeRouteTablesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []*string{vpcs.Vpcs[0].VpcId},
+			},
+			{
+				Name:   aws.String("association.main"),
+				Values: []*string{aws.String("true")},
+			},
+		},
+	}
+	routeTable, err := svc.DescribeRouteTables(routeTableInput)
+	if err != nil {
+		return nil, err
+	}
+
 	network_info := NetworkInfo{
 		vpc:            vpcs,
 		subnets:        subnets,
 		securityGroups: securityGroup,
+		routeTable:     routeTable,
 	}
 	return &network_info, nil
 }
