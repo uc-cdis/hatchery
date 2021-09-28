@@ -141,6 +141,9 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 	}))
 
 	networkInfo, err := creds.describeWorkspaceNetwork()
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	input := &elbv2.CreateLoadBalancerInput{
 		Name:   aws.String(userToResourceName(userName, "service")),
 		Scheme: aws.String("internal"),

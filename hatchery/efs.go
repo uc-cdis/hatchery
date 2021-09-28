@@ -106,7 +106,7 @@ func (creds *CREDS) EFSFileSystem(username string) (*EFS, error) {
 		for *exisitingFS.FileSystems[0].LifeCycleState != "available" {
 			Config.Logger.Printf("EFS filesystem is in state: %s ...  Waiting for 2 seconds", *exisitingFS.FileSystems[0].LifeCycleState)
 			// sleep for 2 sec
-			time.Sleep(1 * time.Second)
+			time.Sleep(2 * time.Second)
 			exisitingFS, _ = creds.getEFSFileSystem(username, svc)
 		}
 

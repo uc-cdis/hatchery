@@ -1,6 +1,9 @@
 package hatchery
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -19,11 +22,13 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
 	}))
+
+	vpcname := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-vpc"
 	vpcInput := &ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{
 			{
-				Name:   aws.String("is-default"),
-				Values: []*string{aws.String("true")},
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String(vpcname)},
 			},
 		},
 	}
@@ -31,6 +36,10 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 	vpcs, err := svc.DescribeVpcs(vpcInput)
 	if err != nil {
 		return nil, err
+	}
+	// TODO: BETTER ERROR HANDLING HERE!!
+	if len(vpcs.Vpcs) == 0 {
+		return nil, fmt.Errorf("No existing vpcs found.")
 	}
 
 	subnetInput := &ec2.DescribeSubnetsInput{
@@ -69,6 +78,7 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 			GroupName: aws.String("ws-security-group"),
 			TagSpecifications: []*ec2.TagSpecification{
 				{
+					ResourceType: aws.String("security-group"),
 					Tags: []*ec2.Tag{
 						{
 							Key:   aws.String("Name"),
@@ -105,7 +115,9 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 							Description: aws.String("All IPv6"),
 						},
 					},
-					ToPort: aws.Int64(80),
+					// Port-range
+					FromPort: aws.Int64(80),
+					ToPort:   aws.Int64(80),
 				},
 			},
 		}

@@ -42,8 +42,19 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/create-ecs-cluster", ecsCluster)
 
 	// Test functions
+	mux.HandleFunc("/vpc", vpc)
 	mux.HandleFunc("/tt", tt)
 	mux.HandleFunc("/tt_del", tt_delete)
+}
+
+func vpc(w http.ResponseWriter, r *http.Request) {
+	userName := r.Header.Get("REMOTE_USER")
+	vpc, err := setupVPC(userName)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+	} else {
+		fmt.Fprintf(w, fmt.Sprintf("VPC setup with Subnet: %s", *vpc))
+	}
 }
 
 func tt(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +69,7 @@ func tt(w http.ResponseWriter, r *http.Request) {
 
 func tt_delete(w http.ResponseWriter, r *http.Request) {
 	userName := r.Header.Get("REMOTE_USER")
-	err := deleteTransitGatewayAttachment(userName)
+	err := teardownTransitGateway(userName)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 	} else {
