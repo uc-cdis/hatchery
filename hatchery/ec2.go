@@ -2,6 +2,7 @@ package hatchery
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -23,7 +24,7 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 		Region:      aws.String("us-east-1"),
 	}))
 
-	vpcname := strings.ReplaceAll(Config.Config.Sidecar.Env["BASE_URL"], ".", "-") + "-vpc"
+	vpcname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-vpc"
 	vpcInput := &ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{
 			{
@@ -102,6 +103,17 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 			GroupId: newSecurityGroup.GroupId,
 			IpPermissions: []*ec2.IpPermission{
 				{
+					UserIdGroupPairs: []*ec2.UserIdGroupPair{
+						{
+							GroupId: newSecurityGroup.GroupId,
+						},
+					},
+					IpProtocol: aws.String("tcp"),
+					// Port-range
+					FromPort: aws.Int64(2049),
+					ToPort:   aws.Int64(2049),
+				},
+				{
 					IpProtocol: aws.String("tcp"),
 					IpRanges: []*ec2.IpRange{
 						{
@@ -119,11 +131,24 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 					FromPort: aws.Int64(80),
 					ToPort:   aws.Int64(80),
 				},
+				{
+					IpProtocol: aws.String("tcp"),
+					// Port-range
+					FromPort: aws.Int64(0),
+					ToPort:   aws.Int64(65535),
+					IpRanges: []*ec2.IpRange{
+						{
+							CidrIp:      vpcs.Vpcs[0].CidrBlock,
+							Description: aws.String("All IPv4"),
+						},
+					},
+				},
 			},
 		}
 		_, err = svc.AuthorizeSecurityGroupIngress(&ingressRules)
 		if err != nil {
-			return nil, err
+			panic(err)
+			// return nil, err
 		}
 
 		securityGroup, _ = svc.DescribeSecurityGroups(&securityGroupInput)

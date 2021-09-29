@@ -32,7 +32,9 @@ func (creds *CREDS) getEFSFileSystem(username string, svc *efs.EFS) (*efs.Descri
 
 func (creds *CREDS) createMountTarget(FileSystemId string, svc *efs.EFS) (*efs.MountTargetDescription, error) {
 	network_info, err := creds.describeWorkspaceNetwork()
-
+	if err != nil {
+		return nil, err
+	}
 	input := &efs.CreateMountTargetInput{
 		FileSystemId: aws.String(FileSystemId),
 		SubnetId:     network_info.subnets.Subnets[0].SubnetId,

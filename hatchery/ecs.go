@@ -58,21 +58,46 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
 	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
-	input := &ecs.CreateClusterInput{
-		ClusterName: aws.String(clusterName),
-	}
 
-	result, err := svc.CreateCluster(input)
+	_, err := setupVPC(userName)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			default:
-				return nil, aerr
-			}
-		}
 		return nil, err
 	}
-	return result.Cluster, nil
+
+	describeClusterInput := &ecs.DescribeClustersInput{
+		Clusters: []*string{aws.String(clusterName)},
+	}
+
+	ex_cluster, err := svc.DescribeClusters(describeClusterInput)
+	if err != nil {
+		return nil, err
+	}
+	provision := false
+	if len(ex_cluster.Clusters) == 1 {
+		if *ex_cluster.Clusters[0].Status == "INACTIVE" {
+			// Force recreation of inactive/deleted clusters
+			provision = true
+		}
+	}
+	if len(ex_cluster.Clusters) == 0 || provision {
+
+		input := &ecs.CreateClusterInput{
+			ClusterName: aws.String(clusterName),
+		}
+
+		result, err := svc.CreateCluster(input)
+		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				default:
+					return nil, aerr
+				}
+			}
+			return nil, err
+		}
+		return result.Cluster, nil
+	}
+	return ex_cluster.Clusters[0], nil
 }
 
 func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
@@ -281,6 +306,10 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 		return "", err
 	}
 	// TODO: Terminate ALB + target group here too
+	err = teardownTransitGateway(userName)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
@@ -302,6 +331,11 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		return "", err
 	}
 	cpu, err := cpu(hatchApp.CPULimit)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = svc.launchEcsCluster(userName)
 	if err != nil {
 		return "", err
 	}
@@ -422,7 +456,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		return "", err
 	}
-
+	err = setupTransitGateway(userName)
+	if err != nil {
+		return "", err
+	}
 	return launchTask, nil
 }
 
@@ -436,7 +473,10 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 	}
 	Config.Logger.Printf("Cluster: %s", *cluster.ClusterName)
 
-	networkConfig, _ := sess.networkConfig()
+	networkConfig, err := sess.networkConfig()
+	if err != nil {
+		return "", err
+	}
 
 	loadBalancer, targetGroupArn, _, err := sess.CreateLoadBalancer(userName)
 	if err != nil {
