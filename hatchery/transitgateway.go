@@ -13,12 +13,12 @@ import (
 func setupTransitGateway(username string) error {
 	_, err := createTransitGateway(username)
 	if err != nil {
-		return err
+		return fmt.Errorf("error creating transit gateway: %s", err.Error())
 	}
 	Config.Logger.Printf("Setting up remote account ")
 	err = setupRemoteAccount(username, false)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to setup remote account: %s", err.Error())
 	}
 
 	return nil
