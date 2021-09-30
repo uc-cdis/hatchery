@@ -158,10 +158,11 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
 	statusMap := map[string]string{
-		"ACTIVE":   "Running",
-		"DRAINING": "Terminating",
-		"STOPPED":  "Not Found",
-		"INACTIVE": "Not Found",
+		"ACTIVE":    "Running",
+		"DRAINING":  "Terminating",
+		"LAUNCHING": "Launching",
+		"STOPPED":   "Not Found",
+		"INACTIVE":  "Not Found",
 	}
 	statusMessage := "INACTIVE"
 	status.Status = statusMap[statusMessage]
@@ -185,7 +186,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 	var taskDefName string
 	if len(service.Services) > 0 {
 		statusMessage = *service.Services[0].Status
-		if statusMessage == "ACTIVE" {
+		if statusMessage == "ACTIVE" && (*service.Services[0].RunningCount == *service.Services[0].DesiredCount) {
 			taskDefName = *service.Services[0].TaskDefinition
 			if taskDefName == "" {
 				Config.Logger.Printf("No task definition found for user %s", userName)
@@ -230,7 +231,12 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 		}
 	}
 
-	status.Status = statusMap[statusMessage]
+	if (*service.Services[0].PendingCount > *service.Services[0].RunningCount) || *service.Services[0].PendingCount > 0 {
+		Config.Logger.Printf("Status: %s", *service.Services[0])
+		status.Status = statusMap["LAUNCHING"]
+	} else {
+		status.Status = statusMap[statusMessage]
+	}
 	return &status, nil
 }
 

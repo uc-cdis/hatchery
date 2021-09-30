@@ -112,7 +112,7 @@ func createTransitGateway(userName string) (*string, error) {
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to DescribeTransitGateways: %s", err.Error())
 	}
 
 	// Create Transit Gateway if it doesn't exist
