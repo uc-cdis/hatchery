@@ -559,21 +559,19 @@ func VPCRoutes(remote_network_info *NetworkInfo, main_network_info *NetworkInfo,
 			DestinationCidrBlock: main_network_info.vpc.Vpcs[0].CidrBlock,
 			RouteTableId:         remote_network_info.routeTable.RouteTables[0].RouteTableId,
 		}
-		remote_route, err := ec2_remote.DeleteRoute(remoteDeleteRouteInput)
+		_, err := ec2_remote.DeleteRoute(remoteDeleteRouteInput)
 		if err != nil {
 			return err
 		}
-		Config.Logger.Printf("Route deletef from remote VPC. %s", remote_route)
 		localDeleteRouteInput := &ec2.DeleteRouteInput{
 			DestinationCidrBlock: remote_network_info.vpc.Vpcs[0].CidrBlock,
 			RouteTableId:         main_network_info.routeTable.RouteTables[0].RouteTableId,
 		}
 
-		local_route, err := ec2_local.DeleteRoute(localDeleteRouteInput)
+		_, err = ec2_local.DeleteRoute(localDeleteRouteInput)
 		if err != nil {
 			return err
 		}
-		Config.Logger.Printf("Route deleted from local VPC. %s", local_route)
 		return nil
 	}
 }
