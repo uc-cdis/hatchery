@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -914,15 +915,15 @@ func createExternalK8sPod(ctx context.Context, hash string, userName string, acc
 
 	nodes, _ := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
 	NodeIP := nodes.Items[0].Status.Addresses[0].Address
-	NodePort := service.Spec.Ports[0].NodePort
-	createLocalService(ctx, userName, hash, NodeIP, NodePort)
+
+	createLocalService(ctx, userName, hash, NodeIP, false)
 
 	return nil
 }
 
 // Creates a local service that portal can reach
 // and route traffic to pod in external cluster.
-func createLocalService(ctx context.Context, userName string, hash string, serviceURL string, servicePort int32) error {
+func createLocalService(ctx context.Context, userName string, hash string, serviceURL string, ecs bool) error {
 	const localAmbassadorYaml = `---
 apiVersion: ambassador/v1
 kind:  Mapping
@@ -938,17 +939,35 @@ rewrite: %s
 tls: %s
 `
 	hatchApp := Config.ContainersMap[hash]
-	localPodClient := getLocalPodClient()
 
+	externalPodClient, err := NewEKSClientset(ctx, userName)
+	if err != nil {
+		return err
+	}
 	serviceName := userToResourceName(userName, "service")
+	service, err := externalPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	NodePort := int32(80)
+	if !ecs {
+		NodePort = service.Spec.Ports[0].NodePort
+		Config.Logger.Printf("NodePort: %d.", NodePort)
+		for NodePort == 0 {
+			NodePort = service.Spec.Ports[0].NodePort
+			Config.Logger.Printf("NodePort: %d.", NodePort)
+			time.Sleep(5 * time.Second)
+		}
+	}
 	podName := userToResourceName(userName, "pod")
 
 	labelsService := make(map[string]string)
 	labelsService["app"] = podName
 	annotationsService := make(map[string]string)
-	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, serviceURL, servicePort, hatchApp.PathRewrite, hatchApp.UseTLS)
+	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, serviceURL, NodePort, hatchApp.PathRewrite, hatchApp.UseTLS)
 
-	_, err := localPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
+	localPodClient := getLocalPodClient()
+	_, err = localPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
 		// This probably happened as the result of some error... there was no pod but was a service
 		// Lets just clean it up and proceed

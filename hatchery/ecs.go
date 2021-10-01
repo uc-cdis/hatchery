@@ -496,7 +496,7 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 		return "", err
 	}
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
-	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, int32(80))
+	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, true)
 	if err != nil {
 		return "", err
 	}
