@@ -201,6 +201,7 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 	if err != nil {
 		return nil, err
 	}
+	Config.Logger.Printf("networkInfo: %s", network_info)
 	ex_tgw_attachment_input := &ec2.DescribeTransitGatewayAttachmentsInput{
 		Filters: []*ec2.Filter{
 			{

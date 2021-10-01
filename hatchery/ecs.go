@@ -231,9 +231,11 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 		}
 	}
 
-	if (*service.Services[0].PendingCount > *service.Services[0].RunningCount) || *service.Services[0].PendingCount > 0 {
-		Config.Logger.Printf("Status: %s", *service.Services[0])
-		status.Status = statusMap["LAUNCHING"]
+	if len(service.Services) > 0 {
+		if (*service.Services[0].PendingCount > *service.Services[0].RunningCount) || *service.Services[0].PendingCount > 0 {
+			Config.Logger.Printf("Status: %s", *service.Services[0])
+			status.Status = statusMap["LAUNCHING"]
+		}
 	} else {
 		status.Status = statusMap[statusMessage]
 	}
