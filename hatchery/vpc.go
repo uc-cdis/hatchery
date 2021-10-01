@@ -49,6 +49,10 @@ func setupVPC(username string) (*string, error) {
 				Name:   aws.String("tag:Name"),
 				Values: []*string{aws.String(vpcname)},
 			},
+			{
+				Name:   aws.String("tag:Environment"),
+				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+			},
 		},
 	}
 	vpc, err := ec2Remote.DescribeVpcs(descVPCInput)
@@ -61,6 +65,7 @@ func setupVPC(username string) (*string, error) {
 		if err != nil {
 			return nil, err
 		}
+		Config.Logger.Printf("VPC created in remote account")
 		_, err = createInternetGW(vpcname, *vpc.Vpc.VpcId, ec2Remote)
 		if err != nil {
 			return nil, err

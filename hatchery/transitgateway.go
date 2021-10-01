@@ -51,7 +51,7 @@ func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
 		return nil, err
 	}
 	if len(vpc.Vpcs) == 0 {
-		return nil, fmt.Errorf("No VPC's found: %s", vpc)
+		return nil, fmt.Errorf("no VPC's found in hub account: %s", vpc)
 	}
 	subnetInput := &ec2.DescribeSubnetsInput{
 		Filters: []*ec2.Filter{
@@ -212,7 +212,7 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 		networkInfo, err = sess.describeWorkspaceNetwork()
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to get network info: %s", err)
 	}
 	exTgwAttachmentInput := &ec2.DescribeTransitGatewayAttachmentsInput{
 		Filters: []*ec2.Filter{

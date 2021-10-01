@@ -89,7 +89,6 @@ func (creds *CREDS) EFSFileSystem(username string) (*EFS, error) {
 	}))
 	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(username, "pod") + "fs"
 	exisitingFS, _ := creds.getEFSFileSystem(username, svc)
-	Config.Logger.Printf("Existiing FS: %s", exisitingFS)
 	if exisitingFS == nil {
 		input := &efs.CreateFileSystemInput{
 			Backup:          aws.Bool(false),
@@ -144,6 +143,9 @@ func (creds *CREDS) EFSFileSystem(username string) (*EFS, error) {
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to describe accesspoint: %s", err)
+		}
+		if len(accessPoint.AccessPoints) == 0 {
+			return nil, fmt.Errorf("No AccessPoints found")
 		}
 		return &EFS{
 			EFSArn:        *exisitingFS.FileSystems[0].FileSystemArn,
