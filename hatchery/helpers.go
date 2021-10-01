@@ -57,3 +57,14 @@ func characterInString(a rune, list string) bool {
 	}
 	return false
 }
+
+func truncateString(str string, num int) string {
+	bnoden := str
+	if len(str) > num {
+		bnoden = str[0:num]
+	}
+	if bnoden[len(bnoden)-1] == '-' {
+		bnoden = bnoden[0 : len(bnoden)-2]
+	}
+	return bnoden
+}

@@ -12,9 +12,9 @@ import (
 )
 
 func (creds *CREDS) createTargetGroup(userName string, vpcId string, svc *elbv2.ELBV2) (*elbv2.CreateTargetGroupOutput, error) {
-	albName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "service") + "tg"
+	tgName := truncateString(strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")+userToResourceName(userName, "service")+"tg", 32)
 	input := &elbv2.CreateTargetGroupInput{
-		Name:            aws.String(albName),
+		Name:            aws.String(tgName),
 		Port:            aws.Int64(80),
 		Protocol:        aws.String("HTTP"),
 		VpcId:           aws.String(vpcId),
@@ -143,11 +143,11 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 		Region:      aws.String("us-east-1"),
 	}))
 
-	networkInfo, err := creds.describeWorkspaceNetwork()
+	networkInfo, err := creds.describeWorkspaceNetwork(userName)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	albName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "service") + "alb"
+	albName := truncateString(strings.ReplaceAll(userToResourceName(userName, "service")+os.Getenv("GEN3_ENDPOINT"), ".", "-")+"alb", 32)
 	input := &elbv2.CreateLoadBalancerInput{
 		Name:   aws.String(albName),
 		Scheme: aws.String("internal"),

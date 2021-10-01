@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -20,10 +19,8 @@ import (
 
 	// AWS modules
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/eks"
 
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
@@ -612,49 +609,6 @@ func payModelExistsForUser(userName string) (result bool) {
 	return result
 }
 
-func scaleEKSNodes(ctx context.Context, userName string, scale int) {
-	pm := Config.PayModelMap[userName]
-	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(pm.Region),
-	})))
-
-	creds := stscreds.NewCredentials(sess, roleARN)
-	// ASG stuff
-	asgSvc := autoscaling.New(sess, &aws.Config{Credentials: creds})
-
-	asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
-		AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + pm.Name)},
-	}
-	asg, err := asgSvc.DescribeAutoScalingGroupsWithContext(ctx, asgInput)
-	cap := *asg.AutoScalingGroups[0].DesiredCapacity
-	Config.Logger.Printf("ASG capacity: %d", cap)
-
-	Config.Logger.Printf("Scaling ASG from %d to %d..", cap, cap+1)
-
-	asgScaleInput := &autoscaling.SetDesiredCapacityInput{
-		AutoScalingGroupName: asg.AutoScalingGroups[0].AutoScalingGroupName,
-		DesiredCapacity:      aws.Int64(cap + int64(scale)),
-	}
-	_, err = asgSvc.SetDesiredCapacityWithContext(ctx, asgScaleInput)
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case autoscaling.ErrCodeScalingActivityInProgressFault:
-				Config.Logger.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
-			case autoscaling.ErrCodeResourceContentionFault:
-				Config.Logger.Println(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
-			default:
-				Config.Logger.Println(aerr.Error())
-			}
-		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
-			Config.Logger.Println(err.Error())
-		}
-	}
-}
-
 func createK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
 	if payModelExistsForUser(userName) {
 		return createExternalK8sPod(ctx, hash, userName, accessToken)
@@ -940,23 +894,17 @@ tls: %s
 `
 	hatchApp := Config.ContainersMap[hash]
 
-	externalPodClient, err := NewEKSClientset(ctx, userName)
-	if err != nil {
-		return err
-	}
 	serviceName := userToResourceName(userName, "service")
-	service, err := externalPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
 	NodePort := int32(80)
 	if !ecs {
+		externalPodClient, err := NewEKSClientset(ctx, userName)
+		if err != nil {
+			return err
+		}
+		service, err := externalPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 		NodePort = service.Spec.Ports[0].NodePort
-		Config.Logger.Printf("NodePort: %d.", NodePort)
-		for NodePort == 0 {
-			NodePort = service.Spec.Ports[0].NodePort
-			Config.Logger.Printf("NodePort: %d.", NodePort)
-			time.Sleep(5 * time.Second)
+		if err != nil {
+			return err
 		}
 	}
 	podName := userToResourceName(userName, "pod")
@@ -967,7 +915,7 @@ tls: %s
 	annotationsService["getambassador.io/config"] = fmt.Sprintf(localAmbassadorYaml, userToResourceName(userName, "mapping"), userName, serviceURL, NodePort, hatchApp.PathRewrite, hatchApp.UseTLS)
 
 	localPodClient := getLocalPodClient()
-	_, err = localPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
+	_, err := localPodClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
 		// This probably happened as the result of some error... there was no pod but was a service
 		// Lets just clean it up and proceed

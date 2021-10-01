@@ -326,7 +326,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	delServiceOutput, err := svc.svc.DeleteService(&ecs.DeleteServiceInput{
 		Cluster: cluster.ClusterName,
 		Force:   aws.Bool(true),
-		Service: aws.String(userToResourceName(userName, "pod")),
+		Service: aws.String(svcName),
 	})
 	if err != nil {
 		return "", err
@@ -499,7 +499,7 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 	}
 	Config.Logger.Printf("Cluster: %s", *cluster.ClusterName)
 
-	networkConfig, err := sess.networkConfig()
+	networkConfig, err := sess.networkConfig(userName)
 	if err != nil {
 		return "", err
 	}
@@ -560,10 +560,10 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 		return "", err
 	}
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
-	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, true)
-	if err != nil {
-		return "", err
-	}
+	// err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, true)
+	// if err != nil {
+	// 	return "", err
+	// }
 	return *loadBalancer.LoadBalancers[0].DNSName, nil
 }
 

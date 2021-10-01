@@ -17,8 +17,8 @@ type EFS struct {
 	AccessPointId string
 }
 
-func (creds *CREDS) getEFSFileSystem(username string, svc *efs.EFS) (*efs.DescribeFileSystemsOutput, error) {
-	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(username, "pod") + "fs"
+func (creds *CREDS) getEFSFileSystem(userName string, svc *efs.EFS) (*efs.DescribeFileSystemsOutput, error) {
+	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "fs"
 	input := &efs.DescribeFileSystemsInput{
 		CreationToken: aws.String(fsName),
 	}
@@ -34,8 +34,8 @@ func (creds *CREDS) getEFSFileSystem(username string, svc *efs.EFS) (*efs.Descri
 }
 
 // TODO: Check for MountTarget state regardless if fs exists or not
-func (creds *CREDS) createMountTarget(FileSystemId string, svc *efs.EFS) (*efs.MountTargetDescription, error) {
-	networkInfo, err := creds.describeWorkspaceNetwork()
+func (creds *CREDS) createMountTarget(FileSystemId string, svc *efs.EFS, userName string) (*efs.MountTargetDescription, error) {
+	networkInfo, err := creds.describeWorkspaceNetwork(userName)
 	if err != nil {
 		return nil, err
 	}
@@ -55,10 +55,10 @@ func (creds *CREDS) createMountTarget(FileSystemId string, svc *efs.EFS) (*efs.M
 	return result, nil
 }
 
-func (creds *CREDS) createAccessPoint(FileSystemId string, username string, svc *efs.EFS) (*efs.CreateAccessPointOutput, error) {
+func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc *efs.EFS) (*efs.CreateAccessPointOutput, error) {
 
 	input := &efs.CreateAccessPointInput{
-		ClientToken:  aws.String(fmt.Sprintf("ap-%s", userToResourceName(username, "pod"))),
+		ClientToken:  aws.String(fmt.Sprintf("ap-%s", userToResourceName(userName, "pod"))),
 		FileSystemId: aws.String(FileSystemId),
 		PosixUser: &efs.PosixUser{
 			Gid: aws.Int64(100),
@@ -81,14 +81,14 @@ func (creds *CREDS) createAccessPoint(FileSystemId string, username string, svc 
 	return result, nil
 }
 
-func (creds *CREDS) EFSFileSystem(username string) (*EFS, error) {
+func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 	svc := efs.New(session.New(&aws.Config{
 		Credentials: creds.creds,
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(username, "pod") + "fs"
-	exisitingFS, _ := creds.getEFSFileSystem(username, svc)
+	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "fs"
+	exisitingFS, _ := creds.getEFSFileSystem(userName, svc)
 	if exisitingFS == nil {
 		input := &efs.CreateFileSystemInput{
 			Backup:          aws.Bool(false),
@@ -112,21 +112,21 @@ func (creds *CREDS) EFSFileSystem(username string) (*EFS, error) {
 			return nil, fmt.Errorf("Error creating EFS filesystem: %s", err)
 		}
 
-		exisitingFS, _ = creds.getEFSFileSystem(username, svc)
+		exisitingFS, _ = creds.getEFSFileSystem(userName, svc)
 		for *exisitingFS.FileSystems[0].LifeCycleState != "available" {
 			Config.Logger.Printf("EFS filesystem is in state: %s ...  Waiting for 2 seconds", *exisitingFS.FileSystems[0].LifeCycleState)
 			// sleep for 2 sec
 			time.Sleep(2 * time.Second)
-			exisitingFS, _ = creds.getEFSFileSystem(username, svc)
+			exisitingFS, _ = creds.getEFSFileSystem(userName, svc)
 		}
 
 		// Create mount target
-		mountTarget, err := creds.createMountTarget(*result.FileSystemId, svc)
+		mountTarget, err := creds.createMountTarget(*result.FileSystemId, svc, userName)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to create EFS MountTarget: %s", err)
 		}
 		Config.Logger.Printf("MountTarget created: %s", *mountTarget.MountTargetId)
-		accessPoint, err := creds.createAccessPoint(*result.FileSystemId, username, svc)
+		accessPoint, err := creds.createAccessPoint(*result.FileSystemId, userName, svc)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to create EFS AccessPoint: %s", err)
 		}

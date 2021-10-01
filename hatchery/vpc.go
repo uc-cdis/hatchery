@@ -11,8 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
-func setupVPC(username string) (*string, error) {
-	pm := Config.PayModelMap[username]
+func setupVPC(userName string) (*string, error) {
+	pm := Config.PayModelMap[userName]
 
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
@@ -38,7 +38,7 @@ func setupVPC(username string) (*string, error) {
 	subnetString := subnet.String()
 
 	// VPC stuff
-	vpcname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-vpc"
+	vpcname := userToResourceName(userName, "service") + "-" + strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-vpc"
 	descVPCInput := &ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{
 			{
@@ -71,7 +71,7 @@ func setupVPC(username string) (*string, error) {
 			return nil, err
 		}
 	}
-	exNetwork, err := svc.describeWorkspaceNetwork()
+	exNetwork, err := svc.describeWorkspaceNetwork(userName)
 	if err != nil {
 		return nil, err
 	}

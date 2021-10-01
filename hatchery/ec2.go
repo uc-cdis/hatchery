@@ -18,13 +18,13 @@ type NetworkInfo struct {
 	routeTable     *ec2.DescribeRouteTablesOutput
 }
 
-func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
+func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, error) {
 	svc := ec2.New(session.New(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
 	}))
 
-	vpcname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-vpc"
+	vpcname := userToResourceName(userName, "service") + "-" + strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-vpc"
 	vpcInput := &ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{
 			{
@@ -192,9 +192,9 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 	return &networkInfo, nil
 }
 
-func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
+func (creds *CREDS) networkConfig(userName string) (ecs.NetworkConfiguration, error) {
 
-	networkInfo, err := creds.describeWorkspaceNetwork()
+	networkInfo, err := creds.describeWorkspaceNetwork(userName)
 	if err != nil {
 		return ecs.NetworkConfiguration{}, err
 	}

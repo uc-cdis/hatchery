@@ -12,13 +12,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/ram"
 )
 
-func setupTransitGateway(username string) error {
-	_, err := createTransitGateway(username)
+func setupTransitGateway(userName string) error {
+	_, err := createTransitGateway(userName)
 	if err != nil {
 		return fmt.Errorf("error creating transit gateway: %s", err.Error())
 	}
 	Config.Logger.Printf("Setting up remote account ")
-	err = setupRemoteAccount(username, false)
+	err = setupRemoteAccount(userName, false)
 	if err != nil {
 		return fmt.Errorf("failed to setup remote account: %s", err.Error())
 	}
@@ -26,8 +26,8 @@ func setupTransitGateway(username string) error {
 	return nil
 }
 
-func teardownTransitGateway(username string) error {
-	err := setupRemoteAccount(username, true)
+func teardownTransitGateway(userName string) error {
+	err := setupRemoteAccount(userName, true)
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func createTransitGateway(userName string) (*string, error) {
 	}
 }
 
-func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, local bool, sess *CREDS, username string) (*string, error) {
+func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, local bool, sess *CREDS, userName string) (*string, error) {
 	// Check for existing transit gateway
 	tgInput := &ec2.DescribeTransitGatewaysInput{
 		TransitGatewayIds: []*string{aws.String(tgwid)},
@@ -209,7 +209,7 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 	if local {
 		networkInfo, err = describeMainNetwork(vpcid, svc)
 	} else {
-		networkInfo, err = sess.describeWorkspaceNetwork()
+		networkInfo, err = sess.describeWorkspaceNetwork(userName)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get network info: %s", err)
@@ -235,7 +235,7 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 		return nil, err
 	}
 	if len(exTgwAttachment.TransitGatewayAttachments) == 0 {
-		tgwAttachmentName := userToResourceName(username, "service") + "tgwa"
+		tgwAttachmentName := userToResourceName(userName, "service") + "tgwa"
 		tgwAttachmentInput := &ec2.CreateTransitGatewayVpcAttachmentInput{
 			TransitGatewayId: exTg.TransitGateways[0].TransitGatewayId,
 			VpcId:            networkInfo.vpc.Vpcs[len(networkInfo.vpc.Vpcs)-1].VpcId,
@@ -301,8 +301,9 @@ func deleteTransitGatewayAttachment(svc *ec2.EC2, tgwid string) (*string, error)
 func shareTransitGateway(session *session.Session, tgwArn string, accountid string) (*string, error) {
 	svc := ram.New(session)
 
+	ramName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-ram"
 	getResourceShareInput := &ram.GetResourceSharesInput{
-		Name:                aws.String("MainTransitGatewayShare"),
+		Name:                aws.String(ramName),
 		ResourceOwner:       aws.String("SELF"),
 		ResourceShareStatus: aws.String("ACTIVE"),
 	}
@@ -312,7 +313,6 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 	}
 	if len(exRs.ResourceShares) == 0 {
 		Config.Logger.Printf("Did not find existing resource share, creating a resource share")
-		ramName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-ram"
 		resourceShareInput := &ram.CreateResourceShareInput{
 			// Indicates whether principals outside your organization in Organizations can
 			// be associated with a resource share.
@@ -395,12 +395,12 @@ func setupRemoteAccount(userName string, teardown bool) error {
 				Values: []*string{aws.String("available"), aws.String("pending")},
 			},
 			{
-				Name:   aws.String("state"),
-				Values: []*string{aws.String("available"), aws.String("pending")},
+				Name:   aws.String("tag:Environment"),
+				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
 			},
 		},
 	}
-	exTg, err := ec2Remote.DescribeTransitGateways(exTgInput)
+	exTg, err := ec2Local.DescribeTransitGateways(exTgInput)
 	if err != nil {
 		return err
 	}
@@ -410,13 +410,13 @@ func setupRemoteAccount(userName string, teardown bool) error {
 		if err != nil {
 			return err
 		}
-		exTg, err = ec2Remote.DescribeTransitGateways(exTgInput)
+		exTg, err = ec2Local.DescribeTransitGateways(exTgInput)
 		if err != nil {
 			return err
 		}
 		time.Sleep(5 * time.Second)
 	}
-	networkInfo, err := svc.describeWorkspaceNetwork()
+	networkInfo, err := svc.describeWorkspaceNetwork(userName)
 	if err != nil {
 		return err
 	}
@@ -449,7 +449,7 @@ func setupRemoteAccount(userName string, teardown bool) error {
 	// setup VPC Route Table
 	err = VPCRoutes(networkInfo, mainNetworkInfo, exTg.TransitGateways[0].TransitGatewayId, ec2Remote, ec2Local, teardown)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create vpc routes: %s", err.Error())
 	}
 
 	return nil
@@ -493,7 +493,7 @@ func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string
 			return nil, err
 		}
 	} else {
-		networkInfo, err = sess.describeWorkspaceNetwork()
+		networkInfo, err = sess.describeWorkspaceNetwork(userName)
 		if err != nil {
 			return nil, err
 		}
@@ -566,6 +566,31 @@ func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string
 
 func VPCRoutes(remote_network_info *NetworkInfo, main_network_info *NetworkInfo, tgwId *string, ec2_remote *ec2.EC2, ec2_local *ec2.EC2, teardown bool) error {
 	if !teardown {
+		exRemoteRouteInput := &ec2.DescribeRouteTablesInput{
+			RouteTableIds: []*string{remote_network_info.routeTable.RouteTables[0].RouteTableId},
+			Filters: []*ec2.Filter{
+				{
+					Name:   aws.String("route.destination-cidr-block"),
+					Values: []*string{main_network_info.vpc.Vpcs[0].CidrBlock},
+				},
+			},
+		}
+		exRemoteRoute, err := ec2_remote.DescribeRouteTables(exRemoteRouteInput)
+		if err != nil {
+			return err
+		}
+
+		if len(exRemoteRoute.RouteTables) != 0 {
+			remoteDeleteRouteInput := &ec2.DeleteRouteInput{
+				DestinationCidrBlock: main_network_info.vpc.Vpcs[0].CidrBlock,
+				RouteTableId:         remote_network_info.routeTable.RouteTables[0].RouteTableId,
+			}
+			_, err := ec2_remote.DeleteRoute(remoteDeleteRouteInput)
+			if err != nil {
+				return err
+			}
+		}
+
 		remoteCreateRouteInput := &ec2.CreateRouteInput{
 			DestinationCidrBlock: main_network_info.vpc.Vpcs[0].CidrBlock,
 			RouteTableId:         remote_network_info.routeTable.RouteTables[0].RouteTableId,
