@@ -229,12 +229,11 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 				}
 			}
 		}
-	}
-
-	if len(service.Services) > 0 {
 		if (*service.Services[0].PendingCount > *service.Services[0].RunningCount) || *service.Services[0].PendingCount > 0 {
 			Config.Logger.Printf("Status: %s", *service.Services[0])
 			status.Status = statusMap["LAUNCHING"]
+		} else {
+			status.Status = statusMap[statusMessage]
 		}
 	} else {
 		status.Status = statusMap[statusMessage]
@@ -458,14 +457,14 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		return "", err
 	}
+	err = setupTransitGateway(userName)
+	if err != nil {
+		return "", err
+	}
 
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash)
 	if err != nil {
 		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
-		return "", err
-	}
-	err = setupTransitGateway(userName)
-	if err != nil {
 		return "", err
 	}
 	return launchTask, nil

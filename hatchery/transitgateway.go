@@ -55,8 +55,8 @@ func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
 				Values: []*string{aws.String(*vpc.Vpcs[0].VpcId)},
 			},
 			{
-				Name:   aws.String("tag:kubernetes.io/role/internal-elb"),
-				Values: []*string{aws.String("1")},
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String("eks_private_0"), aws.String("eks_private_1"), aws.String("eks_private_2")},
 			},
 		},
 	}
@@ -201,7 +201,6 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 	if err != nil {
 		return nil, err
 	}
-	Config.Logger.Printf("networkInfo: %s", network_info)
 	ex_tgw_attachment_input := &ec2.DescribeTransitGatewayAttachmentsInput{
 		Filters: []*ec2.Filter{
 			{
@@ -237,7 +236,6 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 		for i := range network_info.subnets.Subnets {
 			tgw_attachment_input.SubnetIds = append(tgw_attachment_input.SubnetIds, network_info.subnets.Subnets[i].SubnetId)
 		}
-
 		tgw_attachment, err := svc.CreateTransitGatewayVpcAttachment(tgw_attachment_input)
 		if err != nil {
 			return nil, fmt.Errorf("cannot create transitgatewayattachment: %s", err.Error())
