@@ -949,9 +949,9 @@ tls: %s
 	if err != nil {
 		return err
 	}
-	NodePort := 80
+	NodePort := int32(80)
 	if !ecs {
-		NodePort := service.Spec.Ports[0].NodePort
+		NodePort = service.Spec.Ports[0].NodePort
 		Config.Logger.Printf("NodePort: %d.", NodePort)
 		for NodePort == 0 {
 			NodePort = service.Spec.Ports[0].NodePort
