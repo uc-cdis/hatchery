@@ -349,33 +349,15 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		sidecarEnvVars = append(sidecarEnvVars, value)
 		envVars = append(envVars, value)
 	}
-	// scan if sidecarEnvVars has HOSTNAME, and add it if not
-	sidecarEnvVarsCopy := sidecarEnvVars[:0]
-	// this is the best we can do with golang
-	for i, value := range sidecarEnvVarsCopy {
-		if value.Name == "HOSTNAME" {
-			break
-		}
-		if i == len(sidecarEnvVarsCopy)-1 {
-			sidecarEnvVars = append(sidecarEnvVars, k8sv1.EnvVar{
-				Name:  "HOSTNAME",
-				Value: os.Getenv("HOSTNAME"),
-			})
-		}
-	}
-	// do the same thing for envVars
-	envVarsCopy := envVars[:0]
-	for i, value := range envVarsCopy {
-		if value.Name == "HOSTNAME" {
-			break
-		}
-		if i == len(envVarsCopy)-1 {
-			envVars = append(envVars, k8sv1.EnvVar{
-				Name:  "HOSTNAME",
-				Value: os.Getenv("HOSTNAME"),
-			})
-		}
-	}
+
+	sidecarEnvVars = append(sidecarEnvVars, k8sv1.EnvVar{
+		Name:  "GEN3_ENDPOINT",
+		Value: os.Getenv("GEN3_ENDPOINT"),
+	})
+	envVars = append(envVars, k8sv1.EnvVar{
+		Name:  "GEN3_ENDPOINT",
+		Value: os.Getenv("GEN3_ENDPOINT"),
+	})
 
 	//hatchConfig.Logger.Printf("sidecar configured")
 
@@ -776,7 +758,7 @@ func createExternalK8sPod(ctx context.Context, hash string, accessToken string, 
 
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "WTS_OVERRIDE_URL",
-		Value: "https://" + os.Getenv("HOSTNAME") + "/wts",
+		Value: "https://" + os.Getenv("GEN3_ENDPOINT") + "/wts",
 	})
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "API_KEY",

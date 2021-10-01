@@ -197,9 +197,9 @@ func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint str
 
 func getFenceURL() string {
 	fenceURL := "http://fence-service/"
-	_, ok := os.LookupEnv("HOSTNAME")
+	_, ok := os.LookupEnv("GEN3_ENDPOINT")
 	if ok {
-		fenceURL = "https://" + os.Getenv("HOSTNAME") + "/user"
+		fenceURL = "https://" + os.Getenv("GEN3_ENDPOINT") + "/user"
 	}
 	if !strings.HasSuffix(fenceURL, "/") {
 		fenceURL += "/"
