@@ -31,6 +31,10 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 				Name:   aws.String("tag:Name"),
 				Values: []*string{aws.String(vpcname)},
 			},
+			{
+				Name:   aws.String("tag:Environment"),
+				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+			},
 		},
 	}
 
@@ -67,6 +71,10 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 				Name:   aws.String("group-name"),
 				Values: []*string{aws.String("ws-security-group")},
 			},
+			{
+				Name:   aws.String("tag:Environment"),
+				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+			},
 		},
 	}
 	securityGroup, err := svc.DescribeSecurityGroups(&securityGroupInput)
@@ -84,6 +92,10 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 						{
 							Key:   aws.String("Name"),
 							Value: aws.String("ws-security-group"),
+						},
+						{
+							Key:   aws.String("Environment"),
+							Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
 						},
 					},
 				},
@@ -171,18 +183,18 @@ func (creds *CREDS) describeWorkspaceNetwork() (*NetworkInfo, error) {
 		return nil, err
 	}
 
-	network_info := NetworkInfo{
+	networkInfo := NetworkInfo{
 		vpc:            vpcs,
 		subnets:        subnets,
 		securityGroups: securityGroup,
 		routeTable:     routeTable,
 	}
-	return &network_info, nil
+	return &networkInfo, nil
 }
 
 func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 
-	network_info, err := creds.describeWorkspaceNetwork()
+	networkInfo, err := creds.describeWorkspaceNetwork()
 	if err != nil {
 		return ecs.NetworkConfiguration{}, err
 	}
@@ -197,7 +209,7 @@ func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 			// used. There is a limit of 5 security groups that can be specified per AwsVpcConfiguration.
 			//
 			// All specified security groups must be from the same VPC.
-			SecurityGroups: []*string{aws.String(*network_info.securityGroups.SecurityGroups[0].GroupId)},
+			SecurityGroups: []*string{aws.String(*networkInfo.securityGroups.SecurityGroups[0].GroupId)},
 			//
 			// The IDs of the subnets associated with the task or service. There is a limit
 			// of 16 subnets that can be specified per AwsVpcConfiguration.
@@ -205,7 +217,7 @@ func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 			// All specified subnets must be from the same VPC.
 			//
 			// Subnets is a required field
-			Subnets: []*string{aws.String(*network_info.subnets.Subnets[0].SubnetId)},
+			Subnets: []*string{aws.String(*networkInfo.subnets.Subnets[0].SubnetId)},
 			// contains filtered or unexported fields
 		},
 	}

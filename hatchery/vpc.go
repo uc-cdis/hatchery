@@ -22,7 +22,7 @@ func setupVPC(username string) (*string, error) {
 
 	svc := NewSession(sess, roleARN)
 
-	ec2_remote := ec2.New(session.New(&aws.Config{
+	ec2Remote := ec2.New(session.New(&aws.Config{
 		Credentials: svc.creds,
 		Region:      aws.String("us-east-1"),
 	}))
@@ -51,33 +51,33 @@ func setupVPC(username string) (*string, error) {
 			},
 		},
 	}
-	vpc, err := ec2_remote.DescribeVpcs(descVPCInput)
+	vpc, err := ec2Remote.DescribeVpcs(descVPCInput)
 	if err != nil {
 		return nil, err
 	}
 	// TODO: Check that VPC is configured correctly too, and not just the length
 	if len(vpc.Vpcs) == 0 {
-		vpc, err := createVPC(subnetString, vpcname, ec2_remote)
+		vpc, err := createVPC(subnetString, vpcname, ec2Remote)
 		if err != nil {
 			return nil, err
 		}
-		_, err = createInternetGW(vpcname, *vpc.Vpc.VpcId, ec2_remote)
+		_, err = createInternetGW(vpcname, *vpc.Vpc.VpcId, ec2Remote)
 		if err != nil {
 			return nil, err
 		}
 	}
-	ex_network, err := svc.describeWorkspaceNetwork()
+	exNetwork, err := svc.describeWorkspaceNetwork()
 	if err != nil {
 		return nil, err
 	}
-	_, err = createInternetGW(vpcname, *ex_network.vpc.Vpcs[0].VpcId, ec2_remote)
+	_, err = createInternetGW(vpcname, *exNetwork.vpc.Vpcs[0].VpcId, ec2Remote)
 	if err != nil {
 		return nil, err
 	}
 
 	// TODO: Check that subnets are configured correctly too, and not just the length
-	if len(ex_network.subnets.Subnets) == 0 {
-		err = createSubnet(subnetString, *ex_network.vpc.Vpcs[0].VpcId, ec2_remote)
+	if len(exNetwork.subnets.Subnets) == 0 {
+		err = createSubnet(subnetString, *exNetwork.vpc.Vpcs[0].VpcId, ec2Remote)
 		if err != nil {
 			return nil, err
 		}
@@ -96,6 +96,10 @@ func createVPC(cidr string, vpcname string, svc *ec2.EC2) (*ec2.CreateVpcOutput,
 					{
 						Key:   aws.String("Name"),
 						Value: aws.String(vpcname),
+					},
+					{
+						Key:   aws.String("Environment"),
+						Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
 					},
 				},
 			},
@@ -121,26 +125,26 @@ func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
 	if err != nil {
 		return err
 	}
-	subnet1_cidr, err := (cidr.Subnet(cidrs, 1, 0))
+	subnet1Cidr, err := (cidr.Subnet(cidrs, 1, 0))
 	if err != nil {
 		panic(err)
 	}
-	subnet2_cidr, _ := cidr.Subnet(cidrs, 1, 1)
+	subnet2Cidr, _ := cidr.Subnet(cidrs, 1, 1)
 	if err != nil {
 		panic(err)
 	}
 
 	Config.Logger.Print(cidrs)
 	createSubnet1Input := &ec2.CreateSubnetInput{
-		CidrBlock: aws.String(subnet1_cidr.String()),
-		//TODO: Make this configurable
+		CidrBlock: aws.String(subnet1Cidr.String()),
+		//TODO: Make this configurable ?
 		AvailabilityZone: aws.String("us-east-1a"),
 		VpcId:            &vpcid,
 	}
 	createSubnet2Input := &ec2.CreateSubnetInput{
-		//TODO: Make this configurable
+		//TODO: Make this configurable ?
 		AvailabilityZone: aws.String("us-east-1b"),
-		CidrBlock:        aws.String(subnet2_cidr.String()),
+		CidrBlock:        aws.String(subnet2Cidr.String()),
 		VpcId:            &vpcid,
 	}
 	_, err = svc.CreateSubnet(createSubnet1Input)
@@ -164,11 +168,11 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 			},
 		},
 	}
-	ex_igw, err := svc.DescribeInternetGateways(describeInternetGWInput)
+	exIgw, err := svc.DescribeInternetGateways(describeInternetGWInput)
 	if err != nil {
 		return nil, err
 	}
-	if len(ex_igw.InternetGateways) == 0 {
+	if len(exIgw.InternetGateways) == 0 {
 		createInternetGWInput := &ec2.CreateInternetGatewayInput{
 			TagSpecifications: []*ec2.TagSpecification{
 				{
@@ -177,6 +181,10 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 						{
 							Key:   aws.String("Name"),
 							Value: aws.String(name),
+						},
+						{
+							Key:   aws.String("Environment"),
+							Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
 						},
 					},
 				},
@@ -212,5 +220,5 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		Config.Logger.Printf("Route: %s", route)
 		return igw.InternetGateway.InternetGatewayId, nil
 	}
-	return ex_igw.InternetGateways[0].InternetGatewayId, nil
+	return exIgw.InternetGateways[0].InternetGatewayId, nil
 }

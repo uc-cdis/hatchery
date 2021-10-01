@@ -2,6 +2,8 @@ package hatchery
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -10,8 +12,9 @@ import (
 )
 
 func (creds *CREDS) createTargetGroup(userName string, vpcId string, svc *elbv2.ELBV2) (*elbv2.CreateTargetGroupOutput, error) {
+	albName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "service") + "tg"
 	input := &elbv2.CreateTargetGroupInput{
-		Name:            aws.String(userToResourceName(userName, "service")),
+		Name:            aws.String(albName),
 		Port:            aws.Int64(80),
 		Protocol:        aws.String("HTTP"),
 		VpcId:           aws.String(vpcId),
@@ -144,8 +147,9 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	albName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "service") + "alb"
 	input := &elbv2.CreateLoadBalancerInput{
-		Name:   aws.String(userToResourceName(userName, "service")),
+		Name:   aws.String(albName),
 		Scheme: aws.String("internal"),
 		SecurityGroups: []*string{
 			networkInfo.securityGroups.SecurityGroups[0].GroupId,

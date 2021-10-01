@@ -2,6 +2,8 @@ package hatchery
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -16,8 +18,9 @@ type EFS struct {
 }
 
 func (creds *CREDS) getEFSFileSystem(username string, svc *efs.EFS) (*efs.DescribeFileSystemsOutput, error) {
+	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(username, "pod") + "fs"
 	input := &efs.DescribeFileSystemsInput{
-		CreationToken: aws.String(userToResourceName(username, "pod")),
+		CreationToken: aws.String(fsName),
 	}
 	result, err := svc.DescribeFileSystems(input)
 	if err != nil {
@@ -30,17 +33,18 @@ func (creds *CREDS) getEFSFileSystem(username string, svc *efs.EFS) (*efs.Descri
 	return result, nil
 }
 
+// TODO: Check for MountTarget state regardless if fs exists or not
 func (creds *CREDS) createMountTarget(FileSystemId string, svc *efs.EFS) (*efs.MountTargetDescription, error) {
-	network_info, err := creds.describeWorkspaceNetwork()
+	networkInfo, err := creds.describeWorkspaceNetwork()
 	if err != nil {
 		return nil, err
 	}
 	input := &efs.CreateMountTargetInput{
 		FileSystemId: aws.String(FileSystemId),
-		SubnetId:     network_info.subnets.Subnets[0].SubnetId,
+		SubnetId:     networkInfo.subnets.Subnets[0].SubnetId,
 		// TODO: Make this correct, currently it's all using the same SG
 		SecurityGroups: []*string{
-			network_info.securityGroups.SecurityGroups[0].GroupId,
+			networkInfo.securityGroups.SecurityGroups[0].GroupId,
 		},
 	}
 
@@ -83,18 +87,23 @@ func (creds *CREDS) EFSFileSystem(username string) (*EFS, error) {
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
+	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(username, "pod") + "fs"
 	exisitingFS, _ := creds.getEFSFileSystem(username, svc)
 	Config.Logger.Printf("Existiing FS: %s", exisitingFS)
 	if exisitingFS == nil {
 		input := &efs.CreateFileSystemInput{
 			Backup:          aws.Bool(false),
-			CreationToken:   aws.String(userToResourceName(username, "pod")),
+			CreationToken:   aws.String(fsName),
 			Encrypted:       aws.Bool(true),
 			PerformanceMode: aws.String("generalPurpose"),
 			Tags: []*efs.Tag{
 				{
 					Key:   aws.String("Name"),
-					Value: aws.String(userToResourceName(username, "pod")),
+					Value: aws.String(fsName),
+				},
+				{
+					Key:   aws.String("Environment"),
+					Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
 				},
 			},
 		}
