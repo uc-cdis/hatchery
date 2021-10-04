@@ -55,30 +55,43 @@ func (creds *CREDS) createMountTarget(FileSystemId string, svc *efs.EFS, userNam
 	return result, nil
 }
 
-func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc *efs.EFS) (*efs.CreateAccessPointOutput, error) {
-
-	input := &efs.CreateAccessPointInput{
-		ClientToken:  aws.String(fmt.Sprintf("ap-%s", userToResourceName(userName, "pod"))),
-		FileSystemId: aws.String(FileSystemId),
-		PosixUser: &efs.PosixUser{
-			Gid: aws.Int64(100),
-			Uid: aws.Int64(1000),
-		},
-		RootDirectory: &efs.RootDirectory{
-			CreationInfo: &efs.CreationInfo{
-				OwnerGid:    aws.Int64(100),
-				OwnerUid:    aws.Int64(1000),
-				Permissions: aws.String("0755"),
-			},
-			Path: aws.String("/"),
-		},
+func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc *efs.EFS) (*string, error) {
+	exAccessPointInput := &efs.DescribeAccessPointsInput{
+		FileSystemId: &FileSystemId,
 	}
-
-	result, err := svc.CreateAccessPoint(input)
+	exResult, err := svc.DescribeAccessPoints(exAccessPointInput)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create accessPoint: %s", err)
+		return nil, err
 	}
-	return result, nil
+
+	if len(exResult.AccessPoints) == 0 {
+		input := &efs.CreateAccessPointInput{
+			ClientToken:  aws.String(fmt.Sprintf("ap-%s", userToResourceName(userName, "pod"))),
+			FileSystemId: aws.String(FileSystemId),
+			PosixUser: &efs.PosixUser{
+				Gid: aws.Int64(100),
+				Uid: aws.Int64(1000),
+			},
+			RootDirectory: &efs.RootDirectory{
+				CreationInfo: &efs.CreationInfo{
+					OwnerGid:    aws.Int64(100),
+					OwnerUid:    aws.Int64(1000),
+					Permissions: aws.String("0755"),
+				},
+				Path: aws.String("/"),
+			},
+		}
+
+		result, err := svc.CreateAccessPoint(input)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to create accessPoint: %s", err)
+		}
+		return result.AccessPointId, nil
+
+	} else {
+		return exResult.AccessPoints[0].AccessPointId, nil
+	}
+
 }
 
 func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
@@ -130,12 +143,12 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 		if err != nil {
 			return nil, fmt.Errorf("Failed to create EFS AccessPoint: %s", err)
 		}
-		Config.Logger.Printf("AccessPoint created: %s", *accessPoint.AccessPointId)
+		Config.Logger.Printf("AccessPoint created: %s", *accessPoint)
 
 		return &EFS{
 			EFSArn:        *result.FileSystemArn,
 			FileSystemId:  *result.FileSystemId,
-			AccessPointId: *accessPoint.AccessPointId,
+			AccessPointId: *accessPoint,
 		}, nil
 	} else {
 		accessPoint, err := svc.DescribeAccessPoints(&efs.DescribeAccessPointsInput{
