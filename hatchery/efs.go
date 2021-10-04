@@ -158,7 +158,10 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 			return nil, fmt.Errorf("failed to describe accesspoint: %s", err)
 		}
 		if len(accessPoint.AccessPoints) == 0 {
-			return nil, fmt.Errorf("No AccessPoints found")
+			_, err := creds.createAccessPoint(*accessPoint.AccessPoints[0].FileSystemId, userName, svc)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create EFS AccessPoint: %s", err)
+			}
 		}
 		return &EFS{
 			EFSArn:        *exisitingFS.FileSystems[0].FileSystemArn,
