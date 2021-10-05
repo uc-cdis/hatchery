@@ -36,6 +36,7 @@ func teardownTransitGateway(userName string) error {
 
 }
 
+// TODO: Change the name of this function to match HUB/SPOKE model
 func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
 	networkInfo := NetworkInfo{}
 	vpcInput := &ec2.DescribeVpcsInput{
@@ -105,6 +106,9 @@ func createTransitGateway(userName string) (*string, error) {
 
 	// ec2 session to main AWS account.
 	ec2Local := ec2.New(sess)
+
+	vpcid := os.Getenv("GEN3_VPCID")
+	Config.Logger.Printf("VPCID: %s", vpcid)
 	tgwName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-tgw"
 	// Check for existing transit gateway
 	exTg, err := ec2Local.DescribeTransitGateways(&ec2.DescribeTransitGatewaysInput{
@@ -154,7 +158,7 @@ func createTransitGateway(userName string) (*string, error) {
 			return nil, err
 		}
 		Config.Logger.Printf("Transit gateway created: %s", *tg.TransitGateway.TransitGatewayId)
-		tgwAttachment, err := createTransitGatewayAttachments(ec2Local, pm.VpcId, *tg.TransitGateway.TransitGatewayId, true, nil, userName)
+		tgwAttachment, err := createTransitGatewayAttachments(ec2Local, vpcid, *tg.TransitGateway.TransitGatewayId, true, nil, userName)
 		if err != nil {
 			return nil, err
 		}
@@ -170,7 +174,7 @@ func createTransitGateway(userName string) (*string, error) {
 		Config.Logger.Printf("Resources shared: %s", *resourceshare)
 		return tg.TransitGateway.TransitGatewayId, nil
 	} else {
-		tgwAttachment, err := createTransitGatewayAttachments(ec2Local, pm.VpcId, *exTg.TransitGateways[len(exTg.TransitGateways)-1].TransitGatewayId, true, nil, userName)
+		tgwAttachment, err := createTransitGatewayAttachments(ec2Local, vpcid, *exTg.TransitGateways[len(exTg.TransitGateways)-1].TransitGatewayId, true, nil, userName)
 		if err != nil {
 			return nil, err
 		}
@@ -384,6 +388,8 @@ func setupRemoteAccount(userName string, teardown bool) error {
 		Region:      aws.String("us-east-1"),
 	}))
 
+	vpcid := os.Getenv("GEN3_VPCID")
+	Config.Logger.Printf("VPCID: %s", vpcid)
 	err := svc.acceptTGWShare()
 	if err != nil {
 		return err
@@ -422,7 +428,7 @@ func setupRemoteAccount(userName string, teardown bool) error {
 	}
 	vpc := *networkInfo.vpc
 
-	mainNetworkInfo, err := describeMainNetwork(pm.VpcId, ec2Local)
+	mainNetworkInfo, err := describeMainNetwork(vpcid, ec2Local)
 	if err != nil {
 		return err
 	}
@@ -484,11 +490,12 @@ func (creds *CREDS) acceptTGWShare() error {
 }
 
 func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string, svc *ec2.EC2, local bool, teardown bool, sess *CREDS) (*string, error) {
-	pm := Config.PayModelMap[userName]
 	networkInfo := &NetworkInfo{}
+	vpcid := os.Getenv("GEN3_VPCID")
+	Config.Logger.Printf("VPCID: %s", vpcid)
 	err := *new(error)
 	if local {
-		networkInfo, err = describeMainNetwork(pm.VpcId, svc)
+		networkInfo, err = describeMainNetwork(vpcid, svc)
 		if err != nil {
 			return nil, err
 		}
