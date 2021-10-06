@@ -154,6 +154,7 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 			AccessPointId: *accessPoint,
 		}, nil
 	} else {
+		// create accesspoint if it doesn't exist
 		accessPoint, err := svc.DescribeAccessPoints(&efs.DescribeAccessPointsInput{
 			FileSystemId: exisitingFS.FileSystems[0].FileSystemId,
 		})
@@ -170,6 +171,21 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 		} else {
 			accessPointId = *accessPoint.AccessPoints[0].AccessPointId
 		}
+		// create mountTarget if it doesn't exist
+		exMountTarget, err := svc.DescribeMountTargets(&efs.DescribeMountTargetsInput{
+			FileSystemId: exisitingFS.FileSystems[0].FileSystemId,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(exMountTarget.MountTargets) == 0 {
+			mountTarget, err := creds.createMountTarget(*exisitingFS.FileSystems[0].FileSystemId, svc, userName)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to create EFS MountTarget: %s", err)
+			}
+			Config.Logger.Printf("MountTarget created: %s", *mountTarget.MountTargetId)
+		}
+
 		return &EFS{
 			EFSArn:        *exisitingFS.FileSystems[0].FileSystemArn,
 			FileSystemId:  *exisitingFS.FileSystems[0].FileSystemId,
