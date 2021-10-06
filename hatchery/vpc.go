@@ -224,6 +224,41 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		}
 		Config.Logger.Printf("Route: %s", route)
 		return igw.InternetGateway.InternetGatewayId, nil
+	} else {
+		if len(exIgw.InternetGateways[0].Attachments) == 0 {
+			_, err = svc.AttachInternetGateway(&ec2.AttachInternetGatewayInput{
+				InternetGatewayId: exIgw.InternetGateways[0].InternetGatewayId,
+				VpcId:             &vpcid,
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		routeTable, err := svc.DescribeRouteTables(&ec2.DescribeRouteTablesInput{
+			Filters: []*ec2.Filter{
+				{
+					Name:   aws.String("vpc-id"),
+					Values: []*string{&vpcid},
+				},
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		Config.Logger.Printf("Routes: %s", routeTable.RouteTables[0].Routes)
+
+		route, err := svc.CreateRoute(&ec2.CreateRouteInput{
+			DestinationCidrBlock: aws.String("0.0.0.0/0"),
+			GatewayId:            exIgw.InternetGateways[0].InternetGatewayId,
+			RouteTableId:         routeTable.RouteTables[0].RouteTableId,
+		})
+		if err != nil {
+			return nil, err
+		}
+		Config.Logger.Printf("Route: %s", route)
+		return exIgw.InternetGateways[0].InternetGatewayId, nil
 	}
-	return exIgw.InternetGateways[0].InternetGatewayId, nil
+
 }
