@@ -81,13 +81,14 @@ components:
       properties:
         status:
           type: string
-          enum: [Launching, Running, Terminating, Stopped]
+          enum: [Launching, Running, Terminating, Stopped, Not Found]
           description: >
             Value:
              * `Terminating` - The workspace is shutting down
              * `Launching` - The workspace is starting up
              * `Stopped` - The workspace is in a failed state and must be terminated
              * `Running` - The workspace is running and ready to be used
+             * `Not Found` - The workspace could not be found
         conditions:
           type: array
           items:
