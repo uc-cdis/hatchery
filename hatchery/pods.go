@@ -424,6 +424,11 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		},
 	}
 
+	volumes = append(volumes, k8sv1.Volume{
+		Name:         "gen3",
+		VolumeSource: k8sv1.VolumeSource{},
+	})
+
 	if mountSharedMemory {
 		volumes = append(volumes, k8sv1.Volume{
 			Name: "dshm",
@@ -468,6 +473,11 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			MountPropagation: &bidirectional,
 		},
 	}
+
+	volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
+		MountPath: "/.gen3",
+		Name:      "gen3",
+	})
 
 	if mountSharedMemory {
 		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
@@ -538,6 +548,11 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 				MountPropagation: &hostToContainer,
 			},
 		}
+
+		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
+			MountPath: "/home/jovyan/.gen3",
+			Name:      "gen3",
+		})
 
 		if "" != hatchApp.UserVolumeLocation {
 			volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
