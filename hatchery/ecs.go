@@ -378,6 +378,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 			},
 		},
 		MountPoints: []*ecs.MountPoint{
+			// TODO: make these path respect the container def in hatchery config
 			{
 				ContainerPath: aws.String("/home/jovyan/data"),
 				SourceVolume:  aws.String("data-volume"),
