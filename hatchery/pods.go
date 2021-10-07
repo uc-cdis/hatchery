@@ -556,7 +556,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			})
 		} else {
 			volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
-				MountPath: "~/.gen3",
+				MountPath: "/.gen3",
 				Name:      "gen3",
 			})
 		}

@@ -359,7 +359,7 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 		hatchApp.UseSharedMemory = "true"
 	}
 	if hatchApp.Gen3VolumeLocation == "" {
-		hatchApp.Gen3VolumeLocation = "~/.gen3"
+		hatchApp.Gen3VolumeLocation = "/.gen3"
 	}
 	return hatchApp, nil
 }
