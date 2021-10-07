@@ -72,6 +72,7 @@ var dslog = log.New(os.Stdout, "hatchery/dockstore", log.LstdFlags)
 const userVolumePrefix = "${USER_VOLUME}"
 const dataVolumePrefix = "${DATA_VOLUME}"
 const sharedMemoryVolumePrefix = "${SHARED_MEMORY_VOLUME}"
+const gen3VolumePrefix = "${GEN3_VOLUME}"
 const magicPort = "${SERVICE_PORT}" // make it easy to test locally
 
 // DockstoreComposeFromFile loads a hatchery application (container)
@@ -116,8 +117,8 @@ func (model *ComposeFull) Sanitize() error {
 			return fmt.Errorf("must specify an Image for service %v", key)
 		}
 		for _, mount := range service.Volumes {
-			if !strings.HasPrefix(mount, userVolumePrefix) && !strings.HasPrefix(mount, dataVolumePrefix) && !strings.HasPrefix(mount, sharedMemoryVolumePrefix) {
-				return fmt.Errorf("illegal volume mount - only support %s, %s and %s mounts: %v", userVolumePrefix, dataVolumePrefix, sharedMemoryVolumePrefix, mount)
+			if !strings.HasPrefix(mount, userVolumePrefix) && !strings.HasPrefix(mount, dataVolumePrefix) && !strings.HasPrefix(mount, gen3VolumePrefix) && !strings.HasPrefix(mount, sharedMemoryVolumePrefix) {
+				return fmt.Errorf("illegal volume mount - only support %s, %s, %s and %s mounts: %v", userVolumePrefix, dataVolumePrefix, gen3VolumePrefix, sharedMemoryVolumePrefix, mount)
 			}
 			mountSlice := strings.SplitN(mount, ":", 2)
 			if len(mountSlice) != 2 && !strings.HasPrefix(mount, sharedMemoryVolumePrefix) {
@@ -218,6 +219,14 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 					dest.Name = "shared-data"
 					dest.ReadOnly = true
 					dest.MountPropagation = &fuseDataPropagation
+					volumeMountsIndex++
+				} else if strings.HasPrefix(sourceDrive, gen3VolumePrefix) {
+					dest.MountPath = mountSplit[1]
+					if sourceDrive != gen3VolumePrefix {
+						// +1 to trim leading /
+						dest.SubPath = sourceDrive[len(gen3VolumePrefix)+1:]
+					}
+					dest.Name = "gen3"
 					volumeMountsIndex++
 				} else if strings.HasPrefix(sourceDrive, sharedMemoryVolumePrefix) {
 					mountSharedMemory = true
@@ -348,6 +357,9 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 	}
 	if mountSharedMemory {
 		hatchApp.UseSharedMemory = "true"
+	}
+	if hatchApp.Gen3VolumeLocation == "" {
+		hatchApp.Gen3VolumeLocation = "~/.gen3"
 	}
 	return hatchApp, nil
 }

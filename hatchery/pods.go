@@ -549,10 +549,17 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			},
 		}
 
-		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
-			MountPath: "/home/jovyan/.gen3",
-			Name:      "gen3",
-		})
+		if "" != hatchApp.Gen3VolumeLocation {
+			volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
+				MountPath: hatchApp.Gen3VolumeLocation,
+				Name:      "gen3",
+			})
+		} else {
+			volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
+				MountPath: "~/.gen3",
+				Name:      "gen3",
+			})
+		}
 
 		if "" != hatchApp.UserVolumeLocation {
 			volumeMounts = append(volumeMounts, k8sv1.VolumeMount{

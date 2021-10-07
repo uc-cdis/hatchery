@@ -63,6 +63,7 @@ In the main container's manifest, specify
     "export IAM=`whoami`; rm -rf /home/$IAM/pd/dockerHome; ln -s $(pwd) /home/$IAM/pd/dockerHome; mkdir -p /home/$IAM/.jupyter/custom; echo \"define(['base/js/namespace'], function(Jupyter){Jupyter._target = '_self';})\" >/home/$IAM/.jupyter/custom/custom.js; ln -s /data /home/$IAM/pd/; true"
   ],
   "user-volume-location": "/home/jovyan/pd",
+  "gen3-volume-location": "/home/jovyan/.gen3"
   "use-shared-memory": "true",
   "friends": [
     {
