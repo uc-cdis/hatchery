@@ -31,6 +31,7 @@ type Container struct {
 	GroupUID           int64             `json:"group-uid"`
 	FSGID              int64             `json:"fs-gid"`
 	UserVolumeLocation string            `json:"user-volume-location"`
+	Gen3VolumeLocation string            `json:"gen3-volume-location"`
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
 }

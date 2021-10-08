@@ -27,6 +27,7 @@ to disable authentication as this is a single user container when run with Hatch
       "use-tls": "false",
       "ready-probe": "/",
       "user-volume-location": "/home/rstudio/pd",
+      "gen3-volume-location": "/home/jovyan/.gen3"
       "fs-gid": 100
     }
 ```
