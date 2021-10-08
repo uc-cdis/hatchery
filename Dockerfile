@@ -1,24 +1,28 @@
-FROM quay.io/cdis/golang:1.14 as build-deps
+FROM quay.io/cdis/golang:1.17-bullseye as build-deps
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    vim
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+ENV GOARCH=amd64
 
-WORKDIR /hatchery
+WORKDIR $GOPATH/src/github.com/uc-cdis/hatchery/
 
-COPY . /hatchery
+COPY go.mod .
+COPY go.sum .
 
-# Populate git version info into the code
-RUN echo "package hatchery\n\nconst (" >hatchery/gitversion.go \
-    && COMMIT=`git rev-parse HEAD` && echo "    gitcommit=\"${COMMIT}\"" >>hatchery/gitversion.go \
-    && VERSION=`git describe --always --tags` && echo "    gitversion=\"${VERSION}\"" >>hatchery/gitversion.go \
-    && echo ")" >>hatchery/gitversion.go
+RUN go mod download
 
-RUN echo $SHELL && ls -al && ls -al hatchery/
-RUN go build -ldflags "-linkmode external -extldflags -static" -o bin/hatchery
+COPY . .
 
-# Store only the resulting binary in the final image
-# Resulting in significantly smaller docker image size
-#FROM scratch
-#COPY --from=build-deps /hatchery/hatchery /hatchery
+RUN COMMIT=$(git rev-parse HEAD); \
+    VERSION=$(git describe --always --tags); \
+    printf '%s\n' 'package hatchery'\
+    ''\
+    'const ('\
+    '    gitcommit="'"${COMMIT}"'"'\
+    '    gitversion="'"${VERSION}"'"'\
+    ')' > hatchery/gitversion.go \
+    && go build -o /hatchery
 
-CMD ["/hatchery/bin/hatchery"]
+FROM scratch
+COPY --from=build-deps /hatchery /hatchery
+CMD ["/hatchery"]
