@@ -13,15 +13,11 @@ RUN go mod download
 
 COPY . .
 
-RUN COMMIT=$(git rev-parse HEAD); \
-    VERSION=$(git describe --always --tags); \
-    printf '%s\n' 'package hatchery'\
-    ''\
-    'const ('\
-    '    gitcommit="'"${COMMIT}"'"'\
-    '    gitversion="'"${VERSION}"'"'\
-    ')' > hatchery/gitversion.go \
-    && go build -o /hatchery
+RUN GITCOMMIT=$(git rev-parse HEAD) \
+    GITVERSION=$(git describe --always --tags) \
+    && go build \
+    -ldflags="-X 'github.com/uc-cdis/hatchery/hatchery/version.GitCommit=${GITCOMMIT}' -X 'github.com/uc-cdis/hatchery/hatchery/version.GitVersion=${GITVERSION}'" \
+    -o /hatchery
 
 FROM scratch
 COPY --from=build-deps /hatchery /hatchery
