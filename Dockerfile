@@ -20,5 +20,6 @@ RUN GITCOMMIT=$(git rev-parse HEAD) \
     -o /hatchery
 
 FROM scratch
+COPY --from=build-deps /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build-deps /hatchery /hatchery
 CMD ["/hatchery"]
