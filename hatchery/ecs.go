@@ -205,7 +205,8 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 	var taskDefName string
 	if len(service.Services) > 0 {
 		statusMessage = *service.Services[0].Status
-		if statusMessage == "ACTIVE" && (*service.Services[0].RunningCount == *service.Services[0].DesiredCount) {
+		// TODO: polish these RunningCount, PendingCount, DesiredCount logic for sidecars
+		if statusMessage == "ACTIVE" && (*service.Services[0].RunningCount >= *service.Services[0].DesiredCount) {
 			taskDefName = *service.Services[0].TaskDefinition
 			if taskDefName == "" {
 				Config.Logger.Printf("No task definition found for user %s", userName)
