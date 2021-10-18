@@ -58,26 +58,40 @@ func home(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func getCurrentUserName(r *http.Request) (userName string) {
+	return r.Header.Get("REMOTE_USER")
+}
+
 func paymodels(w http.ResponseWriter, r *http.Request) {
-	userName := r.Header.Get("REMOTE_USER")
-	if payModelExistsForUser(userName) {
-		out, err := json.Marshal(Config.PayModelMap[userName])
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		fmt.Fprintf(w, string(out))
-	} else {
+	if r.Method != "GET" {
 		http.Error(w, "Not Found", 404)
+		return
 	}
+	userName := getCurrentUserName(r)
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		Config.Logger.Println(err.Error())
+		http.Error(w, "Not Found", 404)
+		return
+	}
+	out, err := json.Marshal(paymodel)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	fmt.Fprintf(w, string(out))
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
-	userName := r.Header.Get("REMOTE_USER")
+	userName := getCurrentUserName(r)
 	accessToken := getBearerToken(r)
 
-	pm := Config.PayModelMap[userName]
-	if pm.Ecs == "true" {
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if paymodel.Ecs == "true" {
 		statusEcs(r.Context(), w, userName, accessToken)
 	} else {
 		result, err := statusK8sPod(r.Context(), userName, accessToken)
@@ -149,9 +163,13 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userName := r.Header.Get("REMOTE_USER")
-	pm := Config.PayModelMap[userName]
-	if pm.Ecs == "true" {
+	userName := getCurrentUserName(r)
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if paymodel.Ecs == "true" {
 		launchEcs(w, r)
 	} else {
 		err := createK8sPod(r.Context(), string(hash), userName, accessToken)
@@ -169,9 +187,13 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accessToken := getBearerToken(r)
-	userName := r.Header.Get("REMOTE_USER")
-	pm := Config.PayModelMap[userName]
-	if pm.Ecs == "true" {
+	userName := getCurrentUserName(r)
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if paymodel.Ecs == "true" {
 		terminateEcs(w, r)
 	} else {
 		err := deleteK8sPod(r.Context(), userName, accessToken)
@@ -204,7 +226,7 @@ func terminateEcs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accessToken := getBearerToken(r)
-	userName := r.Header.Get("REMOTE_USER")
+	userName := getCurrentUserName(r)
 	if payModelExistsForUser(userName) {
 		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken)
 		if err != nil {
@@ -232,7 +254,7 @@ func launchEcs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accessToken := getBearerToken(r)
-	userName := r.Header.Get("REMOTE_USER")
+	userName := getCurrentUserName(r)
 	if payModelExistsForUser(userName) {
 		result, err := launchEcsWorkspace(r.Context(), userName, hash, accessToken)
 		if err != nil {
@@ -250,10 +272,14 @@ func launchEcs(w http.ResponseWriter, r *http.Request) {
 // Function to create ECS cluster.
 // TODO: Evaluate the need for this!! Delete?
 func ecsCluster(w http.ResponseWriter, r *http.Request) {
-	userName := r.Header.Get("REMOTE_USER")
+	userName := getCurrentUserName(r)
 	if payModelExistsForUser(userName) {
-		pm := Config.PayModelMap[userName]
-		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+		paymodel, err := getPayModelForUser(userName)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
 		sess := session.Must(session.NewSession(&aws.Config{
 			// TODO: Make this configurable
 			Region: aws.String("us-east-1"),
@@ -275,8 +301,12 @@ func ecsCluster(w http.ResponseWriter, r *http.Request) {
 // Function to check status of ECS workspace.
 func statusEcs(ctx context.Context, w http.ResponseWriter, userName string, accessToken string) {
 	if payModelExistsForUser(userName) {
-		pm := Config.PayModelMap[userName]
-		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+		paymodel, err := getPayModelForUser(userName)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
 		sess := session.Must(session.NewSession(&aws.Config{
 			// TODO: Make this configurable
 			Region: aws.String("us-east-1"),

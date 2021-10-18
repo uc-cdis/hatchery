@@ -214,8 +214,11 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 // Terminate workspace running in ECS
 // TODO: Make this terminate ALB as well.
 func terminateEcsWorkspace(ctx context.Context, userName string, accessToken string) (string, error) {
-	pm := Config.PayModelMap[userName]
-	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		return "", err
+	}
+	roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
@@ -289,8 +292,11 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 func launchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string) (string, error) {
 	// TODO: Setup EBS volume as pd
 	// Must create volume using SDK too.. :(
-	pm := Config.PayModelMap[userName]
-	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		return "", err
+	}
+	roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
@@ -395,7 +401,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		Args:             hatchApp.Args,
 		EnvVars:          envVars,
 		Port:             int64(hatchApp.TargetPort),
-		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", Config.PayModelMap[userName].AWSAccountId), // TODO: Make this configurable?
+		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", paymodel.AWSAccountId), // TODO: Make this configurable?
 		SidecarContainer: ecs.ContainerDefinition{
 			Image: &Config.Config.Sidecar.Image,
 			Name:  aws.String("sidecar-container"),
@@ -507,7 +513,11 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 // Create/Update Task Definition in ECS
 func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, hash string) (string, error) {
 	creds := sess.creds
-	LogGroup, err := sess.CreateLogGroup(fmt.Sprintf("/hatchery/%s/", Config.PayModelMap[userName].AWSAccountId), creds)
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		return "", err
+	}
+	LogGroup, err := sess.CreateLogGroup(fmt.Sprintf("/hatchery/%s/", paymodel.AWSAccountId), creds)
 	if err != nil {
 		Config.Logger.Printf("Failed to create/get LogGroup. Error: %s", err)
 		return "", err
