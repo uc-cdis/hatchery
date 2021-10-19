@@ -10,7 +10,7 @@
 }
 ```
 
-- Insteall [nodemon](https://nodemon.io/)
+- Install [nodemon](https://nodemon.io/)
 
 - Run Hatchery:
 

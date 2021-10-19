@@ -643,6 +643,9 @@ func getPayModelForUser(userName string) (result PayModel, err error) {
 		Config.Logger.Printf("Got error building expression: %s", err)
 		return paymodel, err
 	}
+	if Config.Config.PayModelsDynamodbTable == "" {
+		return paymodel, errors.New(fmt.Sprint("Unable to query pay model data in DynamoDB: no 'pay-models-dynamodb-table' in config"))
+	}
 	params := &dynamodb.ScanInput{
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
