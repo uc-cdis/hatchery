@@ -70,8 +70,7 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	paymodel, err := getPayModelForUser(userName)
 	if err != nil {
-		Config.Logger.Println(err.Error())
-		http.Error(w, "Not Found", 404)
+		http.Error(w, err.Error(), 500)
 		return
 	}
 	out, err := json.Marshal(paymodel)
