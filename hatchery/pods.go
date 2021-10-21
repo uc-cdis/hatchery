@@ -3,6 +3,7 @@ package hatchery
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -24,6 +25,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 	"github.com/aws/aws-sdk-go/service/eks"
 
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
@@ -102,16 +106,19 @@ func getLocalPodClient() corev1.CoreV1Interface {
 
 // Generate EKS kubeconfig using AWS role
 func NewEKSClientset(ctx context.Context, userName string /*cluster *eks.Cluster, roleARN string*/) (corev1.CoreV1Interface, error) {
-	pm := Config.PayModelMap[userName]
-	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		return nil, err
+	}
+	roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
 	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(pm.Region),
+		Region: aws.String(paymodel.Region),
 	})))
 
 	creds := stscreds.NewCredentials(sess, roleARN)
 	eksSvc := eks.New(sess, &aws.Config{Credentials: creds})
 	input := &eks.DescribeClusterInput{
-		Name: aws.String(pm.Name),
+		Name: aws.String(paymodel.Name),
 	}
 	result, err := eksSvc.DescribeClusterWithContext(ctx, input)
 	if err != nil {
@@ -350,7 +357,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	var envVars []k8sv1.EnvVar
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
-	hatchConfig.Logger.Printf("building pod %v for %v", hatchApp.Name, userName)
+	hatchConfig.Logger.Printf("building pod '%v' for user '%v'", hatchApp.Name, userName)
 
 	for key, value := range hatchApp.Env {
 		envVar := k8sv1.EnvVar{
@@ -607,20 +614,106 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 }
 
 func payModelExistsForUser(userName string) (result bool) {
-	result = false
-	for _, paymodel := range Config.PayModelMap {
-		if paymodel.User == userName {
-			result = true
-		}
+	paymodel, err := getPayModelForUser(userName)
+	result = true
+	if err != nil {
+		Config.Logger.Printf("Error getting pay model for user '%s': %s", userName, err)
+		result = false
+	}
+	if paymodel == (PayModel{}) {
+		result = false
 	}
 	return result
 }
 
+func getPayModelForUser(userName string) (result PayModel, err error) {
+	paymodel := PayModel{}
+
+	// query pay model data for this user from DynamoDB
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: aws.Config{
+			Region: aws.String("us-east-1"),
+		},
+	}))
+	dynamodbSvc := dynamodb.New(sess)
+
+	filt := expression.Name("user_id").Equal(expression.Value(userName))
+	expr, err := expression.NewBuilder().WithFilter(filt).Build()
+	if err != nil {
+		Config.Logger.Printf("Got error building expression: %s", err)
+		return paymodel, err
+	}
+	if Config.Config.PayModelsDynamodbTable == "" {
+		return paymodel, errors.New(fmt.Sprint("Unable to query pay model data in DynamoDB: no 'pay-models-dynamodb-table' in config"))
+	}
+	params := &dynamodb.ScanInput{
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+		FilterExpression:          expr.Filter(),
+		TableName:                 aws.String(Config.Config.PayModelsDynamodbTable),
+	}
+	res, err := dynamodbSvc.Scan(params)
+	if err != nil {
+		Config.Logger.Printf("Query API call failed: %s", err)
+		return paymodel, err
+	}
+
+	if len(res.Items) == 0 {
+		// temporary fallback to the config to get data for users that are not
+		// in DynamoDB
+		// TODO: remove this block once we only rely on DynamoDB
+		Config.Logger.Printf("No pay model data for username '%s' in DynamoDB. Fallback on config.", userName)
+		for _, configPaymodel := range Config.PayModelMap {
+			if configPaymodel.User == userName {
+				return configPaymodel, nil
+			}
+		}
+
+		return paymodel, errors.New(fmt.Sprintf("No pay model data for username '%s'.", userName))
+	}
+
+	if len(res.Items) > 1 {
+		Config.Logger.Printf("There is more than one pay model item in DynamoDB for username '%s'. Defaulting to the first one.", userName)
+	}
+
+	// parse pay model data
+	err = dynamodbattribute.UnmarshalMap(res.Items[0], &paymodel)
+	if err != nil {
+		Config.Logger.Printf("Got error unmarshalling: %s", err)
+		return paymodel, err
+	}
+
+	// temporary fallback to the config to get data that is not in DynamoDB
+	// TODO: remove this block once DynamoDB contains all necessary data
+	for _, configPaymodel := range Config.PayModelMap {
+		if configPaymodel.User == userName {
+			if paymodel.Name == "" {
+				paymodel.Name = configPaymodel.Name
+			}
+			if paymodel.AWSAccountId == "" {
+				paymodel.AWSAccountId = configPaymodel.AWSAccountId
+			}
+			if paymodel.Region == "" {
+				paymodel.Region = configPaymodel.Region
+			}
+			if paymodel.Ecs == "" {
+				paymodel.Ecs = configPaymodel.Ecs
+			}
+			break
+		}
+	}
+
+	return paymodel, nil
+}
+
 func scaleEKSNodes(ctx context.Context, userName string, scale int) {
-	pm := Config.PayModelMap[userName]
-	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		Config.Logger.Println(err.Error())
+	}
+	roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
 	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(pm.Region),
+		Region: aws.String(paymodel.Region),
 	})))
 
 	creds := stscreds.NewCredentials(sess, roleARN)
@@ -628,7 +721,7 @@ func scaleEKSNodes(ctx context.Context, userName string, scale int) {
 	asgSvc := autoscaling.New(sess, &aws.Config{Credentials: creds})
 
 	asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
-		AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + pm.Name)},
+		AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + paymodel.Name)},
 	}
 	asg, err := asgSvc.DescribeAutoScalingGroupsWithContext(ctx, asgInput)
 	cap := *asg.AutoScalingGroups[0].DesiredCapacity
