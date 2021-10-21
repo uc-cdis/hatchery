@@ -83,6 +83,7 @@ type FullHatcheryConfig struct {
 	ContainersMap map[string]Container
 	PayModelMap   map[string]PayModel
 	Logger        *log.Logger
+	Licenses      map[string]*License
 }
 
 // LoadConfig from a json file

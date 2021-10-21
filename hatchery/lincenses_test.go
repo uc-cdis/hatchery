@@ -15,9 +15,9 @@ const (
 )
 
 func getTestLicenseFile() string {
-	testDataJSON, _ := ioutil.ReadFile("../testData/testLicenses.json")
+	testDataJSON, _ := ioutil.ReadFile("../testData/licenses/testLicenses.json")
 
-	tempFile, _ := ioutil.TempFile("../testData", "")
+	tempFile, _ := ioutil.TempFile("../testData/licenses", "")
 	defer tempFile.Close()
 
 	ioutil.WriteFile(tempFile.Name(), testDataJSON, 0644)
@@ -55,6 +55,11 @@ func TestCheckoutLicense(t *testing.T) {
 	defer os.Remove(fileName)
 
 	startTime := time.Now().Unix()
+
+	err := license.CheckoutToUser(initialUsername)
+	if _, isMapped := license.Users[initialUsername]; !isMapped || nil != err {
+		t.Errorf("Failed to checkout license to existing user. Checkout should be idempotent.")
+	}
 
 	for i := 0; i < license.UserLimit-1; i++ {
 		userName := fmt.Sprintf("user%v@uchicago.edu", i+2)
