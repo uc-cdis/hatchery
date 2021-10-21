@@ -19,6 +19,9 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/terminate", terminate)
 	mux.HandleFunc("/status", status)
 	mux.HandleFunc("/options", options)
+	mux.HandleFunc("/license/list", getLicenses)
+	mux.HandleFunc("/license/checkout", checkoutLicense)
+	mux.HandleFunc("/license/release", releaseLicense)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +125,76 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprintf(w, "Terminated workspace")
+}
+
+func getLicenses(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Not Found", 404)
+		return
+	}
+
+	type licenseInfo struct {
+		Name      string `json:"name"`
+		UserLimit int    `json:"userLimit"`
+	}
+	licenses := []licenseInfo{}
+	for licenseName, license := range Config.Licenses {
+		licenses = append(licenses, licenseInfo{Name: licenseName, UserLimit: license.UserLimit})
+	}
+	bytes, _ := json.Marshal(licenses)
+	fmt.Fprint(w, bytes)
+}
+
+func checkoutLicense(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Not Found", 404)
+		return
+	}
+
+	userName := r.Header.Get("REMOTE_USER")
+
+	type checkoutLicenseRequest struct {
+		LicenseType string `json:"type"`
+	}
+	var req checkoutLicenseRequest
+	if nil != parseBody(r, &req) {
+		http.Error(w, "Unable to parse request body", 400)
+	} else {
+		license := Config.Licenses[req.LicenseType]
+		err := license.CheckoutToUser(userName)
+		if nil != err {
+			w.WriteHeader(http.StatusNoContent)
+		} else {
+			fmt.Fprintf(w, license.LicenseData)
+		}
+	}
+}
+
+func releaseLicense(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Not Found", 404)
+		return
+	}
+
+	userName := r.Header.Get("REMOTE_USER")
+
+	type releaseLicenseRequest struct {
+		LicenseType string `json:"type"`
+	}
+	var req releaseLicenseRequest
+	if nil != parseBody(r, &req) {
+		http.Error(w, "Unable to parse request body", 400)
+	} else {
+		license := Config.Licenses[req.LicenseType]
+		license.ReleaseFromUser(userName)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func parseBody(r *http.Request, v interface{}) error {
+	var body []byte
+	r.Body.Read(body)
+	return json.Unmarshal(body, v)
 }
 
 func getBearerToken(r *http.Request) string {

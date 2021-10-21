@@ -2,10 +2,8 @@ package hatchery
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
-	"sync"
 	"time"
 )
 
@@ -15,22 +13,22 @@ type License struct {
 	LicenseData string          `json:"licenseData"`
 	Users       map[string]User `json:"users"`
 	// not marshalled
-	fileName string           `json:"-"`
-	mutex    sync.Mutex       `json:"-"`
-	updates  chan Transaction `json:"-"`
+	fileName string            `json:"-"`
+	updates  chan *Transaction `json:"-"`
 }
 
 type Transaction struct {
 	UserName string
-	Action   Update
+	Action   TransactionRequest
+	Result   chan error
 }
 
-type Update int
+type TransactionRequest int
 
 const (
-	ADD_USER Update = iota
-	REMOVE_USER
-	CHECK_USER
+	REQUEST_ADD_USER TransactionRequest = iota
+	REQUEST_REMOVE_USER
+	REQUEST_REMOVE_EXPIRED_USERS
 )
 
 type User struct {
@@ -55,67 +53,88 @@ func NewLicense(licenseFilePath string) (*License, error) {
 		return &license, err
 	}
 	license.fileName = licenseFilePath
+	license.updates = make(chan *Transaction, 100)
+
+	go license.processTransactions()
+	go license.monitorUserPods()
 	return &license, nil
+}
+
+func (license *License) processTransactions() {
+	for {
+		tx := <-license.updates
+		var err error
+
+		switch tx.Action {
+		case REQUEST_ADD_USER:
+			{
+				if _, alreadyCheckedOut := license.Users[tx.UserName]; !alreadyCheckedOut {
+					if len(license.Users) < license.UserLimit {
+						license.Users[tx.UserName] = User{
+							LicenseName:       license.Name,
+							LastUsedTimestamp: time.Now().Unix(),
+						}
+					} else {
+						err = fmt.Errorf("License %v is already at user limit", license.Name)
+					}
+				}
+			}
+		case REQUEST_REMOVE_USER:
+			{
+				delete(license.Users, tx.UserName)
+			}
+		case REQUEST_REMOVE_EXPIRED_USERS:
+			{
+				for userName, user := range license.Users {
+					userWorkspaceStatus, _ := statusK8sPod(userName)
+					if userWorkspaceStatus.Status == "Running" || userWorkspaceStatus.Status == "Launching" {
+						user.LastUsedTimestamp = time.Now().Unix()
+						license.Users[tx.UserName] = user
+					} else if user.LastUsedTimestamp+60 < time.Now().Unix() {
+						license.ReleaseFromUser(userName)
+					}
+				}
+			}
+		}
+		license.marshal()
+		tx.Result <- err
+	}
 }
 
 func (license *License) CheckoutToUser(userName string) error {
 
-	license.mutex.Lock()
-	defer license.mutex.Unlock()
-
-	if _, alreadyCheckedOut := license.Users[userName]; alreadyCheckedOut {
-		return fmt.Errorf("%v aleady has license checked out", userName)
+	transaction := &Transaction{
+		UserName: userName,
+		Action:   REQUEST_ADD_USER,
+		Result:   make(chan error),
 	}
+	license.updates <- transaction
 
-	if len(license.Users) < license.UserLimit {
-		checkoutTimestamp := time.Now().Unix()
-		license.Users[userName] = User{
-			LicenseName:       license.Name,
-			LastUsedTimestamp: checkoutTimestamp,
-		}
-		license.marshal()
-		return nil
-	} else {
-		return errors.New("License is already at userlimit")
-	}
+	err := <-transaction.Result
+	return err
+
 }
 
 func (license *License) ReleaseFromUser(userName string) {
 
-	license.mutex.Lock()
-	defer license.mutex.Unlock()
-
-	delete(license.Users, userName)
-	license.marshal()
-}
-
-func (license *License) GetUsers() map[string]User {
-	// Users tag must be exported for json marshalling
-	// but should not be read directly
-	// in order to avoid concurrent map read / write
-	license.mutex.Lock()
-	defer license.mutex.Unlock()
-	usersCopy := make(map[string]User)
-	for k, v := range license.Users {
-		usersCopy[k] = v
+	transaction := &Transaction{
+		UserName: userName,
+		Action:   REQUEST_REMOVE_USER,
+		Result:   make(chan error),
 	}
-	return usersCopy
+	license.updates <- transaction
+
+	<-transaction.Result
 }
 
-func (license *License) StartMonitoringUserPods() {
+func (license *License) monitorUserPods() {
 	for {
 		time.Sleep(time.Duration(30) * time.Second)
-		for userName, user := range license.GetUsers() {
-			workspaceStatus, err := statusK8sPod(userName)
-			if nil != err {
-				// revoke license ?
-			} else if workspaceStatus.Status == "Launching" || workspaceStatus.Status == "Running" {
-				user.LastUsedTimestamp = time.Now().Unix()
-				license.Users[userName] = user
-			} else {
-				license.ReleaseFromUser(userName)
-			}
+		transaction := &Transaction{
+			Action: REQUEST_REMOVE_EXPIRED_USERS,
+			Result: make(chan error),
 		}
+		license.updates <- transaction
 	}
 }
 

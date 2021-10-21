@@ -68,6 +68,7 @@ type FullHatcheryConfig struct {
 	Config        HatcheryConfig
 	ContainersMap map[string]Container
 	Logger        *log.Logger
+	Licenses      map[string]*License
 }
 
 // LoadConfig from a json file
