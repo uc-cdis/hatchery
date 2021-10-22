@@ -643,8 +643,16 @@ func getPayModelForUser(userName string) (result PayModel, err error) {
 		return paymodel, err
 	}
 	if Config.Config.PayModelsDynamodbTable == "" {
-		return paymodel, errors.New(fmt.Sprint("Unable to query pay model data in DynamoDB: no 'pay-models-dynamodb-table' in config"))
+		// fallback for backward compatibility
+		Config.Logger.Printf("Unable to query pay model data in DynamoDB: no 'pay-models-dynamodb-table' in config. Fallback on config.")
+		for _, configPaymodel := range Config.PayModelMap {
+			if configPaymodel.User == userName {
+				return configPaymodel, nil
+			}
+		}
+		return paymodel, errors.New(fmt.Sprintf("No pay model data for username '%s'.", userName))
 	}
+
 	params := &dynamodb.ScanInput{
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
