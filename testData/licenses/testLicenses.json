@@ -1,0 +1,11 @@
+{
+    "name":"Stata-HEAL",
+    "userLimit":6,
+    "licenseData":"Stata-license-info",
+    "users":{
+        "user@uchicago.edu": {
+            "licenseName":"Stata-HEAL",
+            "lastUsedTimestamp":1634590864
+        }
+    }
+}
