@@ -259,7 +259,7 @@ func getLicenses(w http.ResponseWriter, r *http.Request) {
 		licenses = append(licenses, licenseInfo{Name: licenseName, UserLimit: license.UserLimit})
 	}
 	bytes, _ := json.Marshal(licenses)
-	fmt.Fprint(w, bytes)
+	fmt.Fprint(w, string(bytes))
 }
 
 func checkoutLicense(w http.ResponseWriter, r *http.Request) {
