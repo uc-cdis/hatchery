@@ -31,6 +31,7 @@ type Container struct {
 	GroupUID           int64             `json:"group-uid"`
 	FSGID              int64             `json:"fs-gid"`
 	UserVolumeLocation string            `json:"user-volume-location"`
+	Gen3VolumeLocation string            `json:"gen3-volume-location"`
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
 }
@@ -53,10 +54,10 @@ type AppConfigInfo struct {
 	Name    string
 }
 
-// AppConfigInfo provides the type and path of a supplementary config path
+// TODO remove PayModel from config once DynamoDB contains all necessary data
 type PayModel struct {
 	Name         string `json:"name"`
-	User         string `json:"user"`
+	User         string `json:"user_id"`
 	AWSAccountId string `json:"aws_account_id"`
 	Region       string `json:"region"`
 	Ecs          string `json:"ecs"`
@@ -66,13 +67,14 @@ type PayModel struct {
 
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
-	UserNamespace  string           `json:"user-namespace"`
-	PayModels      []PayModel       `json:"pay-models"`
-	SubDir         string           `json:"sub-dir"`
-	Containers     []Container      `json:"containers"`
-	UserVolumeSize string           `json:"user-volume-size"`
-	Sidecar        SidecarContainer `json:"sidecar"`
-	MoreConfigs    []AppConfigInfo  `json:"more-configs"`
+	UserNamespace          string           `json:"user-namespace"`
+	PayModels              []PayModel       `json:"pay-models"`
+	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
+	SubDir                 string           `json:"sub-dir"`
+	Containers             []Container      `json:"containers"`
+	UserVolumeSize         string           `json:"user-volume-size"`
+	Sidecar                SidecarContainer `json:"sidecar"`
+	MoreConfigs            []AppConfigInfo  `json:"more-configs"`
 }
 
 // FullHatcheryConfig bucket result from loadConfig
@@ -135,9 +137,14 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.ContainersMap[hash] = container
 	}
 
+	if data.Config.PayModelsDynamodbTable == "" {
+		data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
+	}
+
 	for _, paymodel := range data.Config.PayModels {
 		user := paymodel.User
 		data.PayModelMap[user] = paymodel
 	}
+
 	return data, nil
 }
