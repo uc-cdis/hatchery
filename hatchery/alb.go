@@ -2,6 +2,8 @@ package hatchery
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -10,8 +12,9 @@ import (
 )
 
 func (creds *CREDS) createTargetGroup(userName string, vpcId string, svc *elbv2.ELBV2) (*elbv2.CreateTargetGroupOutput, error) {
+	tgName := truncateString(strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")+userToResourceName(userName, "service")+"tg", 32)
 	input := &elbv2.CreateTargetGroupInput{
-		Name:            aws.String(userToResourceName(userName, "service")),
+		Name:            aws.String(tgName),
 		Port:            aws.Int64(80),
 		Protocol:        aws.String("HTTP"),
 		VpcId:           aws.String(vpcId),
@@ -140,15 +143,20 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 		Region:      aws.String("us-east-1"),
 	}))
 
-	vpcs, subnets, securityGroups, err := creds.describeDefaultNetwork()
+	networkInfo, err := creds.describeWorkspaceNetwork(userName)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	albName := truncateString(strings.ReplaceAll(userToResourceName(userName, "service")+os.Getenv("GEN3_ENDPOINT"), ".", "-")+"alb", 32)
 	input := &elbv2.CreateLoadBalancerInput{
-		Name: aws.String(userToResourceName(userName, "service")),
+		Name:   aws.String(albName),
+		Scheme: aws.String("internal"),
 		SecurityGroups: []*string{
-			securityGroups.SecurityGroups[0].GroupId,
+			networkInfo.securityGroups.SecurityGroups[0].GroupId,
 		},
 		Subnets: []*string{
-			subnets.Subnets[0].SubnetId,
-			subnets.Subnets[1].SubnetId,
+			networkInfo.subnets.Subnets[0].SubnetId,
+			networkInfo.subnets.Subnets[1].SubnetId,
 		},
 	}
 
@@ -194,7 +202,7 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 		return nil, nil, nil, err
 	}
 
-	targetGroup, err := creds.createTargetGroup(userName, *vpcs.Vpcs[0].VpcId, svc)
+	targetGroup, err := creds.createTargetGroup(userName, *networkInfo.vpc.Vpcs[0].VpcId, svc)
 	if err != nil {
 		return nil, nil, nil, err
 	}

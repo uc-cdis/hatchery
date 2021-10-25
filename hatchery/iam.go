@@ -8,14 +8,14 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam"
 )
 
-func (creds *CREDS) taskRole(username string) (*string, error) {
+func (creds *CREDS) taskRole(userName string) (*string, error) {
 	svc := iam.New(session.New(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
 	}))
 
 	taskRoleInput := &iam.GetRoleInput{
-		RoleName: aws.String(userToResourceName(username, "pod")),
+		RoleName: aws.String(userToResourceName(userName, "pod")),
 	}
 	taskRole, _ := svc.GetRole(taskRoleInput)
 	if taskRole.Role != nil {
@@ -36,13 +36,13 @@ func (creds *CREDS) taskRole(username string) (*string, error) {
 					}
 				]
 			}`),
-			PolicyName: aws.String(fmt.Sprintf("ws-task-policy-%s", username)),
+			PolicyName: aws.String(fmt.Sprintf("ws-task-policy-%s", userName)),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to create policy: %s", err)
 		}
 		createTaskRoleInput := &iam.CreateRoleInput{
-			RoleName: aws.String(userToResourceName(username, "pod")),
+			RoleName: aws.String(userToResourceName(userName, "pod")),
 			AssumeRolePolicyDocument: aws.String(`{
 				"Version": "2012-10-17",
 				"Statement": [
@@ -61,7 +61,7 @@ func (creds *CREDS) taskRole(username string) (*string, error) {
 
 		svc.AttachRolePolicy(&iam.AttachRolePolicyInput{
 			PolicyArn: policy.Policy.Arn,
-			RoleName:  aws.String(userToResourceName(username, "pod")),
+			RoleName:  aws.String(userToResourceName(userName, "pod")),
 		})
 		createTaskRole, err := svc.CreateRole(createTaskRoleInput)
 		if err != nil {

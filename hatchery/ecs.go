@@ -58,24 +58,59 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
 	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
-	input := &ecs.CreateClusterInput{
-		ClusterName: aws.String(clusterName),
-	}
 
-	result, err := svc.CreateCluster(input)
+	_, err := setupVPC(userName)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			default:
-				return nil, aerr
-			}
-		}
 		return nil, err
 	}
-	return result.Cluster, nil
+
+	describeClusterInput := &ecs.DescribeClustersInput{
+		Clusters: []*string{aws.String(clusterName)},
+	}
+
+	exCluster, err := svc.DescribeClusters(describeClusterInput)
+	if err != nil {
+		return nil, err
+	}
+	provision := false
+	if len(exCluster.Clusters) == 1 {
+		if *exCluster.Clusters[0].Status == "INACTIVE" {
+			// Force recreation of inactive/deleted clusters
+			provision = true
+		}
+	}
+	if len(exCluster.Clusters) == 0 || provision {
+
+		input := &ecs.CreateClusterInput{
+			ClusterName: aws.String(clusterName),
+			Tags: []*ecs.Tag{
+				{
+					Key:   aws.String("Name"),
+					Value: aws.String(clusterName),
+				},
+				{
+					Key:   aws.String("Environment"),
+					Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
+				},
+			},
+		}
+
+		result, err := svc.CreateCluster(input)
+		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				default:
+					return nil, aerr
+				}
+			}
+			return nil, err
+		}
+		return result.Cluster, nil
+	}
+	return exCluster.Clusters[0], nil
 }
 
-func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
+func (sess *CREDS) findEcsCluster() (*ecs.Cluster, error) {
 	svc := sess.svc
 	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
 	clusterInput := &ecs.DescribeClustersInput{
@@ -102,6 +137,16 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 				Config.Logger.Printf("ECS cluster named %s not found, trying to create this ECS cluster", clusterName)
 				input := &ecs.CreateClusterInput{
 					ClusterName: aws.String(clusterName),
+					Tags: []*ecs.Tag{
+						{
+							Key:   aws.String("Name"),
+							Value: aws.String(clusterName),
+						},
+						{
+							Key:   aws.String("Environment"),
+							Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
+						},
+					},
 				}
 
 				_, err := svc.CreateCluster(input)
@@ -114,7 +159,6 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 					}
 					return nil, errors.New(fmt.Sprintf("Cannot create ECS cluster named %s: %s", clusterName, err.Error()))
 				}
-				Config.Logger.Printf("ECS cluster %s created for user %s", clusterName, userName)
 				describeClusterResult, err = svc.DescribeClusters(clusterInput)
 				if err != nil || len(describeClusterResult.Failures) > 0 {
 					return nil, errors.New(fmt.Sprintf("Still cannot find ECS cluster named %s: %s", clusterName, err.Error()))
@@ -133,24 +177,25 @@ func (sess *CREDS) findEcsCluster(userName string) (*ecs.Cluster, error) {
 func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
 	statusMap := map[string]string{
-		"ACTIVE":   "Running",
-		"DRAINING": "Terminating",
-		"STOPPED":  "Not Found",
-		"INACTIVE": "Not Found",
+		"ACTIVE":    "Running",
+		"DRAINING":  "Terminating",
+		"LAUNCHING": "Launching",
+		"STOPPED":   "Not Found",
+		"INACTIVE":  "Not Found",
 	}
 	statusMessage := "INACTIVE"
 	status.Status = statusMap[statusMessage]
 	status.IdleTimeLimit = -1
 	status.LastActivityTime = -1
-
-	cluster, err := sess.findEcsCluster(userName)
+	svcName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "svc"
+	cluster, err := sess.findEcsCluster()
 	if err != nil {
 		return &status, err
 	}
 	service, err := sess.svc.DescribeServices(&ecs.DescribeServicesInput{
 		Cluster: cluster.ClusterName,
 		Services: []*string{
-			aws.String(userToResourceName(userName, "pod")),
+			aws.String(svcName),
 		},
 	})
 	if err != nil {
@@ -160,7 +205,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 	var taskDefName string
 	if len(service.Services) > 0 {
 		statusMessage = *service.Services[0].Status
-		if statusMessage == "ACTIVE" {
+		if statusMessage == "ACTIVE" && (*service.Services[0].RunningCount == *service.Services[0].DesiredCount) {
 			taskDefName = *service.Services[0].TaskDefinition
 			if taskDefName == "" {
 				Config.Logger.Printf("No task definition found for user %s", userName)
@@ -203,11 +248,14 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 				}
 			}
 		}
+		if (*service.Services[0].PendingCount > *service.Services[0].RunningCount) || *service.Services[0].PendingCount > 0 {
+			status.Status = statusMap["LAUNCHING"]
+		} else {
+			status.Status = statusMap[statusMessage]
+		}
 	} else {
-		Config.Logger.Printf("No service found for user %s", userName)
+		status.Status = statusMap[statusMessage]
 	}
-
-	status.Status = statusMap[statusMessage]
 	return &status, nil
 }
 
@@ -224,14 +272,15 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 		Region: aws.String("us-east-1"),
 	}))
 	svc := NewSession(sess, roleARN)
-	cluster, err := svc.findEcsCluster(userName)
+	cluster, err := svc.findEcsCluster()
 	if err != nil {
 		return "", err
 	}
+	svcName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "svc"
 	desServiceOutput, err := svc.svc.DescribeServices(&ecs.DescribeServicesInput{
 		Cluster: cluster.ClusterName,
 		Services: []*string{
-			aws.String(userToResourceName(userName, "pod")),
+			aws.String(svcName),
 		},
 	})
 	if err != nil {
@@ -280,12 +329,16 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	delServiceOutput, err := svc.svc.DeleteService(&ecs.DeleteServiceInput{
 		Cluster: cluster.ClusterName,
 		Force:   aws.Bool(true),
-		Service: aws.String(userToResourceName(userName, "pod")),
+		Service: aws.String(svcName),
 	})
 	if err != nil {
 		return "", err
 	}
 	// TODO: Terminate ALB + target group here too
+	err = teardownTransitGateway(userName)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
@@ -310,6 +363,11 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		return "", err
 	}
 	cpu, err := cpu(hatchApp.CPULimit)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = svc.launchEcsCluster(userName)
 	if err != nil {
 		return "", err
 	}
@@ -425,13 +483,16 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		return "", err
 	}
+	err = setupTransitGateway(userName)
+	if err != nil {
+		return "", err
+	}
 
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash)
 	if err != nil {
 		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		return "", err
 	}
-
 	return launchTask, nil
 }
 
@@ -439,23 +500,26 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userName string, hash string) (string, error) {
 	svc := sess.svc
 	hatchApp := Config.ContainersMap[hash]
-	cluster, err := sess.findEcsCluster(userName)
+	cluster, err := sess.findEcsCluster()
 	if err != nil {
 		return "", err
 	}
 	Config.Logger.Printf("Cluster: %s", *cluster.ClusterName)
 
-	networkConfig, _ := sess.networkConfig()
+	networkConfig, err := sess.networkConfig(userName)
+	if err != nil {
+		return "", err
+	}
 
 	loadBalancer, targetGroupArn, _, err := sess.CreateLoadBalancer(userName)
 	if err != nil {
 		return "", err
 	}
-
+	svcName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "svc"
 	input := &ecs.CreateServiceInput{
 		DesiredCount:         aws.Int64(1),
 		Cluster:              cluster.ClusterArn,
-		ServiceName:          aws.String(userToResourceName(userName, "pod")),
+		ServiceName:          aws.String(svcName),
 		TaskDefinition:       &taskDefArn,
 		NetworkConfiguration: &networkConfig,
 		DeploymentConfiguration: &ecs.DeploymentConfiguration{

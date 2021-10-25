@@ -61,6 +61,8 @@ type PayModel struct {
 	AWSAccountId string `json:"aws_account_id"`
 	Region       string `json:"region"`
 	Ecs          string `json:"ecs"`
+	VpcId        string `json:vpcid`
+	Subnet       int    `json:subnet`
 }
 
 // HatcheryConfig is the root of all the configuration

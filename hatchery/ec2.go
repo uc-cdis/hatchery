@@ -1,35 +1,55 @@
 package hatchery
 
 import (
+	"fmt"
+	"os"
+	"strings"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ecs"
 )
 
-// TODO: return a signle struct of all these instead.
-func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput, defaultSubnets *ec2.DescribeSubnetsOutput, securityGroups *ec2.DescribeSecurityGroupsOutput, err error) {
+type NetworkInfo struct {
+	vpc            *ec2.DescribeVpcsOutput
+	subnets        *ec2.DescribeSubnetsOutput
+	securityGroups *ec2.DescribeSecurityGroupsOutput
+	routeTable     *ec2.DescribeRouteTablesOutput
+}
+
+func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, error) {
 	svc := ec2.New(session.New(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
 	}))
+
+	vpcname := userToResourceName(userName, "service") + "-" + strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-vpc"
 	vpcInput := &ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{
-			&ec2.Filter{
-				Name:   aws.String("is-default"),
-				Values: []*string{aws.String("true")},
+			{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String(vpcname)},
+			},
+			{
+				Name:   aws.String("tag:Environment"),
+				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
 			},
 		},
 	}
 
 	vpcs, err := svc.DescribeVpcs(vpcInput)
 	if err != nil {
-		return &ec2.DescribeVpcsOutput{}, &ec2.DescribeSubnetsOutput{}, &ec2.DescribeSecurityGroupsOutput{}, err
+		return nil, err
+	}
+	// TODO: BETTER ERROR HANDLING HERE!!
+	if len(vpcs.Vpcs) == 0 {
+		return nil, fmt.Errorf("No existing vpcs found.")
 	}
 
 	subnetInput := &ec2.DescribeSubnetsInput{
 		Filters: []*ec2.Filter{
-			&ec2.Filter{
+			{
 				Name:   aws.String("vpc-id"),
 				Values: []*string{aws.String(*vpcs.Vpcs[0].VpcId)},
 			},
@@ -38,24 +58,28 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 
 	subnets, err := svc.DescribeSubnets(subnetInput)
 	if err != nil {
-		return &ec2.DescribeVpcsOutput{}, &ec2.DescribeSubnetsOutput{}, &ec2.DescribeSecurityGroupsOutput{}, err
+		return nil, err
 	}
 
 	securityGroupInput := ec2.DescribeSecurityGroupsInput{
 		Filters: []*ec2.Filter{
-			&ec2.Filter{
+			{
 				Name:   aws.String("vpc-id"),
 				Values: []*string{aws.String(*vpcs.Vpcs[0].VpcId)},
 			},
-			&ec2.Filter{
+			{
 				Name:   aws.String("group-name"),
 				Values: []*string{aws.String("ws-security-group")},
+			},
+			{
+				Name:   aws.String("tag:Environment"),
+				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
 			},
 		},
 	}
 	securityGroup, err := svc.DescribeSecurityGroups(&securityGroupInput)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	// Create security group if it doesn't exist
 	if len(securityGroup.SecurityGroups) == 0 {
@@ -63,10 +87,15 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 			GroupName: aws.String("ws-security-group"),
 			TagSpecifications: []*ec2.TagSpecification{
 				{
+					ResourceType: aws.String("security-group"),
 					Tags: []*ec2.Tag{
 						{
 							Key:   aws.String("Name"),
 							Value: aws.String("ws-security-group"),
+						},
+						{
+							Key:   aws.String("Environment"),
+							Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
 						},
 					},
 				},
@@ -77,14 +106,25 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 
 		newSecurityGroup, err := svc.CreateSecurityGroup(&createSecurityGroupInput)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
-		Config.Logger.Printf("Create Security Grouo: %s", *newSecurityGroup.GroupId)
+		Config.Logger.Printf("Create Security Group: %s", *newSecurityGroup.GroupId)
 
 		// TODO: Make this secure. Right now it's wide open
 		ingressRules := ec2.AuthorizeSecurityGroupIngressInput{
 			GroupId: newSecurityGroup.GroupId,
 			IpPermissions: []*ec2.IpPermission{
+				{
+					UserIdGroupPairs: []*ec2.UserIdGroupPair{
+						{
+							GroupId: newSecurityGroup.GroupId,
+						},
+					},
+					IpProtocol: aws.String("tcp"),
+					// Port-range
+					FromPort: aws.Int64(2049),
+					ToPort:   aws.Int64(2049),
+				},
 				{
 					IpProtocol: aws.String("tcp"),
 					IpRanges: []*ec2.IpRange{
@@ -99,24 +139,61 @@ func (creds *CREDS) describeDefaultNetwork() (defaultVpc *ec2.DescribeVpcsOutput
 							Description: aws.String("All IPv6"),
 						},
 					},
-					ToPort: aws.Int64(80),
+					// Port-range
+					FromPort: aws.Int64(80),
+					ToPort:   aws.Int64(80),
+				},
+				{
+					IpProtocol: aws.String("tcp"),
+					// Port-range
+					FromPort: aws.Int64(0),
+					ToPort:   aws.Int64(65535),
+					IpRanges: []*ec2.IpRange{
+						{
+							CidrIp:      vpcs.Vpcs[0].CidrBlock,
+							Description: aws.String("All IPv4"),
+						},
+					},
 				},
 			},
 		}
 		_, err = svc.AuthorizeSecurityGroupIngress(&ingressRules)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
 
 		securityGroup, _ = svc.DescribeSecurityGroups(&securityGroupInput)
 	}
 
-	return vpcs, subnets, securityGroup, nil
+	routeTableInput := &ec2.DescribeRouteTablesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []*string{vpcs.Vpcs[0].VpcId},
+			},
+			{
+				Name:   aws.String("association.main"),
+				Values: []*string{aws.String("true")},
+			},
+		},
+	}
+	routeTable, err := svc.DescribeRouteTables(routeTableInput)
+	if err != nil {
+		return nil, err
+	}
+
+	networkInfo := NetworkInfo{
+		vpc:            vpcs,
+		subnets:        subnets,
+		securityGroups: securityGroup,
+		routeTable:     routeTable,
+	}
+	return &networkInfo, nil
 }
 
-func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
+func (creds *CREDS) networkConfig(userName string) (ecs.NetworkConfiguration, error) {
 
-	_, subnets, securityGroup, err := creds.describeDefaultNetwork()
+	networkInfo, err := creds.describeWorkspaceNetwork(userName)
 	if err != nil {
 		return ecs.NetworkConfiguration{}, err
 	}
@@ -131,7 +208,7 @@ func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 			// used. There is a limit of 5 security groups that can be specified per AwsVpcConfiguration.
 			//
 			// All specified security groups must be from the same VPC.
-			SecurityGroups: []*string{aws.String(*securityGroup.SecurityGroups[0].GroupId)},
+			SecurityGroups: []*string{aws.String(*networkInfo.securityGroups.SecurityGroups[0].GroupId)},
 			//
 			// The IDs of the subnets associated with the task or service. There is a limit
 			// of 16 subnets that can be specified per AwsVpcConfiguration.
@@ -139,7 +216,7 @@ func (creds *CREDS) networkConfig() (ecs.NetworkConfiguration, error) {
 			// All specified subnets must be from the same VPC.
 			//
 			// Subnets is a required field
-			Subnets: []*string{aws.String(*subnets.Subnets[0].SubnetId)},
+			Subnets: []*string{aws.String(*networkInfo.subnets.Subnets[0].SubnetId)},
 			// contains filtered or unexported fields
 		},
 	}
