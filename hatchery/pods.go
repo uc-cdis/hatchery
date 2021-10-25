@@ -366,6 +366,23 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		envVars = append(envVars, envVar)
 	}
 
+	for _, licenseInfo := range hatchApp.Licenses {
+		var licenseErr error
+		if license, licenseIsConfigured := Config.Licenses[licenseInfo.Name]; licenseIsConfigured {
+			_, licenseErr = license.CheckoutToUser(userName)
+			envVars = append(envVars, k8sv1.EnvVar{
+				Name:  license.Name,
+				Value: license.LicenseData,
+			})
+		} else {
+			licenseErr = fmt.Errorf("no license configured for %v", licenseInfo.Name)
+		}
+		if licenseErr != nil && licenseInfo.FailIfUnvailable {
+			Config.Logger.Printf("%v", licenseErr)
+			return nil, licenseErr
+		}
+	}
+
 	//hatchConfig.Logger.Printf("environment configured")
 
 	var sidecarEnvVars []k8sv1.EnvVar

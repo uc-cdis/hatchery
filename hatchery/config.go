@@ -34,6 +34,7 @@ type Container struct {
 	Gen3VolumeLocation string            `json:"gen3-volume-location"`
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
+	Licenses           []LicenseInfo     `json:"licenses"`
 }
 
 // SidecarContainer holds fuse sidecar configuration
@@ -63,6 +64,12 @@ type PayModel struct {
 	Ecs          string `json:"ecs"`
 	VpcId        string `json:vpcid`
 	Subnet       int    `json:subnet`
+}
+
+// Reference to a license secret, will map to container env var if available
+type LicenseInfo struct {
+	Name             string `json:"name"`
+	FailIfUnvailable bool   `json:"failIfUnavailable"`
 }
 
 // HatcheryConfig is the root of all the configuration

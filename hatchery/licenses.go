@@ -1,9 +1,12 @@
 package hatchery
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
+	"os"
 	"time"
 )
 
@@ -15,29 +18,37 @@ type License struct {
 	// not marshalled
 	fileName string            `json:"-"`
 	updates  chan *Transaction `json:"-"`
+	logger   *log.Logger
 }
-
-type Transaction struct {
-	UserName string
-	Action   TransactionType
-	Result   chan error
-}
-
-type TransactionType int
-
-const (
-	REQUEST_ADD_USER TransactionType = iota
-	REQUEST_REMOVE_USER
-	REQUEST_REMOVE_EXPIRED_USERS
-)
 
 type User struct {
 	LicenseName       string `json:"licenseName"`
 	LastUsedTimestamp int64  `json:"lastUsedTimestamp"`
 }
 
+type Transaction struct {
+	UserName    string
+	Context     context.Context
+	AccessToken string
+	Action      TransactionType
+	Result      chan TransactionResult
+}
+
+type TransactionType int
+
 const (
-	TIMEOUT_SECONDS = 30
+	ADD_USER TransactionType = iota
+	RENEW_USER
+	REMOVE_EXPIRED_USERS
+)
+
+type TransactionResult struct {
+	Error error
+	Users map[string]User
+}
+
+const (
+	TIMEOUT_SECONDS = 60
 )
 
 func NewLicense(licenseFilePath string) (*License, error) {
@@ -55,8 +66,10 @@ func NewLicense(licenseFilePath string) (*License, error) {
 	license.fileName = licenseFilePath
 	license.updates = make(chan *Transaction, 100)
 
+	license.logger = log.New(os.Stdout, fmt.Sprintf("[%v]", license.Name), log.LstdFlags)
+	license.logger.Printf("Initialized from file %v", license.fileName)
+
 	go license.processTransactions()
-	go license.monitorUserPods()
 	return &license, nil
 }
 
@@ -65,7 +78,7 @@ func (license *License) processTransactions() {
 	for tx := range license.updates {
 
 		switch tx.Action {
-		case REQUEST_ADD_USER:
+		case ADD_USER:
 			{
 				if _, alreadyCheckedOut := license.Users[tx.UserName]; !alreadyCheckedOut {
 					if len(license.Users) < license.UserLimit {
@@ -73,67 +86,85 @@ func (license *License) processTransactions() {
 							LicenseName:       license.Name,
 							LastUsedTimestamp: time.Now().Unix(),
 						}
+						license.logger.Printf("Checked out license to %v", tx.UserName)
 					} else {
-						err = fmt.Errorf("License %v is already at user limit", license.Name)
+						err = fmt.Errorf("License is already at user limit")
 					}
 				}
 			}
-		case REQUEST_REMOVE_USER:
+		case RENEW_USER:
 			{
-				delete(license.Users, tx.UserName)
+				if _, userExists := license.Users[tx.UserName]; userExists {
+					license.Users[tx.UserName] = User{
+						LicenseName:       license.Name,
+						LastUsedTimestamp: time.Now().Unix(),
+					}
+					license.logger.Printf("Renewed for user %v", tx.UserName)
+				} else {
+					err = fmt.Errorf("User does not have this license")
+				}
 			}
-		case REQUEST_REMOVE_EXPIRED_USERS:
+		case REMOVE_EXPIRED_USERS:
 			{
 				for userName, user := range license.Users {
-					userWorkspaceStatus, _ := statusK8sPod(userName)
-					if userWorkspaceStatus.Status == "Running" || userWorkspaceStatus.Status == "Launching" {
-						user.LastUsedTimestamp = time.Now().Unix()
-						license.Users[tx.UserName] = user
-					} else if user.LastUsedTimestamp+60 < time.Now().Unix() {
-						license.ReleaseFromUser(userName)
+					if time.Now().Unix() > user.LastUsedTimestamp+TIMEOUT_SECONDS {
+						delete(license.Users, userName)
+						license.logger.Printf("License expired for %v", userName)
 					}
 				}
 			}
 		}
 		license.marshal()
-		tx.Result <- err
+		if nil != tx.Result {
+			usersCopy := make(map[string]User)
+			for userName, user := range license.Users {
+				usersCopy[userName] = user
+			}
+			tx.Result <- TransactionResult{Error: err, Users: usersCopy}
+		}
 	}
 }
 
-func (license *License) CheckoutToUser(userName string) error {
+func (license *License) CheckoutToUser(userName string) (map[string]User, error) {
 
 	transaction := &Transaction{
 		UserName: userName,
-		Action:   REQUEST_ADD_USER,
-		Result:   make(chan error),
+		Action:   ADD_USER,
+		Result:   make(chan TransactionResult),
 	}
 	license.updates <- transaction
 
-	err := <-transaction.Result
-	return err
-
+	res := <-transaction.Result
+	return res.Users, res.Error
 }
 
-func (license *License) ReleaseFromUser(userName string) {
-
+func (license *License) RenewForUser(userName string) (map[string]User, error) {
 	transaction := &Transaction{
 		UserName: userName,
-		Action:   REQUEST_REMOVE_USER,
-		Result:   make(chan error),
+		Action:   RENEW_USER,
+		Result:   make(chan TransactionResult),
 	}
 	license.updates <- transaction
 
-	<-transaction.Result
+	res := <-transaction.Result
+	return res.Users, res.Error
 }
 
-func (license *License) monitorUserPods() {
+func MonitorConfiguredLicensesForExpiry() {
 	for {
 		time.Sleep(time.Duration(30) * time.Second)
-		transaction := &Transaction{
-			Action: REQUEST_REMOVE_EXPIRED_USERS,
-			Result: make(chan error),
+		for _, license := range Config.Licenses {
+			transaction := &Transaction{
+				Action: REMOVE_EXPIRED_USERS,
+			}
+			license.updates <- transaction
 		}
-		license.updates <- transaction
+	}
+}
+
+func RenewAllLicensesForUser(userName string) {
+	for _, license := range Config.Licenses {
+		license.RenewForUser(userName)
 	}
 }
 
