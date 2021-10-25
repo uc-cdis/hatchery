@@ -159,8 +159,7 @@ func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, err
 		}
 		_, err = svc.AuthorizeSecurityGroupIngress(&ingressRules)
 		if err != nil {
-			panic(err)
-			// return nil, err
+			return nil, err
 		}
 
 		securityGroup, _ = svc.DescribeSecurityGroups(&securityGroupInput)
