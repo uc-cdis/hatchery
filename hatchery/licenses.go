@@ -19,14 +19,14 @@ type License struct {
 
 type Transaction struct {
 	UserName string
-	Action   TransactionRequest
+	Action   TransactionType
 	Result   chan error
 }
 
-type TransactionRequest int
+type TransactionType int
 
 const (
-	REQUEST_ADD_USER TransactionRequest = iota
+	REQUEST_ADD_USER TransactionType = iota
 	REQUEST_REMOVE_USER
 	REQUEST_REMOVE_EXPIRED_USERS
 )
@@ -61,9 +61,8 @@ func NewLicense(licenseFilePath string) (*License, error) {
 }
 
 func (license *License) processTransactions() {
-	for {
-		tx := <-license.updates
-		var err error
+	var err error
+	for tx := range license.updates {
 
 		switch tx.Action {
 		case REQUEST_ADD_USER:
