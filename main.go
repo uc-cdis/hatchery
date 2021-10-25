@@ -62,7 +62,7 @@ func main() {
 	} else {
 		config.Licenses = make(map[string]*hatchery.License)
 		for _, licenseFile := range licenseFiles {
-			config.Logger.Printf("Setting up licenses: %v", licenseFile.Name())
+			config.Logger.Printf("Setting up license: %v", licenseFile.Name())
 			license, err := hatchery.NewLicense("/licenses/" + licenseFile.Name())
 			if nil != err {
 				config.Logger.Printf("Error initializing license %v: %v", license.Name, err)
@@ -71,6 +71,7 @@ func main() {
 				config.Licenses[license.Name] = license
 			}
 		}
+		go hatchery.MonitorConfiguredLicensesForExpiry()
 	}
 	config.Logger.Printf("Setting up routes")
 	mux := httptrace.NewServeMux()
