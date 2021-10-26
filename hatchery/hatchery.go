@@ -64,18 +64,18 @@ func getCurrentUserName(r *http.Request) (userName string) {
 
 func paymodels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
-		http.Error(w, "Not Found", 404)
+		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 	userName := getCurrentUserName(r)
 	paymodel, err := getPayModelForUser(userName)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	out, err := json.Marshal(paymodel)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	fmt.Fprintf(w, string(out))
@@ -87,26 +87,32 @@ func status(w http.ResponseWriter, r *http.Request) {
 
 	paymodel, err := getPayModelForUser(userName)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	var result *WorkspaceStatus
 	if paymodel.Ecs == "true" {
-		statusEcs(r.Context(), w, userName, accessToken)
+		result, err = statusEcs(r.Context(), userName, accessToken)
+
 	} else {
-		result, err := statusK8sPod(r.Context(), userName, accessToken)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		out, err := json.Marshal(result)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		fmt.Fprintf(w, string(out))
+		result, err = statusK8sPod(r.Context(), userName, accessToken)
 	}
+	if err != nil {
+		if err.Error() == "Paymodel has not been setup for user" {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	out, err := json.Marshal(result)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprintf(w, string(out))
 }
 
 func options(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +147,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 
 	out, err := json.Marshal(options)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -150,7 +156,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 
 func launch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", 404)
+		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 	accessToken := getBearerToken(r)
@@ -158,14 +164,14 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	hash := r.URL.Query().Get("id")
 
 	if hash == "" {
-		http.Error(w, "Missing ID argument", 400)
+		http.Error(w, "Missing ID argument", http.StatusBadRequest)
 		return
 	}
 
 	userName := getCurrentUserName(r)
 	paymodel, err := getPayModelForUser(userName)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if paymodel.Ecs == "true" {
@@ -173,7 +179,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	} else {
 		err := createK8sPod(r.Context(), string(hash), userName, accessToken)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		fmt.Fprintf(w, "Success")
@@ -182,14 +188,14 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 func terminate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", 404)
+		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
 	paymodel, err := getPayModelForUser(userName)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if paymodel.Ecs == "true" {
@@ -197,7 +203,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	} else {
 		err := deleteK8sPod(r.Context(), userName, accessToken)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		fmt.Fprintf(w, "Terminated workspace")
@@ -221,7 +227,7 @@ func getBearerToken(r *http.Request) string {
 // Function to terminate workspace in ECS
 func terminateEcs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", 404)
+		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 	accessToken := getBearerToken(r)
@@ -234,7 +240,7 @@ func terminateEcs(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, fmt.Sprintf("%s", svc))
 		}
 	} else {
-		http.Error(w, "Paymodel has not been setup for user", 404)
+		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
 	}
 }
 
@@ -242,13 +248,13 @@ func terminateEcs(w http.ResponseWriter, r *http.Request) {
 // TODO: Evaluate this functionality
 func launchEcs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", 404)
+		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 	hash := r.URL.Query().Get("id")
 
 	if hash == "" {
-		http.Error(w, "Missing ID argument", 400)
+		http.Error(w, "Missing ID argument", http.StatusBadRequest)
 		return
 	}
 
@@ -257,14 +263,13 @@ func launchEcs(w http.ResponseWriter, r *http.Request) {
 	if payModelExistsForUser(userName) {
 		result, err := launchEcsWorkspace(r.Context(), userName, hash, accessToken)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("%s", err), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			Config.Logger.Printf("Error: %s", err)
 		}
 
 		fmt.Fprintf(w, fmt.Sprintf("%+v", result))
-
 	} else {
-		http.Error(w, "Paymodel has not been setup for user", 404)
+		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
 	}
 }
 
@@ -275,7 +280,7 @@ func ecsCluster(w http.ResponseWriter, r *http.Request) {
 	if payModelExistsForUser(userName) {
 		paymodel, err := getPayModelForUser(userName)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
@@ -293,17 +298,16 @@ func ecsCluster(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, fmt.Sprintf("%s", result))
 		}
 	} else {
-		http.Error(w, "Paymodel has not been setup for user", 404)
+		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
 	}
 }
 
 // Function to check status of ECS workspace.
-func statusEcs(ctx context.Context, w http.ResponseWriter, userName string, accessToken string) {
+func statusEcs(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
 	if payModelExistsForUser(userName) {
 		paymodel, err := getPayModelForUser(userName)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
+			return nil, err
 		}
 		roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
 		sess := session.Must(session.NewSession(&aws.Config{
@@ -314,16 +318,11 @@ func statusEcs(ctx context.Context, w http.ResponseWriter, userName string, acce
 		result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
 		if err != nil {
 			Config.Logger.Printf("Error: %s", err)
+			return nil, err
 		}
-		out, err := json.Marshal(result)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		fmt.Fprintf(w, string(out))
+		return result, nil
 	} else {
-		http.Error(w, "Paymodel has not been setup for user", 404)
+		return nil, errors.New("Paymodel has not been setup for user")
 	}
 }
 
