@@ -656,15 +656,3 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 
 	return aws.StringValue(td.TaskDefinitionArn), nil
 }
-
-// func DescribeTaskDefinition(svc *ecs.ECS, hash string) (*ecs.DescribeTaskDefinitionOutput, error) {
-// 	describeTaskDefinitionInput := ecs.DescribeTaskDefinitionInput{
-// 		TaskDefinition: &hash,
-// 	}
-// 	taskDef, err := svc.DescribeTaskDefinition(&describeTaskDefinitionInput)
-// 	if err != nil {
-// 		Config.Logger.Printf("taskdefDescribe error: %s", err)
-// 		return nil, err
-// 	}
-// 	return taskDef, nil
-// }
