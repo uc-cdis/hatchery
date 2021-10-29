@@ -191,7 +191,7 @@ func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, err
 	return &networkInfo, nil
 }
 
-func (creds *CREDS) networkConfig(userName string) (ecs.NetworkConfiguration, error) {
+func (creds *CREDS) NetworkConfig(userName string) (ecs.NetworkConfiguration, error) {
 
 	networkInfo, err := creds.describeWorkspaceNetwork(userName)
 	if err != nil {
