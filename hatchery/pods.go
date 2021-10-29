@@ -20,10 +20,8 @@ import (
 
 	// AWS modules
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/autoscaling"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
@@ -74,9 +72,9 @@ type WorkspaceStatus struct {
 	LastActivityTime int64             `json:"lastActivityTime"`
 }
 
-func getPodClient(ctx context.Context, userName string) (corev1.CoreV1Interface, bool, error) {
-	if payModelExistsForUser(userName) {
-		podClient, err := NewEKSClientset(ctx, userName)
+func getPodClient(ctx context.Context, userName string, payModelPtr *PayModel) (corev1.CoreV1Interface, bool, error) {
+	if payModelPtr != nil {
+		podClient, err := NewEKSClientset(ctx, userName, *payModelPtr)
 		if err != nil {
 			Config.Logger.Printf("Error fetching EKS kubeconfig: %v", err)
 			return nil, true, err
@@ -104,20 +102,16 @@ func getLocalPodClient() corev1.CoreV1Interface {
 }
 
 // Generate EKS kubeconfig using AWS role
-func NewEKSClientset(ctx context.Context, userName string /*cluster *eks.Cluster, roleARN string*/) (corev1.CoreV1Interface, error) {
-	paymodel, err := getPayModelForUser(userName)
-	if err != nil {
-		return nil, err
-	}
-	roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
+func NewEKSClientset(ctx context.Context, userName string, payModel PayModel) (corev1.CoreV1Interface, error) {
+	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(paymodel.Region),
+		Region: aws.String(payModel.Region),
 	})))
 
 	creds := stscreds.NewCredentials(sess, roleARN)
 	eksSvc := eks.New(sess, &aws.Config{Credentials: creds})
 	input := &eks.DescribeClusterInput{
-		Name: aws.String(paymodel.Name),
+		Name: aws.String(payModel.Name),
 	}
 	result, err := eksSvc.DescribeClusterWithContext(ctx, input)
 	if err != nil {
@@ -169,9 +163,9 @@ func checkPodReadiness(pod *k8sv1.Pod) bool {
 	return true
 }
 
-func podStatus(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
+func podStatus(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
-	podClient, isExternalClient, err := getPodClient(ctx, userName)
+	podClient, isExternalClient, err := getPodClient(ctx, userName, payModelPtr)
 	if err != nil {
 		// Config.Logger.Panic("Error trying to fetch kubeConfig: %v", err)
 		status.Status = fmt.Sprintf("%v", err)
@@ -258,8 +252,8 @@ func podStatus(ctx context.Context, userName string, accessToken string) (*Works
 	return &status, nil
 }
 
-func statusK8sPod(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
-	status, err := podStatus(ctx, userName, accessToken)
+func statusK8sPod(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) (*WorkspaceStatus, error) {
+	status, err := podStatus(ctx, userName, accessToken, payModelPtr)
 	if err != nil {
 		status.Status = fmt.Sprintf("%v", err)
 		Config.Logger.Printf("Error getting status: %v", err)
@@ -267,8 +261,8 @@ func statusK8sPod(ctx context.Context, userName string, accessToken string) (*Wo
 	return status, nil
 }
 
-func deleteK8sPod(ctx context.Context, userName string, accessToken string) error {
-	podClient, _, err := getPodClient(ctx, userName)
+func deleteK8sPod(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) error {
+	podClient, _, err := getPodClient(ctx, userName, payModelPtr)
 	if err != nil {
 		return err
 	}
@@ -612,22 +606,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	return pod, nil
 }
 
-func payModelExistsForUser(userName string) (result bool) {
-	paymodel, err := getPayModelForUser(userName)
-	result = true
-	if err != nil {
-		Config.Logger.Printf("Error getting pay model for user '%s': %s", userName, err)
-		result = false
-	}
-	if paymodel == (PayModel{}) {
-		result = false
-	}
-	return result
-}
-
-func getPayModelForUser(userName string) (result PayModel, err error) {
-	paymodel := PayModel{}
-
+func getPayModelForUser(userName string) (result *PayModel, err error) {
 	// query pay model data for this user from DynamoDB
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
@@ -640,17 +619,17 @@ func getPayModelForUser(userName string) (result PayModel, err error) {
 	expr, err := expression.NewBuilder().WithFilter(filt).Build()
 	if err != nil {
 		Config.Logger.Printf("Got error building expression: %s", err)
-		return paymodel, err
+		return nil, err
 	}
 	if Config.Config.PayModelsDynamodbTable == "" {
 		// fallback for backward compatibility
 		Config.Logger.Printf("Unable to query pay model data in DynamoDB: no 'pay-models-dynamodb-table' in config. Fallback on config.")
 		for _, configPaymodel := range Config.PayModelMap {
 			if configPaymodel.User == userName {
-				return configPaymodel, nil
+				return &configPaymodel, nil
 			}
 		}
-		return paymodel, errors.New(fmt.Sprintf("No pay model data for username '%s'.", userName))
+		return nil, errors.New(fmt.Sprintf("No pay model data for username '%s'.", userName))
 	}
 
 	params := &dynamodb.ScanInput{
@@ -662,7 +641,7 @@ func getPayModelForUser(userName string) (result PayModel, err error) {
 	res, err := dynamodbSvc.Scan(params)
 	if err != nil {
 		Config.Logger.Printf("Query API call failed: %s", err)
-		return paymodel, err
+		return nil, err
 	}
 
 	if len(res.Items) == 0 {
@@ -672,11 +651,11 @@ func getPayModelForUser(userName string) (result PayModel, err error) {
 		Config.Logger.Printf("No pay model data for username '%s' in DynamoDB. Fallback on config.", userName)
 		for _, configPaymodel := range Config.PayModelMap {
 			if configPaymodel.User == userName {
-				return configPaymodel, nil
+				return &configPaymodel, nil
 			}
 		}
 
-		return paymodel, errors.New(fmt.Sprintf("No pay model data for username '%s'.", userName))
+		return nil, errors.New(fmt.Sprintf("No pay model data for username '%s'.", userName))
 	}
 
 	if len(res.Items) > 1 {
@@ -684,87 +663,34 @@ func getPayModelForUser(userName string) (result PayModel, err error) {
 	}
 
 	// parse pay model data
-	err = dynamodbattribute.UnmarshalMap(res.Items[0], &paymodel)
+	payModel := PayModel{}
+	err = dynamodbattribute.UnmarshalMap(res.Items[0], &payModel)
 	if err != nil {
 		Config.Logger.Printf("Got error unmarshalling: %s", err)
-		return paymodel, err
+		return nil, err
 	}
 
 	// temporary fallback to the config to get data that is not in DynamoDB
 	// TODO: remove this block once DynamoDB contains all necessary data
 	for _, configPaymodel := range Config.PayModelMap {
 		if configPaymodel.User == userName {
-			if paymodel.Name == "" {
-				paymodel.Name = configPaymodel.Name
+			if payModel.Name == "" {
+				payModel.Name = configPaymodel.Name
 			}
-			if paymodel.AWSAccountId == "" {
-				paymodel.AWSAccountId = configPaymodel.AWSAccountId
+			if payModel.AWSAccountId == "" {
+				payModel.AWSAccountId = configPaymodel.AWSAccountId
 			}
-			if paymodel.Region == "" {
-				paymodel.Region = configPaymodel.Region
+			if payModel.Region == "" {
+				payModel.Region = configPaymodel.Region
 			}
-			if paymodel.Ecs == "" {
-				paymodel.Ecs = configPaymodel.Ecs
+			if payModel.Ecs == "" {
+				payModel.Ecs = configPaymodel.Ecs
 			}
 			break
 		}
 	}
 
-	return paymodel, nil
-}
-
-func scaleEKSNodes(ctx context.Context, userName string, scale int) {
-	paymodel, err := getPayModelForUser(userName)
-	if err != nil {
-		Config.Logger.Println(err.Error())
-	}
-	roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
-	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(paymodel.Region),
-	})))
-
-	creds := stscreds.NewCredentials(sess, roleARN)
-	// ASG stuff
-	asgSvc := autoscaling.New(sess, &aws.Config{Credentials: creds})
-
-	asgInput := &autoscaling.DescribeAutoScalingGroupsInput{
-		AutoScalingGroupNames: []*string{aws.String("eks-jupyterworker-node-" + paymodel.Name)},
-	}
-	asg, err := asgSvc.DescribeAutoScalingGroupsWithContext(ctx, asgInput)
-	cap := *asg.AutoScalingGroups[0].DesiredCapacity
-	Config.Logger.Printf("ASG capacity: %d", cap)
-
-	Config.Logger.Printf("Scaling ASG from %d to %d..", cap, cap+1)
-
-	asgScaleInput := &autoscaling.SetDesiredCapacityInput{
-		AutoScalingGroupName: asg.AutoScalingGroups[0].AutoScalingGroupName,
-		DesiredCapacity:      aws.Int64(cap + int64(scale)),
-	}
-	_, err = asgSvc.SetDesiredCapacityWithContext(ctx, asgScaleInput)
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case autoscaling.ErrCodeScalingActivityInProgressFault:
-				Config.Logger.Println(autoscaling.ErrCodeScalingActivityInProgressFault, aerr.Error())
-			case autoscaling.ErrCodeResourceContentionFault:
-				Config.Logger.Println(autoscaling.ErrCodeResourceContentionFault, aerr.Error())
-			default:
-				Config.Logger.Println(aerr.Error())
-			}
-		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
-			Config.Logger.Println(err.Error())
-		}
-	}
-}
-
-func createK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
-	if payModelExistsForUser(userName) {
-		return createExternalK8sPod(ctx, hash, userName, accessToken)
-	} else {
-		return createLocalK8sPod(ctx, hash, userName, accessToken)
-	}
+	return &payModel, nil
 }
 
 func createLocalK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
@@ -777,7 +703,7 @@ func createLocalK8sPod(ctx context.Context, hash string, userName string, access
 		return err
 	}
 	podName := userToResourceName(userName, "pod")
-	podClient, _, err := getPodClient(ctx, userName)
+	podClient, _, err := getPodClient(ctx, userName, nil)
 	if err != nil {
 		Config.Logger.Panicf("Error in createLocalK8sPod: %v", err)
 		return err
@@ -873,10 +799,10 @@ func createLocalK8sPod(ctx context.Context, hash string, userName string, access
 	return nil
 }
 
-func createExternalK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
+func createExternalK8sPod(ctx context.Context, hash string, userName string, accessToken string, payModel PayModel) error {
 	hatchApp := Config.ContainersMap[hash]
 
-	podClient, err := NewEKSClientset(ctx, userName)
+	podClient, err := NewEKSClientset(ctx, userName, payModel)
 	if err != nil {
 		Config.Logger.Printf("Failed to create pod client for user %v, Error: %v", userName, err)
 		return err
@@ -1020,14 +946,14 @@ func createExternalK8sPod(ctx context.Context, hash string, userName string, acc
 	nodes, _ := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
 	NodeIP := nodes.Items[0].Status.Addresses[0].Address
 
-	createLocalService(ctx, userName, hash, NodeIP, false)
+	createLocalService(ctx, userName, hash, NodeIP, payModel)
 
 	return nil
 }
 
 // Creates a local service that portal can reach
 // and route traffic to pod in external cluster.
-func createLocalService(ctx context.Context, userName string, hash string, serviceURL string, ecs bool) error {
+func createLocalService(ctx context.Context, userName string, hash string, serviceURL string, payModel PayModel) error {
 	const localAmbassadorYaml = `---
 apiVersion: ambassador/v1
 kind:  Mapping
@@ -1046,8 +972,8 @@ tls: %s
 
 	serviceName := userToResourceName(userName, "service")
 	NodePort := int32(80)
-	if !ecs {
-		externalPodClient, err := NewEKSClientset(ctx, userName)
+	if payModel.Ecs != "true" {
+		externalPodClient, err := NewEKSClientset(ctx, userName, payModel)
 		if err != nil {
 			return err
 		}
