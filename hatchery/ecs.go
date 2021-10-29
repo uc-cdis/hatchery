@@ -261,8 +261,12 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 
 // Terminate workspace running in ECS
 // TODO: Make this terminate ALB as well.
-func terminateEcsWorkspace(ctx context.Context, userName string, accessToken string, awsAcctID string) (string, error) {
-	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
+func terminateEcsWorkspace(ctx context.Context, userName string, accessToken string) (string, error) {
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		return "", err
+	}
+	roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
@@ -338,10 +342,14 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
-func launchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string, payModel PayModel) error {
+func launchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string) (string, error) {
 	// TODO: Setup EBS volume as pd
 	// Must create volume using SDK too.. :(
-	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		return "", err
+	}
+	roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
@@ -352,22 +360,22 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	hatchApp := Config.ContainersMap[hash]
 	mem, err := mem(hatchApp.MemoryLimit)
 	if err != nil {
-		return err
+		return "", err
 	}
 	cpu, err := cpu(hatchApp.CPULimit)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	_, err = svc.launchEcsCluster(userName)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
 		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
-		return err
+		return "", err
 	}
 	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
 
@@ -397,12 +405,12 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	})
 	volumes, err := svc.EFSFileSystem(userName)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	taskRole, err := svc.taskRole(userName)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	taskDef := CreateTaskDefinitionInput{
@@ -451,7 +459,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		Args:             hatchApp.Args,
 		EnvVars:          envVars,
 		Port:             int64(hatchApp.TargetPort),
-		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", payModel.AWSAccountId), // TODO: Make this configurable?
+		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", paymodel.AWSAccountId), // TODO: Make this configurable?
 		SidecarContainer: ecs.ContainerDefinition{
 			Image: &Config.Config.Sidecar.Image,
 			Name:  aws.String("sidecar-container"),
@@ -470,28 +478,26 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 			},
 		},
 	}
-	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash, payModel.AWSAccountId)
+	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash)
 	if err != nil {
 		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
-		return err
+		return "", err
 	}
 	err = setupTransitGateway(userName)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash, payModel)
+	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash)
 	if err != nil {
 		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
-		return err
+		return "", err
 	}
-
-	fmt.Printf("Launched ECS workspace service at %s for user %s\n", launchTask, userName)
-	return nil
+	return launchTask, nil
 }
 
 // Launch ECS service for task definition + LB for routing
-func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userName string, hash string, payModel PayModel) (string, error) {
+func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userName string, hash string) (string, error) {
 	svc := sess.svc
 	hatchApp := Config.ContainersMap[hash]
 	cluster, err := sess.findEcsCluster()
@@ -500,7 +506,7 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 	}
 	Config.Logger.Printf("Cluster: %s", *cluster.ClusterName)
 
-	networkConfig, err := sess.NetworkConfig(userName)
+	networkConfig, err := sess.networkConfig(userName)
 	if err != nil {
 		return "", err
 	}
@@ -561,7 +567,7 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 		return "", err
 	}
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
-	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, payModel)
+	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, true)
 	if err != nil {
 		return "", err
 	}
@@ -569,9 +575,13 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 }
 
 // Create/Update Task Definition in ECS
-func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, hash string, awsAcctID string) (string, error) {
+func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, hash string) (string, error) {
 	creds := sess.creds
-	LogGroup, err := sess.CreateLogGroup(fmt.Sprintf("/hatchery/%s/", awsAcctID), creds)
+	paymodel, err := getPayModelForUser(userName)
+	if err != nil {
+		return "", err
+	}
+	LogGroup, err := sess.CreateLogGroup(fmt.Sprintf("/hatchery/%s/", paymodel.AWSAccountId), creds)
 	if err != nil {
 		Config.Logger.Printf("Failed to create/get LogGroup. Error: %s", err)
 		return "", err

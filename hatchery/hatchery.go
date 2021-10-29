@@ -26,7 +26,7 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/paymodels", paymodels)
 
 	// ECS functions
-	mux.HandleFunc("/create-ecs-cluster", createECSCluster)
+	mux.HandleFunc("/create-ecs-cluster", ecsCluster)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -55,12 +55,12 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userName := getCurrentUserName(r)
-	payModel, err := getPayModelForUser(userName)
+	paymodel, err := getPayModelForUser(userName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	out, err := json.Marshal(payModel)
+	out, err := json.Marshal(paymodel)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -72,17 +72,17 @@ func status(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	accessToken := getBearerToken(r)
 
-	payModel, err := getPayModelForUser(userName)
+	paymodel, err := getPayModelForUser(userName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	var result *WorkspaceStatus
-	if payModel.Ecs == "true" {
-		result, err = statusEcs(r.Context(), userName, accessToken, payModel.AWSAccountId)
+	if paymodel.Ecs == "true" {
+		result, err = statusEcs(r.Context(), userName, accessToken)
 
 	} else {
-		result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
+		result, err = statusK8sPod(r.Context(), userName, accessToken)
 	}
 	if err != nil {
 		if err.Error() == "Paymodel has not been setup for user" {
@@ -156,22 +156,21 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := getCurrentUserName(r)
-	payModel, err := getPayModelForUser(userName)
-	if err != nil {
-		Config.Logger.Printf(err.Error())
-	}
-	if payModel == nil {
-		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
-	} else if payModel.Ecs == "true" {
-		err = launchEcsWorkspace(r.Context(), userName, hash, accessToken, *payModel)
-	} else {
-		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
-	}
+	paymodel, err := getPayModelForUser(userName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fmt.Fprintf(w, "Success")
+	if paymodel.Ecs == "true" {
+		launchEcs(w, r)
+	} else {
+		err := createK8sPod(r.Context(), string(hash), userName, accessToken)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprintf(w, "Success")
+	}
 }
 
 func terminate(w http.ResponseWriter, r *http.Request) {
@@ -181,20 +180,15 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
-	payModel, err := getPayModelForUser(userName)
+	paymodel, err := getPayModelForUser(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	if payModel != nil && payModel.Ecs == "true" {
-		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		} else {
-			fmt.Fprintf(w, fmt.Sprintf("Terminated ECS workspace at %s", svc))
-		}
+	if paymodel.Ecs == "true" {
+		terminateEcs(w, r)
 	} else {
-		err := deleteK8sPod(r.Context(), userName, accessToken, payModel)
+		err := deleteK8sPod(r.Context(), userName, accessToken)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -217,47 +211,104 @@ func getBearerToken(r *http.Request) string {
 
 // ECS functions
 
+// Function to terminate workspace in ECS
+func terminateEcs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	accessToken := getBearerToken(r)
+	userName := getCurrentUserName(r)
+	if payModelExistsForUser(userName) {
+		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken)
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("%s", svc))
+		}
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
+	}
+}
+
+// Function to launch workspace in ECS
+// TODO: Evaluate this functionality
+func launchEcs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	hash := r.URL.Query().Get("id")
+
+	if hash == "" {
+		http.Error(w, "Missing ID argument", http.StatusBadRequest)
+		return
+	}
+
+	accessToken := getBearerToken(r)
+	userName := getCurrentUserName(r)
+	if payModelExistsForUser(userName) {
+		result, err := launchEcsWorkspace(r.Context(), userName, hash, accessToken)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			Config.Logger.Printf("Error: %s", err)
+		}
+
+		fmt.Fprintf(w, fmt.Sprintf("%+v", result))
+	} else {
+		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
+	}
+}
+
 // Function to create ECS cluster.
 // TODO: NEED TO CALL THIS FUNCTION IF IT DOESN'T EXIST!!!
-func createECSCluster(w http.ResponseWriter, r *http.Request) {
+func ecsCluster(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
-	payModel, err := getPayModelForUser(userName)
-	if payModel == nil {
-		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
-		// TODO: Make this configurable
-		Region: aws.String("us-east-1"),
-	}))
-	svc := NewSession(sess, roleARN)
+	if payModelExistsForUser(userName) {
+		paymodel, err := getPayModelForUser(userName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
+		sess := session.Must(session.NewSession(&aws.Config{
+			// TODO: Make this configurable
+			Region: aws.String("us-east-1"),
+		}))
+		svc := NewSession(sess, roleARN)
 
-	result, err := svc.launchEcsCluster(userName)
-	if err != nil {
-		fmt.Fprintf(w, fmt.Sprintf("%s", err))
-		Config.Logger.Printf("Error: %s", err)
+		result, err := svc.launchEcsCluster(userName)
+		if err != nil {
+			fmt.Fprintf(w, fmt.Sprintf("%s", err))
+			Config.Logger.Printf("Error: %s", err)
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("%s", result))
+		}
 	} else {
-		fmt.Fprintf(w, fmt.Sprintf("%s", result))
+		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
 	}
 }
 
 // Function to check status of ECS workspace.
-func statusEcs(ctx context.Context, userName string, accessToken string, awsAcctID string) (*WorkspaceStatus, error) {
-	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
-		// TODO: Make this configurable
-		Region: aws.String("us-east-1"),
-	}))
-	svc := NewSession(sess, roleARN)
-	result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
-	if err != nil {
-		Config.Logger.Printf("Error: %s", err)
-		return nil, err
+func statusEcs(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
+	if payModelExistsForUser(userName) {
+		paymodel, err := getPayModelForUser(userName)
+		if err != nil {
+			return nil, err
+		}
+		roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
+		sess := session.Must(session.NewSession(&aws.Config{
+			// TODO: Make this configurable
+			Region: aws.String("us-east-1"),
+		}))
+		svc := NewSession(sess, roleARN)
+		result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
+		if err != nil {
+			Config.Logger.Printf("Error: %s", err)
+			return nil, err
+		}
+		return result, nil
+	} else {
+		return nil, errors.New("Paymodel has not been setup for user")
 	}
-	return result, nil
 }
