@@ -56,6 +56,10 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 	}
 	userName := getCurrentUserName(r)
 	payModel, err := getPayModelForUser(userName)
+	if payModel == nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -74,11 +78,10 @@ func status(w http.ResponseWriter, r *http.Request) {
 
 	payModel, err := getPayModelForUser(userName)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		Config.Logger.Printf(err.Error())
 	}
 	var result *WorkspaceStatus
-	if payModel.Ecs == "true" {
+	if payModel != nil && payModel.Ecs == "true" {
 		result, err = statusEcs(r.Context(), userName, accessToken, payModel.AWSAccountId)
 	} else {
 		result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
