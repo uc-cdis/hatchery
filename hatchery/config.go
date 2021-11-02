@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+
+	"github.com/ghodss/yaml"
 )
 
 // Container Struct to hold the configuration for Pod Container
@@ -61,20 +63,22 @@ type PayModel struct {
 	AWSAccountId string `json:"aws_account_id"`
 	Region       string `json:"region"`
 	Ecs          string `json:"ecs"`
-	VpcId        string `json:vpcid`
-	Subnet       int    `json:subnet`
+	VpcId        string `json:"vpcid"`
+	Subnet       int    `json:"subnet"`
 }
 
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
-	UserNamespace          string           `json:"user-namespace"`
-	PayModels              []PayModel       `json:"pay-models"`
-	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
-	SubDir                 string           `json:"sub-dir"`
-	Containers             []Container      `json:"containers"`
-	UserVolumeSize         string           `json:"user-volume-size"`
-	Sidecar                SidecarContainer `json:"sidecar"`
-	MoreConfigs            []AppConfigInfo  `json:"more-configs"`
+	UserNamespace          string            `json:"user-namespace"`
+	PayModels              []PayModel        `json:"pay-models"`
+	PayModelsDynamodbTable string            `json:"pay-models-dynamodb-table"`
+	SubDir                 string            `json:"sub-dir"`
+	Containers             []Container       `json:"containers"`
+	UserVolumeSize         string            `json:"user-volume-size"`
+	Sidecar                *SidecarContainer `json:"sidecar"`
+	MoreConfigs            []AppConfigInfo   `json:"more-configs"`
+
+	ServerPort int `json:"server-port"`
 }
 
 // FullHatcheryConfig bucket result from loadConfig
@@ -102,10 +106,15 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.Logger.Printf("failed to load %v from cwd %v got - %v", configFilePath, cwd, err)
 		return data, err
 	}
-	data.Logger.Printf("loaded config: %v", string(plan))
 	data.ContainersMap = make(map[string]Container)
 	data.PayModelMap = make(map[string]PayModel)
-	_ = json.Unmarshal(plan, &data.Config)
+	_ = yaml.Unmarshal(plan, &data.Config)
+	configDebugTxt, _ := yaml.Marshal(data.Config)
+	data.Logger.Printf("loaded config: %s", string(configDebugTxt))
+	//fill in defaults
+	if data.Config.ServerPort == 0 {
+		data.Config.ServerPort = 8000
+	}
 	if nil != data.Config.MoreConfigs && 0 < len(data.Config.MoreConfigs) {
 		for _, info := range data.Config.MoreConfigs {
 			if info.AppType == "dockstore-compose:1.0.0" {

@@ -26,9 +26,15 @@ paths:
         schema:
           type: string
         description: The ID of the workspace to launch from the /options list.
+      - $ref: '#/components/parameters/User'
+      - $ref: '#/components/parameters/Authorization'
       responses:
         200:
           description: successfully started launching
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
         401:
           $ref: '#/components/responses/UnauthorizedError'
   /terminate:
@@ -37,6 +43,14 @@ paths:
       - workspace
       summary: Terminate the actively running workspace
       operationId: terminate
+      parameters:
+      - $ref: '#/components/parameters/User'
+      - $ref: '#/components/parameters/Authorization'
+      - in: query
+        name: id
+        schema:
+          type: string
+        description: Workspace ID to be deleted
       responses:
         200:
           description: successfully started terminating
@@ -48,6 +62,9 @@ paths:
       - workspace
       summary: Get the current status of the workspace
       operationId: status
+      parameters:
+      - $ref: '#/components/parameters/User'
+      - $ref: '#/components/parameters/Authorization'
       responses:
         200:
           description: successful operation
@@ -63,6 +80,9 @@ paths:
       - workspace
       summary: Get the available workspace options that can be launched
       operationId: options
+      parameters:
+      - $ref: '#/components/parameters/User'
+      - $ref: '#/components/parameters/Authorization'
       responses:
         200:
           description: successful operation
@@ -80,8 +100,30 @@ paths:
       - workspace
       summary: Get the current user's pay model data
       operationId: paymodels
+      parameters:
+      - $ref: '#/components/parameters/User'
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: '#/components/schemas/PayModel'
+        401:
+          $ref: '#/components/responses/UnauthorizedError'
 
 components:
+  parameters:
+    User:
+      in: header
+      name: REMOTE_USER
+      schema:
+        type: string
+    Authorization:
+      in: header
+      name: Authorization
+      schema:
+        type: string
   schemas:
     Status:
       type: object
@@ -127,20 +169,70 @@ components:
         type:
           type: string
           enum: [PodScheduled, Initialized, ContainersReady, Ready]
-          description: 	Name of this Pod condition
+          description: Name of this Pod condition
         status:
           type: string
           enum: ["True", "False", Unknown]
-          description: 	Indicates whether that condition is applicable
+          description: Indicates whether that condition is applicable
     ContainerState:
       type: object
       properties:
         name:
           type: string
-          description: 	Name of this container
+          description: Name of this container
         state:
+          description: Details about the container's current condition
+          $ref: "#/components/responses/ContainerStateDetail"
+        ready:
+          type: boolean
+    ContainerStateDetail:
+      type: object
+      properties:
+        running:
+          nullable: true
           type: object
-          description: 	Details about the container's current condition
+          properties:
+            StartedAt:
+              type: string
+        waiting:
+          nullable: true
+          type: object
+          properties:
+            reason:
+              type: string
+            message:
+              type: string
+        terminated:
+          nullable: true
+          type: object
+          properties:
+            exitCode:
+              type: int32
+            signal:
+              type: int32
+            reason:
+              type: string
+            message:
+              type: string
+            startedAt:
+              type: string
+            finishedAt:
+              type: string
+            containerID:
+              type: string
+    PayModel:
+      type: object
+      properties:
+        name:
+          type: string
+        user:
+          type: string
+        awsAccountId:
+          type: string
+        region:
+          type: string
+        ecs:
+          type: string
   responses:
     UnauthorizedError:
       description: Access token is missing or invalid
