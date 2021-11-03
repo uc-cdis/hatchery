@@ -188,6 +188,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 	status.IdleTimeLimit = -1
 	status.LastActivityTime = -1
 	svcName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "svc"
+	status.Id = svcName
 	cluster, err := sess.findEcsCluster()
 	if err != nil {
 		return &status, err

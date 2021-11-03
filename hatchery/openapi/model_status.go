@@ -11,6 +11,9 @@ package openapi
 
 type Status struct {
 
+	// ID of workspace
+	Id string `json:"id,omitempty"`
+
 	// Value:  * `Terminating` - The workspace is shutting down  * `Launching` - The workspace is starting up  * `Stopped` - The workspace is in a failed state and must be terminated  * `Running` - The workspace is running and ready to be used  * `Not Found` - The workspace could not be found 
 	Status string `json:"status,omitempty"`
 

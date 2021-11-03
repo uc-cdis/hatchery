@@ -7,6 +7,7 @@ import (
 
 func workspaceState2OpenAPI(in WorkspaceStatus) openapi.Status {
 	out := openapi.Status{
+		Id:              in.Id,
 		Status:          in.Status,
 		Conditions:      make([]openapi.PodCondition, len(in.Conditions)),
 		ContainerStates: make([]openapi.ContainerState, len(in.ContainerStates)),

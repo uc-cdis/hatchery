@@ -60,7 +60,7 @@ func (s *HatcheryAPIService) Launch(ctx context.Context, id string, userName str
 	if err != nil {
 		return openapi.Response(500, openapi.Status{Status: "Error"}), err
 	}
-	return openapi.Response(200, openapi.Status{Status: "Launching"}), nil
+	return openapi.Response(200, openapi.Status{Id: id, Status: "Launching"}), nil
 }
 
 func (s *HatcheryAPIService) Options(ctx context.Context, userName string, authorization string) (openapi.ImplResponse, error) {
@@ -129,7 +129,7 @@ func (s *HatcheryAPIService) Terminate(ctx context.Context, userName string, aut
 		if err != nil {
 			return openapi.Response(500, nil), nil
 		} else {
-			return openapi.Response(200, openapi.Status{Status: fmt.Sprintf("Terminated ECS workspace at %s", svc)}), err
+			return openapi.Response(200, openapi.Status{Id: svc, Status: "Stopped"}), err
 		}
 	} else {
 		err := deleteK8sPod(ctx, userName, accessToken, payModel)

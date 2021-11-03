@@ -54,6 +54,10 @@ paths:
       responses:
         200:
           description: successfully started terminating
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
         401:
           $ref: '#/components/responses/UnauthorizedError'
   /status:
@@ -128,6 +132,9 @@ components:
     Status:
       type: object
       properties:
+        id:
+          type: string
+          description: ID of workspace
         status:
           type: string
           enum: [Launching, Running, Terminating, Stopped, Not Found]
