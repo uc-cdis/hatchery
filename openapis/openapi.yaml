@@ -74,6 +74,13 @@ paths:
                     $ref: '#/components/schemas/Container'
         401:
           $ref: '#/components/responses/UnauthorizedError'
+  /paymodels:
+    get:
+      tags:
+      - workspace
+      summary: Get the current user's pay model data
+      operationId: paymodels
+
 components:
   schemas:
     Status:

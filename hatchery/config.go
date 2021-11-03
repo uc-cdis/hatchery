@@ -31,6 +31,7 @@ type Container struct {
 	GroupUID           int64             `json:"group-uid"`
 	FSGID              int64             `json:"fs-gid"`
 	UserVolumeLocation string            `json:"user-volume-location"`
+	Gen3VolumeLocation string            `json:"gen3-volume-location"`
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
 }
@@ -53,20 +54,34 @@ type AppConfigInfo struct {
 	Name    string
 }
 
+// TODO remove PayModel from config once DynamoDB contains all necessary data
+type PayModel struct {
+	Name         string `json:"name"`
+	User         string `json:"user_id"`
+	AWSAccountId string `json:"aws_account_id"`
+	Region       string `json:"region"`
+	Ecs          string `json:"ecs"`
+	VpcId        string `json:vpcid`
+	Subnet       int    `json:subnet`
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
-	UserNamespace  string           `json:"user-namespace"`
-	SubDir         string           `json:"sub-dir"`
-	Containers     []Container      `json:"containers"`
-	UserVolumeSize string           `json:"user-volume-size"`
-	Sidecar        SidecarContainer `json:"sidecar"`
-	MoreConfigs    []AppConfigInfo  `json:"more-configs"`
+	UserNamespace          string           `json:"user-namespace"`
+	PayModels              []PayModel       `json:"pay-models"`
+	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
+	SubDir                 string           `json:"sub-dir"`
+	Containers             []Container      `json:"containers"`
+	UserVolumeSize         string           `json:"user-volume-size"`
+	Sidecar                SidecarContainer `json:"sidecar"`
+	MoreConfigs            []AppConfigInfo  `json:"more-configs"`
 }
 
 // FullHatcheryConfig bucket result from loadConfig
 type FullHatcheryConfig struct {
 	Config        HatcheryConfig
 	ContainersMap map[string]Container
+	PayModelMap   map[string]PayModel
 	Logger        *log.Logger
 }
 
@@ -89,6 +104,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	}
 	data.Logger.Printf("loaded config: %v", string(plan))
 	data.ContainersMap = make(map[string]Container)
+	data.PayModelMap = make(map[string]PayModel)
 	_ = json.Unmarshal(plan, &data.Config)
 	if nil != data.Config.MoreConfigs && 0 < len(data.Config.MoreConfigs) {
 		for _, info := range data.Config.MoreConfigs {
@@ -120,5 +136,15 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		hash := fmt.Sprintf("%x", md5.Sum([]byte(jsonBytes)))
 		data.ContainersMap[hash] = container
 	}
+
+	if data.Config.PayModelsDynamodbTable == "" {
+		data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
+	}
+
+	for _, payModel := range data.Config.PayModels {
+		user := payModel.User
+		data.PayModelMap[user] = payModel
+	}
+
 	return data, nil
 }

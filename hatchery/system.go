@@ -26,7 +26,7 @@ func systemVersion(w http.ResponseWriter, r *http.Request) {
 	ver := versionSummary{Commit: gitcommit, Version: gitversion}
 	out, err := json.Marshal(ver)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
