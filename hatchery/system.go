@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/uc-cdis/hatchery/hatchery/version"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
 
@@ -23,7 +24,7 @@ func systemStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func systemVersion(w http.ResponseWriter, r *http.Request) {
-	ver := versionSummary{Commit: gitcommit, Version: gitversion}
+	ver := versionSummary{Commit: version.GitCommit, Version: version.GitVersion}
 	out, err := json.Marshal(ver)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
