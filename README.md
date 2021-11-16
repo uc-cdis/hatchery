@@ -2,21 +2,23 @@
 
 Hatchery creates Kubernetes Pods for workspace services. Workspace services must expose HTTP servers. Ambassador is used to proxy user traffic through to their container workspace once it is launched by Hatchery.
 
-## Documentation TOC
-
-See [this bLog](https://www.divio.com/blog/documentation/) for an introduction to the different types of documentation (explanation, how-to, tutorial, reference).
+## Documentation
 
 ### Explanation
-* [hatchery overview](doc/explanation/hatcheryOverview.md)
-* [api](doc/explanation/hatcheryApi.md)
-* [dockstore apps](doc/explanation/dockstore.md)
+* [Hatchery overview](doc/explanation/hatcheryOverview.md)
+* [API documentation](doc/explanation/hatcheryApi.md)
+* [Configuring Dockstore apps](doc/explanation/dockstore.md)
 
 ### How-to
-* [dev-test](doc/howto/devTest.md)
-* [gen3-fuse](doc/howto/fuseSidecar.md)
-* [Jupyter Notebook](doc/howto/jupyterNotebook.md)
-* [R Studio](doc/howto/rStudio.md)
-* [Galaxy](doc/howto/galaxy.md)
+* [Hatchery configuration](doc/howto/configuration.md)
+* [Quick start for local development](doc/howto/quick_start.md)
+* [Run the tests locally](doc/howto/devTest.md)
+* [Configuring gen3-fuse](doc/howto/fuseSidecar.md)
+* Configuring workspaces:
+    * [Jupyter](doc/howto/jupyterNotebook.md)
+    * [RStudio](doc/howto/rStudio.md)
+    * [Galaxy](doc/howto/galaxy.md)
+    * [noNVC Firefox](doc/howto/noVNCFirefox.md)
 
 ### Tutorials
 
