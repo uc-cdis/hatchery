@@ -298,6 +298,9 @@ func deleteTransitGatewayAttachment(svc *ec2.EC2, tgwid string) (*string, error)
 		TransitGatewayAttachmentId: exTgwAttachment.TransitGatewayAttachments[0].TransitGatewayAttachmentId,
 	}
 	delTGWAttachment, err := svc.DeleteTransitGatewayVpcAttachment(delTGWAttachmentInput)
+	if err != nil {
+		return nil, err
+	}
 
 	return delTGWAttachment.TransitGatewayVpcAttachment.TransitGatewayAttachmentId, nil
 }
@@ -346,6 +349,9 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 			ResourceArns:  []*string{&tgwArn},
 		}
 		listResources, err := svc.ListResources(listResourcesInput)
+		if err != nil {
+			return nil, err
+		}
 
 		listPrincipalsInput := &ram.ListPrincipalsInput{
 			ResourceArn:   aws.String(tgwArn),
