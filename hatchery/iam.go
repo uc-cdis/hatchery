@@ -59,10 +59,13 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 			  `),
 		}
 
-		svc.AttachRolePolicy(&iam.AttachRolePolicyInput{
+		_, err = svc.AttachRolePolicy(&iam.AttachRolePolicyInput{
 			PolicyArn: policy.Policy.Arn,
 			RoleName:  aws.String(userToResourceName(userName, "pod")),
 		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to attach RolePolicy: %s", err)
+		}
 		createTaskRole, err := svc.CreateRole(createTaskRoleInput)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create TaskRole: %s", err)

@@ -472,7 +472,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	}
 	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash, payModel.AWSAccountId)
 	if err != nil {
-		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
+		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
+		if aerr != nil {
+			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
+		}
 		return err
 	}
 	err = setupTransitGateway(userName)
@@ -482,7 +485,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash, payModel)
 	if err != nil {
-		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
+		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
+		if aerr != nil {
+			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
+		}
 		return err
 	}
 

@@ -115,12 +115,15 @@ func createVPC(cidr string, vpcname string, svc *ec2.EC2) (*ec2.CreateVpcOutput,
 		return nil, err
 	}
 
-	svc.ModifyVpcAttribute(&ec2.ModifyVpcAttributeInput{
+	_, err = svc.ModifyVpcAttribute(&ec2.ModifyVpcAttributeInput{
 		EnableDnsHostnames: &ec2.AttributeBooleanValue{
 			Value: aws.Bool(true),
 		},
 		VpcId: vpc.Vpc.VpcId,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	return vpc, nil
 }

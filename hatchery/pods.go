@@ -303,7 +303,10 @@ func deleteK8sPod(ctx context.Context, userName string, accessToken string, payM
 	}
 
 	fmt.Printf("Attempting to delete pod %s for user %s\n", podName, userName)
-	podClient.Pods(Config.Config.UserNamespace).Delete(ctx, podName, deleteOptions)
+	err = podClient.Pods(Config.Config.UserNamespace).Delete(ctx, podName, deleteOptions)
+	if err != nil {
+		fmt.Printf("Error occurred when deleting pod: %s", err)
+	}
 
 	serviceName := userToResourceName(userName, "service")
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
@@ -311,7 +314,10 @@ func deleteK8sPod(ctx context.Context, userName string, accessToken string, payM
 		return fmt.Errorf("A workspace service was not found: %s", err)
 	}
 	fmt.Printf("Attempting to delete service %s for user %s\n", serviceName, userName)
-	podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
+	err = podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
+	if err != nil {
+		fmt.Printf("Error occurred when deleting service: %s", err)
+	}
 
 	return nil
 }
@@ -761,7 +767,10 @@ func createLocalK8sPod(ctx context.Context, hash string, userName string, access
 		deleteOptions := metav1.DeleteOptions{
 			PropagationPolicy: &policy,
 		}
-		podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
+		err = podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
+		if err != nil {
+			fmt.Printf("Error occurred when deleting service: %s", err)
+		}
 	}
 
 	service := &k8sv1.Service{
@@ -823,8 +832,12 @@ func createExternalK8sPod(ctx context.Context, hash string, userName string, acc
 				Name: Config.Config.UserNamespace,
 			},
 		}
-		Config.Logger.Printf("Namespace created: %v", ns)
-		podClient.Namespaces().Create(ctx, nsName, metav1.CreateOptions{})
+		_, err = podClient.Namespaces().Create(ctx, nsName, metav1.CreateOptions{})
+		if err != nil {
+			Config.Logger.Printf("Error occurred when creating namespace: %s", err)
+		} else {
+			Config.Logger.Printf("Namespace created: %v", ns)
+		}
 	}
 
 	var extraVars []k8sv1.EnvVar
@@ -907,8 +920,10 @@ func createExternalK8sPod(ctx context.Context, hash string, userName string, acc
 		deleteOptions := metav1.DeleteOptions{
 			PropagationPolicy: &policy,
 		}
-		podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
-
+		err = podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
+		if err != nil {
+			fmt.Printf("Error occurred when deleting service: %s", err)
+		}
 	}
 
 	service := &k8sv1.Service{
@@ -946,7 +961,11 @@ func createExternalK8sPod(ctx context.Context, hash string, userName string, acc
 	nodes, _ := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
 	NodeIP := nodes.Items[0].Status.Addresses[0].Address
 
-	createLocalService(ctx, userName, hash, NodeIP, payModel)
+	err = createLocalService(ctx, userName, hash, NodeIP, payModel)
+	if err != nil {
+		fmt.Println(err.Error())
+		return err
+	}
 
 	return nil
 }
@@ -999,8 +1018,10 @@ tls: %s
 		deleteOptions := metav1.DeleteOptions{
 			PropagationPolicy: &policy,
 		}
-		localPodClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
-
+		err = localPodClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
+		if err != nil {
+			fmt.Printf("Error occurred when deleting service: %s", err)
+		}
 	}
 
 	localService := &k8sv1.Service{
