@@ -442,7 +442,7 @@ func setupRemoteAccount(userName string, teardown bool) error {
 	} else {
 		tgw_attachment, err = createTransitGatewayAttachments(ec2Remote, *vpc.Vpcs[0].VpcId, *exTg.TransitGateways[0].TransitGatewayId, false, &svc, userName)
 		if err != nil {
-			return fmt.Errorf("Cannot create TransitGatewayAttachment: ", err.Error())
+			return fmt.Errorf("Cannot create TransitGatewayAttachment: %s", err.Error())
 		}
 		Config.Logger.Printf("tgw_attachment: %s", *tgw_attachment)
 	}
@@ -450,7 +450,7 @@ func setupRemoteAccount(userName string, teardown bool) error {
 	// setup Transit Gateway Route Table
 	_, err = TGWRoutes(userName, exTg.TransitGateways[0].Options.AssociationDefaultRouteTableId, tgw_attachment, ec2Local, false, teardown, &svc)
 	if err != nil {
-		return fmt.Errorf("Cannot create TGW Route ", err.Error())
+		return fmt.Errorf("Cannot create TGW Route: %s", err.Error())
 	}
 	// setup VPC Route Table
 	err = VPCRoutes(networkInfo, mainNetworkInfo, exTg.TransitGateways[0].TransitGatewayId, ec2Remote, ec2Local, teardown)

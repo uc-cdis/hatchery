@@ -3,7 +3,6 @@ package hatchery
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -208,7 +207,7 @@ func podStatus(ctx context.Context, userName string, accessToken string, payMode
 		fallthrough
 	case "Running":
 		allReady := checkPodReadiness(pod)
-		if allReady == true {
+		if allReady {
 			status.Status = "Running"
 			for _, container := range pod.Spec.Containers {
 				for _, arg := range container.Args {
@@ -621,7 +620,7 @@ func getPayModelForUser(userName string) (result *PayModel, err error) {
 				return &configPaymodel, nil
 			}
 		}
-		return nil, errors.New(fmt.Sprintf("No pay model data for username '%s'.", userName))
+		return nil, fmt.Errorf("No pay model data for username '%s'.", userName)
 	}
 	// query pay model data for this user from DynamoDB
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
@@ -661,7 +660,7 @@ func getPayModelForUser(userName string) (result *PayModel, err error) {
 			}
 		}
 
-		return nil, errors.New(fmt.Sprintf("No pay model data for username '%s'.", userName))
+		return nil, fmt.Errorf("No pay model data for username '%s'.", userName)
 	}
 
 	if len(res.Items) > 1 {

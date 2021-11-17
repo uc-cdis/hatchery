@@ -240,7 +240,7 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, fmt.Sprintf("%s", err))
 		Config.Logger.Printf("Error: %s", err)
 	} else {
-		fmt.Fprintf(w, fmt.Sprintf("%s", result))
+		fmt.Fprintf(w, result.String())
 	}
 }
 

@@ -77,7 +77,7 @@ func TestDockstoreComposeTranslate(t *testing.T) {
 		return
 	}
 	if "" == hatchApp.UserVolumeLocation {
-		t.Error(fmt.Sprintf("dockstore hatchApp should set UserVolumeLocation property"))
+		t.Error("dockstore hatchApp should set UserVolumeLocation property")
 		return
 	}
 	hatchAppBytes, _ := yaml.Marshal(hatchApp)
@@ -101,7 +101,7 @@ func TestFirefoxAppTranslate(t *testing.T) {
 		return
 	}
 	if "true" != hatchApp.UseSharedMemory {
-		t.Error(fmt.Sprintf("dockstore Firefox hatchApp should set UseSharedMemory property to \"true\""))
+		t.Error("dockstore Firefox hatchApp should set UseSharedMemory property to \"true\"")
 		return
 	}
 	hatchAppBytes, _ := yaml.Marshal(hatchApp)
