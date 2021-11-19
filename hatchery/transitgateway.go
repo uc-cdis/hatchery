@@ -209,7 +209,7 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 		time.Sleep(10 * time.Second)
 		exTg, _ = svc.DescribeTransitGateways(tgInput)
 	}
-	networkInfo := &NetworkInfo{}
+	var networkInfo *NetworkInfo
 	if local {
 		networkInfo, err = describeMainNetwork(vpcid, svc)
 	} else {
@@ -496,7 +496,7 @@ func (creds *CREDS) acceptTGWShare() error {
 }
 
 func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string, svc *ec2.EC2, local bool, teardown bool, sess *CREDS) (*string, error) {
-	networkInfo := &NetworkInfo{}
+	var networkInfo *NetworkInfo
 	vpcid := os.Getenv("GEN3_VPCID")
 	Config.Logger.Printf("VPCID: %s", vpcid)
 	err := *new(error)

@@ -90,10 +90,15 @@ func getLocalPodClient() corev1.CoreV1Interface {
 	config, err := rest.InClusterConfig()
 	config.WrapTransport = kubernetestrace.WrapRoundTripper
 	if err != nil {
-		panic(err.Error())
+		Config.Logger.Printf("Error creating in-cluster config: %v", err)
+		return nil
 	}
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		Config.Logger.Printf("Error creating in-cluster clientset: %v", err)
+		return nil
+	}
 	// Access jobs. We can't do it all in one line, since we need to receive the
 	// errors and manage them appropriately
 	podClient := clientset.CoreV1()
