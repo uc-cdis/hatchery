@@ -37,13 +37,13 @@ func TestDockstoreComposeLoad(t *testing.T) {
 		t.Error("mon_Go service not loaded")
 		return
 	}
-	if "" == service.Deploy.Resources.Limits.Memory || "" == service.Deploy.Resources.Limits.CPU {
+	if service.Deploy.Resources.Limits.Memory == "" || service.Deploy.Resources.Limits.CPU == "" {
 		t.Error("mon_Go service failed to load resource limits")
 	}
-	if "" == service.Deploy.Resources.Requests.Memory || "" == service.Deploy.Resources.Requests.CPU {
+	if service.Deploy.Resources.Requests.Memory == "" || service.Deploy.Resources.Requests.CPU == "" {
 		t.Error("mon_Go service failed to load resource limits")
 	}
-	if "mon-go" != service.Name { // DNS safe name
+	if service.Name != "mon-go" { // DNS safe name
 		t.Error(fmt.Sprintf("mon_Go service has wrong name: %v", service.Name))
 	}
 
@@ -76,7 +76,7 @@ func TestDockstoreComposeTranslate(t *testing.T) {
 		t.Error(fmt.Sprintf("failed to translate app, got: %v", err))
 		return
 	}
-	if "" == hatchApp.UserVolumeLocation {
+	if hatchApp.UserVolumeLocation == "" {
 		t.Error("dockstore hatchApp should set UserVolumeLocation property")
 		return
 	}
@@ -100,7 +100,7 @@ func TestFirefoxAppTranslate(t *testing.T) {
 		t.Error(fmt.Sprintf("failed to translate app, got: %v", err))
 		return
 	}
-	if "true" != hatchApp.UseSharedMemory {
+	if hatchApp.UseSharedMemory != "true" {
 		t.Error("dockstore Firefox hatchApp should set UseSharedMemory property to \"true\"")
 		return
 	}

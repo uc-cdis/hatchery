@@ -13,7 +13,7 @@ func TestBuildPodFromJSON(t *testing.T) {
 		return
 	}
 	numApps := len(config.Config.Containers)
-	if 7 != numApps {
+	if numApps != 7 {
 		t.Error(fmt.Sprintf("did not load 7 apps, got: %v", numApps))
 		return
 	}
@@ -43,7 +43,7 @@ func TestBuildPodFromDockstore(t *testing.T) {
 		return
 	}
 	numApps := len(config.Config.Containers)
-	if 7 != numApps {
+	if numApps != 7 {
 		t.Error(fmt.Sprintf("did not load 7 apps, got: %v", numApps))
 		return
 	}

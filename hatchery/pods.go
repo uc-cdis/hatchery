@@ -550,7 +550,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	}
 
 	// some pods (ex - dockstore apps) only have "Friend" containers
-	if "" != hatchApp.Image {
+	if hatchApp.Image != "" {
 		var volumeMounts = []k8sv1.VolumeMount{
 			{
 				MountPath:        "/data",
@@ -559,7 +559,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			},
 		}
 
-		if "" != hatchApp.Gen3VolumeLocation {
+		if hatchApp.Gen3VolumeLocation != "" {
 			volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
 				MountPath: hatchApp.Gen3VolumeLocation,
 				Name:      "gen3",
@@ -571,7 +571,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			})
 		}
 
-		if "" != hatchApp.UserVolumeLocation {
+		if hatchApp.UserVolumeLocation != "" {
 			volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
 				MountPath: hatchApp.UserVolumeLocation,
 				Name:      "user-data",
