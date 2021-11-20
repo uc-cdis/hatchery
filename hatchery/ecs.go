@@ -267,7 +267,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 	cluster, err := svc.findEcsCluster()
 	if err != nil {
 		return "", err
@@ -346,7 +346,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 	Config.Logger.Printf("%s", userName)
 
 	hatchApp := Config.ContainersMap[hash]
@@ -582,10 +582,10 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 		Config.Logger.Printf("Failed to create/get LogGroup. Error: %s", err)
 		return "", err
 	}
-	svc := ecs.New(session.New(&aws.Config{
+	svc := ecs.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	Config.Logger.Printf("Creating ECS task definition")
 

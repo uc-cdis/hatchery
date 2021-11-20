@@ -233,7 +233,7 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 
 	result, err := svc.launchEcsCluster(userName)
 	if err != nil {
@@ -251,7 +251,7 @@ func statusEcs(ctx context.Context, userName string, accessToken string, awsAcct
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 	result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
 	if err != nil {
 		Config.Logger.Printf("Error: %s", err)

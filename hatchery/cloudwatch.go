@@ -9,10 +9,10 @@ import (
 
 //Create CloudWatch LogGroup for hatchery containers
 func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Credentials) (string, error) {
-	c := cloudwatchlogs.New(session.New(&aws.Config{
+	c := cloudwatchlogs.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	describeLogGroupIn := &cloudwatchlogs.DescribeLogGroupsInput{
 		LogGroupNamePrefix: aws.String(LogGroupName),

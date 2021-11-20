@@ -9,10 +9,10 @@ import (
 )
 
 func (creds *CREDS) taskRole(userName string) (*string, error) {
-	svc := iam.New(session.New(&aws.Config{
+	svc := iam.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	taskRoleInput := &iam.GetRoleInput{
 		RoleName: aws.String(userToResourceName(userName, "pod")),

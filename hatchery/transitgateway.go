@@ -386,13 +386,13 @@ func setupRemoteAccount(userName string, teardown bool) error {
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 
 	ec2Local := ec2.New(sess)
-	ec2Remote := ec2.New(session.New(&aws.Config{
+	ec2Remote := ec2.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: svc.creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	vpcid := os.Getenv("GEN3_VPCID")
 	Config.Logger.Printf("VPCID: %s", vpcid)
@@ -468,10 +468,10 @@ func setupRemoteAccount(userName string, teardown bool) error {
 }
 
 func (creds *CREDS) acceptTGWShare() error {
-	session := session.New(&aws.Config{
+	session := session.Must(session.NewSession(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
-	})
+	}))
 	svc := ram.New(session)
 
 	resourceShareInvitation, err := svc.GetResourceShareInvitations(&ram.GetResourceShareInvitationsInput{})

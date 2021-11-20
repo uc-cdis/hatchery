@@ -20,12 +20,12 @@ func setupVPC(userName string) (*string, error) {
 		Region: aws.String("us-east-1"),
 	}))
 
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 
-	ec2Remote := ec2.New(session.New(&aws.Config{
+	ec2Remote := ec2.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: svc.creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	// Subnets
 	// TODO: make base CIDR configurable?
