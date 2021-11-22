@@ -138,10 +138,10 @@ func (creds *CREDS) createListener(svc *elbv2.ELBV2, loadBalancer string, target
 }
 
 func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalancerOutput, *string, *elbv2.CreateListenerOutput, error) {
-	svc := elbv2.New(session.New(&aws.Config{
+	svc := elbv2.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	networkInfo, err := creds.describeWorkspaceNetwork(userName)
 	if err != nil {

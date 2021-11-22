@@ -9,10 +9,10 @@ import (
 )
 
 func (creds *CREDS) taskRole(userName string) (*string, error) {
-	svc := iam.New(session.New(&aws.Config{
+	svc := iam.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	taskRoleInput := &iam.GetRoleInput{
 		RoleName: aws.String(userToResourceName(userName, "pod")),
@@ -59,10 +59,13 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 			  `),
 		}
 
-		svc.AttachRolePolicy(&iam.AttachRolePolicyInput{
+		_, err = svc.AttachRolePolicy(&iam.AttachRolePolicyInput{
 			PolicyArn: policy.Policy.Arn,
 			RoleName:  aws.String(userToResourceName(userName, "pod")),
 		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to attach RolePolicy: %s", err)
+		}
 		createTaskRole, err := svc.CreateRole(createTaskRoleInput)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create TaskRole: %s", err)
