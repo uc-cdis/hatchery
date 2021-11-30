@@ -154,20 +154,20 @@ func (sess *CREDS) findEcsCluster() (*ecs.Cluster, error) {
 					if aerr, ok := err.(awserr.Error); ok {
 						switch aerr.Code() {
 						default:
-							return nil, errors.New(fmt.Sprintf("Cannot create ECS cluster named %s: %s", clusterName, aerr.Code()))
+							return nil, fmt.Errorf("Cannot create ECS cluster named %s: %s", clusterName, aerr.Code())
 						}
 					}
-					return nil, errors.New(fmt.Sprintf("Cannot create ECS cluster named %s: %s", clusterName, err.Error()))
+					return nil, fmt.Errorf("Cannot create ECS cluster named %s: %s", clusterName, err.Error())
 				}
 				describeClusterResult, err = svc.DescribeClusters(clusterInput)
 				if err != nil || len(describeClusterResult.Failures) > 0 {
-					return nil, errors.New(fmt.Sprintf("Still cannot find ECS cluster named %s: %s", clusterName, err.Error()))
+					return nil, fmt.Errorf("Still cannot find ECS cluster named %s: %s", clusterName, err.Error())
 				}
 				return describeClusterResult.Clusters[0], nil
 			}
 		}
 		Config.Logger.Printf("ECS cluster named %s cannot be described", clusterName)
-		return nil, errors.New(fmt.Sprintf("ECS cluster named %s cannot be described", clusterName))
+		return nil, fmt.Errorf("ECS cluster named %s cannot be described", clusterName)
 	} else {
 		return describeClusterResult.Clusters[0], nil
 	}
@@ -268,7 +268,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 	cluster, err := svc.findEcsCluster()
 	if err != nil {
 		return "", err
@@ -347,7 +347,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 	Config.Logger.Printf("%s", userName)
 
 	hatchApp := Config.ContainersMap[hash]
@@ -473,7 +473,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	}
 	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash, payModel.AWSAccountId)
 	if err != nil {
-		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
+		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
+		if aerr != nil {
+			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
+		}
 		return err
 	}
 	err = setupTransitGateway(userName)
@@ -483,7 +486,10 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash, payModel)
 	if err != nil {
-		deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
+		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
+		if aerr != nil {
+			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
+		}
 		return err
 	}
 
@@ -577,10 +583,10 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 		Config.Logger.Printf("Failed to create/get LogGroup. Error: %s", err)
 		return "", err
 	}
-	svc := ecs.New(session.New(&aws.Config{
+	svc := ecs.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	Config.Logger.Printf("Creating ECS task definition")
 

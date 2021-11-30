@@ -95,11 +95,11 @@ func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc 
 }
 
 func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
-	svc := efs.New(session.New(&aws.Config{
+	svc := efs.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: creds.creds,
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
-	}))
+	})))
 	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "fs"
 	exisitingFS, err := creds.getEFSFileSystem(userName, svc)
 	if err != nil {

@@ -118,7 +118,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	if nil != data.Config.MoreConfigs && 0 < len(data.Config.MoreConfigs) {
 		for _, info := range data.Config.MoreConfigs {
 			if info.AppType == "dockstore-compose:1.0.0" {
-				if "" == info.Name {
+				if info.Name == "" {
 					return nil, fmt.Errorf("Empty name for more-configs app at: %v", info.Path)
 				}
 				data.Logger.Printf("loading config from %v", info.Path)

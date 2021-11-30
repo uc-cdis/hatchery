@@ -13,7 +13,7 @@ func TestBuildPodFromJSON(t *testing.T) {
 		return
 	}
 	numApps := len(config.Config.Containers)
-	if 7 != numApps {
+	if numApps != 7 {
 		t.Error(fmt.Sprintf("did not load 7 apps, got: %v", numApps))
 		return
 	}
@@ -29,6 +29,9 @@ func TestBuildPodFromJSON(t *testing.T) {
 		t.Error(fmt.Sprintf("unexpected number of containers in pod, desired value is %v but got %v", len(app.Friends)+2, numContainers))
 	}
 	jsBytes, err := json.MarshalIndent(pod, "", "  ")
+	if nil != err {
+		t.Error(fmt.Sprintf("failed to marshal JSON - %v", err))
+	}
 
 	config.Logger.Printf("pod_test marshalled pod: %v", string(jsBytes))
 }
@@ -40,7 +43,7 @@ func TestBuildPodFromDockstore(t *testing.T) {
 		return
 	}
 	numApps := len(config.Config.Containers)
-	if 7 != numApps {
+	if numApps != 7 {
 		t.Error(fmt.Sprintf("did not load 7 apps, got: %v", numApps))
 		return
 	}
@@ -56,6 +59,9 @@ func TestBuildPodFromDockstore(t *testing.T) {
 		t.Error(fmt.Sprintf("unexpected number of containers in pod, desired value is %v but got %v", len(app.Friends), numContainers))
 	}
 	jsBytes, err := json.MarshalIndent(pod, "", "  ")
+	if nil != err {
+		t.Error(fmt.Sprintf("failed to marshal JSON - %v", err))
+	}
 
 	config.Logger.Printf("pod_test marshalled pod: %v", string(jsBytes))
 }
