@@ -10,6 +10,7 @@ import (
 	"github.com/uc-cdis/hatchery/hatchery"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
 func main() {
@@ -35,6 +36,20 @@ func main() {
 		config.Logger.Printf("Setting up datadog")
 		tracer.Start()
 		defer tracer.Stop()
+		if err := profiler.Start(
+			profiler.WithProfileTypes(
+				profiler.CPUProfile,
+				profiler.HeapProfile,
+
+				// The profiles below are disabled by default to keep overhead low, but can be enabled as needed.
+				// profiler.BlockProfile,
+				// profiler.MutexProfile,
+				// profiler.GoroutineProfile,
+			),
+		); err != nil {
+			config.Logger.Printf("DD profiler setup failed with error: %s", err)
+		}
+		defer profiler.Stop()
 	} else {
 		config.Logger.Printf("Datadog not enabled in manifest, skipping...")
 	}

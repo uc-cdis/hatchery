@@ -35,6 +35,7 @@ An example manifest entry may look like
       "user-uid": 1000,
       "fs-gid": 100,
       "user-volume-location": "/home/jovyan/pd",
+      "gen3-volume-location": "/home/jovyan/.gen3"
       "friends": []
     }]
   }
@@ -66,7 +67,8 @@ An example manifest entry may look like
     * `ready-probe` the path to use for the Kubernetes readiness probe.
     * `user-uid` the UID for the user in this container.
     * `fs-gid` the GID for the filesystem mounts.
-    * `user-volume-location` the location where the user persistant storage should be mounted in this container.
+    * `user-volume-location` the location where the user persistent storage should be mounted in this container.
+    * `gen3-volume-location` the location where the user's API key file will be put into
     * `lifecycle-pre-stop` a string array as the container prestop command.
     * `lifecycle-post-start` a string array as the container poststart command.
     * `friends` is a list of kubernetes containers to deploy alongside the main container and the sidecar in the kubernetes pod
