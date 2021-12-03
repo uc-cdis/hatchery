@@ -706,7 +706,27 @@ func getPayModelForUser(userName string) (result *PayModel, err error) {
 func createLocalK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
 	hatchApp := Config.ContainersMap[hash]
 
+	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
+	if err != nil {
+		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
+		return err
+	}
+	
 	var extraVars []k8sv1.EnvVar
+
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "API_KEY",
+		Value: apiKey.APIKey,
+	})
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "API_KEY_ID",
+		Value: apiKey.KeyID,
+	})
+	// TODO: still mounting access token for now, remove this when fully switched to use API key
+	extraVars = append(extraVars, k8sv1.EnvVar{
+		Name:  "ACCESS_TOKEN",
+		Value: accessToken,
+	})
 	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
