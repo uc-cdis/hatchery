@@ -10,7 +10,7 @@ import (
 	"github.com/uc-cdis/hatchery/hatchery"
 	"github.com/uc-cdis/hatchery/hatchery/openapi"
 
-	//httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	muxtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
@@ -57,9 +57,6 @@ func main() {
 	}
 
 	config.Logger.Printf("Setting up routes")
-	//mux := httptrace.NewServeMux()
-	//hatchery.RegisterSystem(mux)
-	//hatchery.RegisterHatchery(mux)
 
 	service, err := hatchery.NewAPIService()
 	if err != nil {
@@ -71,7 +68,10 @@ func main() {
 	hatchery.RegisterUI(router)
 	hatchery.RegisterSystem(router)
 
+	traceRouter := muxtrace.NewRouter()
+	traceRouter.Router = router
+
 	serverHost := fmt.Sprintf("0.0.0.0:%d", config.Config.ServerPort)
 	config.Logger.Printf("Running main on %s", serverHost)
-	log.Fatal(http.ListenAndServe( serverHost, router))
+	log.Fatal(http.ListenAndServe(serverHost, traceRouter))
 }
