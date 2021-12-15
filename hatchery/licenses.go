@@ -1,174 +1,286 @@
 package hatchery
 
 import (
-	"context"
-	"encoding/json"
+
+	// AWS
+
 	"fmt"
-	"io/ioutil"
-	"log"
-	"os"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 )
+
+// type License struct {
+// 	Name        string          `json:"name"`
+// 	UserLimit   int             `json:"userLimit"`
+// 	LicenseData string          `json:"licenseData"`
+// 	Users       map[string]User `json:"users"`
+// 	// not marshalled
+// 	fileName string            `json:"-"`
+// 	updates  chan *Transaction `json:"-"`
+// 	logger   *log.Logger
+// }
 
 type License struct {
-	Name        string          `json:"name"`
-	UserLimit   int             `json:"userLimit"`
-	LicenseData string          `json:"licenseData"`
-	Users       map[string]User `json:"users"`
-	// not marshalled
-	fileName string            `json:"-"`
-	updates  chan *Transaction `json:"-"`
-	logger   *log.Logger
-}
-
-type User struct {
-	LicenseName       string `json:"licenseName"`
-	LastUsedTimestamp int64  `json:"lastUsedTimestamp"`
-}
-
-type Transaction struct {
-	UserName    string
-	Context     context.Context
-	AccessToken string
-	Action      TransactionType
-	Result      chan TransactionResult
-}
-
-type TransactionType int
-
-const (
-	ADD_USER TransactionType = iota
-	RENEW_USER
-	REMOVE_EXPIRED_USERS
-)
-
-type TransactionResult struct {
-	Error error
-	Users map[string]User
+	LicenseName  string
+	UserLimit    int
+	LicenseData  string
+	LicenseUsers map[string]int64
 }
 
 const (
-	TIMEOUT_SECONDS = 60
+	TIMEOUT_SECONDS       = 60
+	MAX_CHECKOUT_ATTEMPTS = 5
+	LICENSE_TABLE         = "licenses-test"
 )
 
-func NewLicense(licenseFilePath string) (*License, error) {
+var Now = time.Now
 
-	var license License
-	licenseData, err := ioutil.ReadFile(licenseFilePath)
-	if nil != err {
-		return &license, err
+// TODO
+// Create a table for the licenses
+// add Stata, determine schema
+// query for stata via CLI
+// add a function for querying licenses
+// checkout license via CLI
+// convert to function
+// function to renew license
+// function to release license
+// tests (?)
+
+// aws dynamodb create-table --attribute-definitions AttributeName=name,AttributeType=S --table-name licenses-test --key-schema AttributeName=name,KeyType=HASH --provisioned-throughput ReadCapacityUnits=1,WriteCapacityUnits=1
+// aws dynamodb scan --table-name licenses-test
+// aws dynamodb put-item --table-name licenses-test  --item '{"name": {"S":"test1"}}'
+
+// License
+//	{
+//		"name": "STATA-HEAL",
+//		"licenseData":	"asfdwer",
+//		"userLimit": 6,
+//		"users": {
+//			[username]: 166902348, //timestamp
+//		}
+//	}
+
+func GetLicenses() ([]License, error) {
+
+	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: *conf,
+	}))
+
+	dynamodbSvc := dynamodb.New(sess)
+	scanInput := &dynamodb.ScanInput{
+		TableName: aws.String(LICENSE_TABLE),
 	}
 
-	err = json.Unmarshal(licenseData, &license)
-	if nil != err {
-		return &license, err
+	res, err := dynamodbSvc.Scan(scanInput)
+
+	if err != nil {
+		return []License{}, nil
 	}
-	license.fileName = licenseFilePath
-	license.updates = make(chan *Transaction, 100)
+	var licenses []License
 
-	license.logger = log.New(os.Stdout, fmt.Sprintf("[%v]", license.Name), log.LstdFlags)
-	license.logger.Printf("Initialized from file %v", license.fileName)
-
-	go license.processTransactions()
-	return &license, nil
+	for _, licenseItem := range res.Items {
+		unmarshalledLicense := License{}
+		dynamodbattribute.UnmarshalMap(licenseItem, &unmarshalledLicense)
+		licenses = append(licenses, unmarshalledLicense)
+	}
+	return licenses, nil
 }
 
-func (license *License) processTransactions() {
-	var err error
-	for tx := range license.updates {
+func CheckoutLicense(licenseName string, user string) error {
+	license, err := getLicense(licenseName)
+	if err != nil {
+		return err
+	}
 
-		switch tx.Action {
-		case ADD_USER:
-			{
-				if _, alreadyCheckedOut := license.Users[tx.UserName]; !alreadyCheckedOut {
-					if len(license.Users) < license.UserLimit {
-						license.Users[tx.UserName] = User{
-							LicenseName:       license.Name,
-							LastUsedTimestamp: time.Now().Unix(),
-						}
-						license.logger.Printf("Checked out license to %v", tx.UserName)
-					} else {
-						err = fmt.Errorf("License is already at user limit")
-					}
-				}
+	if _, alreadyCheckedOut := license.LicenseUsers[user]; alreadyCheckedOut {
+		return fmt.Errorf("user %s already has license %s", user, licenseName)
+	} else {
+		// retry if someone else modifies this license document while we attempt to
+
+		for attempts := 0; attempts < MAX_CHECKOUT_ATTEMPTS; attempts++ {
+
+			if len(license.LicenseUsers) == license.UserLimit {
+				return fmt.Errorf("license %s is already at max user capacity", licenseName)
 			}
-		case RENEW_USER:
-			{
-				if _, userExists := license.Users[tx.UserName]; userExists {
-					license.Users[tx.UserName] = User{
-						LicenseName:       license.Name,
-						LastUsedTimestamp: time.Now().Unix(),
-					}
-					license.logger.Printf("Renewed for user %v", tx.UserName)
-				} else {
-					err = fmt.Errorf("User does not have this license")
-				}
+
+			didSetUser, err := setUserLicenseIfNotStale(license, user)
+			if didSetUser {
+				fmt.Printf("license %s successfully checked out to user %s\n", licenseName, user)
+				return nil
+			} else if err != nil {
+				return err
 			}
-		case REMOVE_EXPIRED_USERS:
-			{
-				for userName, user := range license.Users {
-					if time.Now().Unix() > user.LastUsedTimestamp+TIMEOUT_SECONDS {
-						delete(license.Users, userName)
-						license.logger.Printf("License expired for %v", userName)
-					}
-				}
+			fmt.Printf(
+				"stale read while attempting to checkout license %s to user %s. retrying...\n", licenseName, user,
+			)
+
+			license, err = getLicense(licenseName)
+			if err != nil {
+				return err
 			}
 		}
-		license.marshal()
-		if nil != tx.Result {
-			usersCopy := make(map[string]User)
-			for userName, user := range license.Users {
-				usersCopy[userName] = user
-			}
-			tx.Result <- TransactionResult{Error: err, Users: usersCopy}
+		return fmt.Errorf(
+			"exceeded max attempts to checkout license %s to user %s. (high concurrent activity)", licenseName, user,
+		)
+	}
+}
+
+// renew a license to a user
+func RenewLicense(licenseName string, user string) error {
+	license, err := getLicense(licenseName)
+	if err != nil {
+		return err
+	}
+
+	// retry if someone else modifies this license document while we attempt to
+	for attempts := 0; attempts < MAX_CHECKOUT_ATTEMPTS; attempts++ {
+
+		if _, isCheckedOut := license.LicenseUsers[user]; !isCheckedOut {
+			return fmt.Errorf("user %s has not checked out license %s", user, licenseName)
+		}
+
+		didSetUser, err := setUserLicenseIfNotStale(license, user)
+		if didSetUser {
+			fmt.Printf("license %s successfully renewed for user %s\n", licenseName, user)
+			return nil
+		} else if err != nil {
+			return err
+		}
+		fmt.Printf(
+			"stale read while attempting to renew license %s for user %s. retrying...", licenseName, user,
+		)
+
+		license, err = getLicense(licenseName)
+		if err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf(
+		"exceeded max attempts to checkout license %s to user %s. (high concurrent activity)", licenseName, user,
+	)
+}
+
+func RevokeLicense(licenseName string, user string) {
+
+	license, _ := getLicense(licenseName)
+
+	for attempts := 0; attempts < MAX_CHECKOUT_ATTEMPTS; attempts++ {
+		if revokeUserLicenseIfNotStale(license, user) == nil {
+			return
 		}
 	}
 }
 
-func (license *License) CheckoutToUser(userName string) (map[string]User, error) {
+func getLicense(licenseName string) (License, error) {
 
-	transaction := &Transaction{
-		UserName: userName,
-		Action:   ADD_USER,
-		Result:   make(chan TransactionResult),
+	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: *conf,
+	}))
+	dynamodbSvc := dynamodb.New(sess)
+
+	license := License{}
+	filt := expression.Name("LicenseName").Equal(expression.Value(licenseName))
+	expr, err := expression.NewBuilder().WithFilter(filt).Build()
+	if err != nil {
+		return license, err
 	}
-	license.updates <- transaction
 
-	res := <-transaction.Result
-	return res.Users, res.Error
+	scanInput := &dynamodb.ScanInput{
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+		FilterExpression:          expr.Filter(),
+		TableName:                 aws.String(LICENSE_TABLE),
+	}
+	res, err := dynamodbSvc.Scan(scanInput)
+	if err != nil {
+		return license, err
+	}
+
+	if len(res.Items) == 0 {
+		return license, fmt.Errorf("License %s not found", licenseName)
+	}
+
+	dynamodbattribute.UnmarshalMap(res.Items[0], &license)
+	return license, nil
 }
 
-func (license *License) RenewForUser(userName string) (map[string]User, error) {
-	transaction := &Transaction{
-		UserName: userName,
-		Action:   RENEW_USER,
-		Result:   make(chan TransactionResult),
+func setUserLicenseIfNotStale(license License, user string) (bool, error) {
+
+	ensureCleanReadCondition := expression.Name("LicenseUsers").Equal(expression.Value(license.LicenseUsers))
+	expr, err := expression.NewBuilder().
+		WithCondition(ensureCleanReadCondition).
+		Build()
+	if err != nil {
+		return false, err
 	}
-	license.updates <- transaction
 
-	res := <-transaction.Result
-	return res.Users, res.Error
-}
+	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: *conf,
+	}))
+	dynamodbSvc := dynamodb.New(sess)
 
-func MonitorConfiguredLicensesForExpiry() {
-	for {
-		time.Sleep(time.Duration(30) * time.Second)
-		for _, license := range Config.Licenses {
-			transaction := &Transaction{
-				Action: REMOVE_EXPIRED_USERS,
-			}
-			license.updates <- transaction
+	if license.LicenseUsers == nil {
+		license.LicenseUsers = make(map[string]int64)
+	}
+	license.LicenseUsers[user] = Now().Unix()
+	marshalledLicenseItem, _ := dynamodbattribute.MarshalMap(license)
+
+	_, err = dynamodbSvc.PutItem(&dynamodb.PutItemInput{
+		Item:                      marshalledLicenseItem,
+		TableName:                 aws.String(LICENSE_TABLE),
+		ConditionExpression:       expr.Condition(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	})
+
+	if err != nil {
+		fmt.Printf("%v\n", err)
+		if awsErr, _ := err.(awserr.Error); awsErr.Code() == "ConditionalCheckFailedException" {
+			return false, nil
+		} else {
+			return false, err
 		}
+	} else {
+		return true, nil
 	}
+
 }
 
-func RenewAllLicensesForUser(userName string) {
-	for _, license := range Config.Licenses {
-		license.RenewForUser(userName)
-	}
-}
+func revokeUserLicenseIfNotStale(license License, user string) error {
 
-func (license *License) marshal() {
-	bytes, _ := json.MarshalIndent(license, "", "\t")
-	ioutil.WriteFile(license.fileName, bytes, 0644)
+	ensureCleanReadCondition := expression.Name("LicenseUsers").Equal(expression.Value(license.LicenseUsers))
+	expr, err := expression.NewBuilder().
+		WithCondition(ensureCleanReadCondition).
+		Build()
+	if err != nil {
+		return err
+	}
+
+	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: *conf,
+	}))
+	dynamodbSvc := dynamodb.New(sess)
+
+	delete(license.LicenseUsers, user)
+	marshalledLicenseItem, _ := dynamodbattribute.MarshalMap(license)
+
+	_, err = dynamodbSvc.PutItem(&dynamodb.PutItemInput{
+		Item:                      marshalledLicenseItem,
+		TableName:                 aws.String(LICENSE_TABLE),
+		ConditionExpression:       expr.Condition(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	})
+
+	return err
 }

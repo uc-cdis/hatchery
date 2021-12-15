@@ -1,30 +1,17 @@
 package hatchery
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
-
-type APIKeyStruct struct {
-	APIKey string `json:"api_key"`
-	KeyID  string `json:"key_id"`
-}
-
-type WorkspaceKernelStatusStruct struct {
-	LastActivityTime string `json:"last_activity"`
-}
 
 // Config package-global shared hatchery config
 var Config *FullHatcheryConfig
@@ -39,42 +26,7 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/paymodels", paymodels)
 
 	// ECS functions
-	mux.HandleFunc("/create-ecs-cluster", ecsCluster)
-
-	// Test functions
-	mux.HandleFunc("/vpc", vpc)
-	mux.HandleFunc("/tt", tt)
-	mux.HandleFunc("/tt_del", tt_delete)
-}
-
-func vpc(w http.ResponseWriter, r *http.Request) {
-	userName := r.Header.Get("REMOTE_USER")
-	_, err := setupVPC(userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-	} else {
-		fmt.Fprintf(w, fmt.Sprintf("VPC setup"))
-	}
-}
-
-func tt(w http.ResponseWriter, r *http.Request) {
-	userName := r.Header.Get("REMOTE_USER")
-	err := setupTransitGateway(userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-	} else {
-		fmt.Fprintf(w, fmt.Sprintf("TransitGateway setup"))
-	}
-}
-
-func tt_delete(w http.ResponseWriter, r *http.Request) {
-	userName := r.Header.Get("REMOTE_USER")
-	err := teardownTransitGateway(userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-	} else {
-		fmt.Fprintf(w, fmt.Sprintf("TransitGatewayAttachment deleted"))
-	}
+	mux.HandleFunc("/create-ecs-cluster", createECSCluster)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -99,18 +51,22 @@ func getCurrentUserName(r *http.Request) (userName string) {
 
 func paymodels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
-		http.Error(w, "Not Found", 404)
+		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 	userName := getCurrentUserName(r)
-	paymodel, err := getPayModelForUser(userName)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
+	payModel, err := getPayModelForUser(userName)
+	if payModel == nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	out, err := json.Marshal(paymodel)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out, err := json.Marshal(payModel)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	fmt.Fprintf(w, string(out))
@@ -120,30 +76,28 @@ func status(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	accessToken := getBearerToken(r)
 
-	go RenewAllLicensesForUser(userName)
-
-	paymodel, err := getPayModelForUser(userName)
+	payModel, err := getPayModelForUser(userName)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		Config.Logger.Printf(err.Error())
+	}
+	var result *WorkspaceStatus
+	if payModel != nil && payModel.Ecs == "true" {
+		result, err = statusEcs(r.Context(), userName, accessToken, payModel.AWSAccountId)
+	} else {
+		result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if paymodel.Ecs == "true" {
-		statusEcs(r.Context(), w, userName, accessToken)
-	} else {
-		result, err := statusK8sPod(r.Context(), userName, accessToken)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
 
-		out, err := json.Marshal(result)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		fmt.Fprintf(w, string(out))
+	out, err := json.Marshal(result)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+
+	fmt.Fprintf(w, string(out))
 }
 
 func options(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +132,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 
 	out, err := json.Marshal(options)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -187,7 +141,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 
 func launch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", 404)
+		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 	accessToken := getBearerToken(r)
@@ -195,46 +149,52 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	hash := r.URL.Query().Get("id")
 
 	if hash == "" {
-		http.Error(w, "Missing ID argument", 400)
+		http.Error(w, "Missing ID argument", http.StatusBadRequest)
 		return
 	}
 
 	userName := getCurrentUserName(r)
-	paymodel, err := getPayModelForUser(userName)
+	payModel, err := getPayModelForUser(userName)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		Config.Logger.Printf(err.Error())
+	}
+	if payModel == nil {
+		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
+	} else if payModel.Ecs == "true" {
+		err = launchEcsWorkspace(r.Context(), userName, hash, accessToken, *payModel)
+	} else {
+		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if paymodel.Ecs == "true" {
-		launchEcs(w, r)
-	} else {
-		err := createK8sPod(r.Context(), string(hash), userName, accessToken)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		fmt.Fprintf(w, "Success")
-	}
+	fmt.Fprintf(w, "Success")
 }
 
 func terminate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", 404)
+		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
-	paymodel, err := getPayModelForUser(userName)
+	payModel, err := getPayModelForUser(userName)
 	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
+		Config.Logger.Printf(err.Error())
 	}
-	if paymodel.Ecs == "true" {
-		terminateEcs(w, r)
-	} else {
-		err := deleteK8sPod(r.Context(), userName, accessToken)
+	if payModel != nil && payModel.Ecs == "true" {
+		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		} else {
+			fmt.Fprintf(w, fmt.Sprintf("Terminated ECS workspace at %s", svc))
+		}
+	} else {
+		err := deleteK8sPod(r.Context(), userName, accessToken, payModel)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		fmt.Fprintf(w, "Terminated workspace")
@@ -255,232 +215,47 @@ func getBearerToken(r *http.Request) string {
 
 // ECS functions
 
-// Function to terminate workspace in ECS
-func terminateEcs(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Not Found", 404)
-		return
-	}
-	accessToken := getBearerToken(r)
-	userName := getCurrentUserName(r)
-	if payModelExistsForUser(userName) {
-		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken)
-		if err != nil {
-			fmt.Fprintf(w, fmt.Sprintf("%s", err))
-		} else {
-			fmt.Fprintf(w, fmt.Sprintf("%s", svc))
-		}
-	} else {
-		http.Error(w, "Paymodel has not been setup for user", 404)
-	}
-}
-
-// Function to launch workspace in ECS
-// TODO: Evaluate this functionality
-func launchEcs(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Not Found", 404)
-		return
-	}
-	hash := r.URL.Query().Get("id")
-
-	if hash == "" {
-		http.Error(w, "Missing ID argument", 400)
-		return
-	}
-
-	accessToken := getBearerToken(r)
-	userName := getCurrentUserName(r)
-	if payModelExistsForUser(userName) {
-		result, err := launchEcsWorkspace(r.Context(), userName, hash, accessToken)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("%s", err), 500)
-			Config.Logger.Printf("Error: %s", err)
-		}
-
-		fmt.Fprintf(w, fmt.Sprintf("%+v", result))
-
-	} else {
-		http.Error(w, "Paymodel has not been setup for user", 404)
-	}
-}
-
 // Function to create ECS cluster.
 // TODO: NEED TO CALL THIS FUNCTION IF IT DOESN'T EXIST!!!
-func ecsCluster(w http.ResponseWriter, r *http.Request) {
+func createECSCluster(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
-	if payModelExistsForUser(userName) {
-		paymodel, err := getPayModelForUser(userName)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
-		sess := session.Must(session.NewSession(&aws.Config{
-			// TODO: Make this configurable
-			Region: aws.String("us-east-1"),
-		}))
-		svc := NewSession(sess, roleARN)
+	payModel, err := getPayModelForUser(userName)
+	if payModel == nil {
+		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
+	sess := session.Must(session.NewSession(&aws.Config{
+		// TODO: Make this configurable
+		Region: aws.String("us-east-1"),
+	}))
+	svc := NewSession(sess, roleARN)
 
-		result, err := svc.launchEcsCluster(userName)
-		if err != nil {
-			fmt.Fprintf(w, fmt.Sprintf("%s", err))
-			Config.Logger.Printf("Error: %s", err)
-		} else {
-			fmt.Fprintf(w, fmt.Sprintf("%s", result))
-		}
+	result, err := svc.launchEcsCluster(userName)
+	if err != nil {
+		fmt.Fprintf(w, fmt.Sprintf("%s", err))
+		Config.Logger.Printf("Error: %s", err)
 	} else {
-		http.Error(w, "Paymodel has not been setup for user", 404)
+		fmt.Fprintf(w, fmt.Sprintf("%s", result))
 	}
 }
 
 // Function to check status of ECS workspace.
-func statusEcs(ctx context.Context, w http.ResponseWriter, userName string, accessToken string) {
-	if payModelExistsForUser(userName) {
-		paymodel, err := getPayModelForUser(userName)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
-		sess := session.Must(session.NewSession(&aws.Config{
-			// TODO: Make this configurable
-			Region: aws.String("us-east-1"),
-		}))
-		svc := NewSession(sess, roleARN)
-		result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
-		if err != nil {
-			Config.Logger.Printf("Error: %s", err)
-		}
-		out, err := json.Marshal(result)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-
-		fmt.Fprintf(w, string(out))
-	} else {
-		http.Error(w, "Paymodel has not been setup for user", 404)
-	}
-}
-
-// API key related helper functions
-// Make http request with header and body
-func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint string, accessToken string, contentType string, headers map[string]string, body *bytes.Buffer) (*http.Response, error) {
-	if headers == nil {
-		headers = make(map[string]string)
-	}
-	if accessToken != "" {
-		headers["Authorization"] = "Bearer " + accessToken
-	}
-	if contentType != "" {
-		headers["Content-Type"] = contentType
-	}
-	client := &http.Client{Timeout: 10 * time.Second}
-	var req *http.Request
-	var err error
-	if body == nil {
-		req, err = http.NewRequestWithContext(ctx, method, apiEndpoint, nil)
-	} else {
-		req, err = http.NewRequestWithContext(ctx, method, apiEndpoint, body)
-	}
-
+func statusEcs(ctx context.Context, userName string, accessToken string, awsAcctID string) (*WorkspaceStatus, error) {
+	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
+	sess := session.Must(session.NewSession(&aws.Config{
+		// TODO: Make this configurable
+		Region: aws.String("us-east-1"),
+	}))
+	svc := NewSession(sess, roleARN)
+	result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
 	if err != nil {
-		return nil, errors.New("Error occurred during generating HTTP request: " + err.Error())
-	}
-	for k, v := range headers {
-		req.Header.Add(k, v)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, errors.New("Error occurred during making HTTP request: " + err.Error())
-	}
-	return resp, nil
-}
-
-func getFenceURL() string {
-	fenceURL := "http://fence-service/"
-	_, ok := os.LookupEnv("GEN3_ENDPOINT")
-	if ok {
-		fenceURL = "https://" + os.Getenv("GEN3_ENDPOINT") + "/user/"
-	}
-	return fenceURL
-}
-
-func getAmbassadorURL() string {
-	ambassadorURL := "http://ambassador-service/"
-	_, ok := os.LookupEnv("GEN3_ENDPOINT")
-	if ok {
-		ambassadorURL = "https://" + os.Getenv("GEN3_ENDPOINT") + "/lw-workspace/proxy/"
-	}
-	return ambassadorURL
-}
-
-func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIKeyStruct, err error) {
-	if accessToken == "" {
-		return nil, errors.New("No valid access token")
-	}
-
-	fenceAPIKeyURL := getFenceURL() + "credentials/api/"
-	body := bytes.NewBufferString("{\"scope\": [\"data\", \"user\"]}")
-
-	resp, err := MakeARequestWithContext(ctx, "POST", fenceAPIKeyURL, accessToken, "application/json", nil, body)
-	if err != nil {
+		Config.Logger.Printf("Error: %s", err)
 		return nil, err
 	}
-
-	if resp != nil && resp.StatusCode != 200 {
-		return nil, errors.New("Error occurred when creating API key with error code " + strconv.Itoa(resp.StatusCode))
-	}
-	defer resp.Body.Close()
-
-	fenceApiKeyResponse := new(APIKeyStruct)
-	err = json.NewDecoder(resp.Body).Decode(fenceApiKeyResponse)
-	if err != nil {
-		return nil, errors.New("Unable to decode API key response: " + err.Error())
-	}
-	return fenceApiKeyResponse, nil
-}
-
-func deleteAPIKeyWithContext(ctx context.Context, accessToken string, apiKeyID string) error {
-	if accessToken == "" {
-		return errors.New("No valid access token")
-	}
-
-	fenceDeleteAPIKeyURL := getFenceURL() + "credentials/api/" + apiKeyID
-	resp, err := MakeARequestWithContext(ctx, "DELETE", fenceDeleteAPIKeyURL, accessToken, "", nil, nil)
-	if err != nil {
-		return err
-	}
-	if resp != nil && resp.StatusCode != 204 {
-		return errors.New("Error occurred when deleting API key with error code " + strconv.Itoa(resp.StatusCode))
-	}
-	return nil
-}
-
-func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (lastActivityTime int64, err error) {
-	if accessToken == "" {
-		return -1, errors.New("No valid access token")
-	}
-
-	workspaceKernelStatusURL := getAmbassadorURL() + "api/status"
-	resp, err := MakeARequestWithContext(ctx, "GET", workspaceKernelStatusURL, accessToken, "", nil, nil)
-	if err != nil {
-		return -1, err
-	}
-	if resp != nil && resp.StatusCode != 200 {
-		return -1, errors.New("Error occurred when getting workspace kernel status with error code " + strconv.Itoa(resp.StatusCode))
-	}
-	defer resp.Body.Close()
-
-	workspaceKernelStatusResponse := new(WorkspaceKernelStatusStruct)
-	err = json.NewDecoder(resp.Body).Decode(workspaceKernelStatusResponse)
-	if err != nil {
-		return -1, errors.New("Unable to decode workspace kernel status response: " + err.Error())
-	}
-	lastAct, err := time.Parse(time.RFC3339, workspaceKernelStatusResponse.LastActivityTime)
-	if err != nil {
-		return -1, errors.New("Unable to parse last activity time: " + err.Error())
-	}
-	return lastAct.Unix() * 1000, nil
+	return result, nil
 }
