@@ -34,7 +34,7 @@ type Container struct {
 	Gen3VolumeLocation string            `json:"gen3-volume-location"`
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
-	Licenses           []LicenseInfo     `json:"licenses"`
+	Licenses           []string          `json:"licenses"`
 }
 
 // SidecarContainer holds fuse sidecar configuration
@@ -66,17 +66,13 @@ type PayModel struct {
 	Subnet       int    `json:subnet`
 }
 
-// Reference to a license secret, will map to container env var if available
-type LicenseInfo struct {
-	Name             string `json:"name"`
-	FailIfUnvailable bool   `json:"failIfUnavailable"`
-}
-
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace          string           `json:"user-namespace"`
 	PayModels              []PayModel       `json:"pay-models"`
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
+	LicensesDynamodbTable  string           `json:"licenses-dynamodb-table"`
+	LicensesDynamodbRegion string           `json:"licenses-dynamodb-region"`
 	SubDir                 string           `json:"sub-dir"`
 	Containers             []Container      `json:"containers"`
 	UserVolumeSize         string           `json:"user-volume-size"`
@@ -90,8 +86,9 @@ type FullHatcheryConfig struct {
 	ContainersMap map[string]Container
 	PayModelMap   map[string]PayModel
 	Logger        *log.Logger
-	Licenses      map[string]*License
 }
+
+const DEFAULT_DDB_REGION = "us-east-1"
 
 // LoadConfig from a json file
 func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatcheryConfig, err error) {
@@ -152,6 +149,10 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	for _, payModel := range data.Config.PayModels {
 		user := payModel.User
 		data.PayModelMap[user] = payModel
+	}
+
+	if data.Config.LicensesDynamodbRegion == "" {
+		data.Config.LicensesDynamodbRegion = DEFAULT_DDB_REGION
 	}
 
 	return data, nil

@@ -27,6 +27,9 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 
 	// ECS functions
 	mux.HandleFunc("/create-ecs-cluster", createECSCluster)
+
+	// license functions
+	mux.HandleFunc("/licenses", getLicenses)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -198,6 +201,17 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fmt.Fprintf(w, "Terminated workspace")
+	}
+}
+
+func getLicenses(w http.ResponseWriter, r *http.Request) {
+	licenses, err := GetLicenses()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	} else {
+		licensesJson, _ := json.Marshal(licenses)
+		fmt.Fprintf(w, string(licensesJson))
 	}
 }
 

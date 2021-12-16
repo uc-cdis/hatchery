@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 )
 
 func main() {
+
 	configPath := "/hatchery.json"
 	if len(os.Args) > 2 && strings.HasSuffix(os.Args[1], "-config") {
 		configPath = os.Args[2]
@@ -56,23 +56,23 @@ func main() {
 		config.Logger.Printf("Datadog not enabled in manifest, skipping...")
 	}
 
-	licenseFiles, err := ioutil.ReadDir("/licenses/")
-	if err != nil {
-		config.Logger.Printf("No licenses available. %v", err)
-	} else {
-		config.Licenses = make(map[string]*hatchery.License)
-		for _, licenseFile := range licenseFiles {
-			config.Logger.Printf("Setting up license: %v", licenseFile.Name())
-			license, err := hatchery.NewLicense("/licenses/" + licenseFile.Name())
-			if nil != err {
-				config.Logger.Printf("Error initializing license %v: %v", license.Name, err)
-			} else {
-				config.Logger.Printf("Initialized license %v", license.Name)
-				config.Licenses[license.Name] = license
+	if config.Config.LicensesDynamodbTable != "" {
+		config.Logger.Printf("Using licenses table %s", config.Config.LicensesDynamodbTable)
+
+		licenseFile := os.Getenv("LICENSES_FILE")
+		if licenseFile == "" {
+			if _, err := os.Stat("/licenses.json"); err == nil {
+				licenseFile = "/licenses.json"
 			}
 		}
-		go hatchery.MonitorConfiguredLicensesForExpiry()
+		if licenseFile != "" {
+			config.Logger.Printf("Loading licenses from file %s", licenseFile)
+			hatchery.LoadLicensesTableFromFile(licenseFile)
+		}
+
+		go hatchery.RevokeExpiredLicenses()
 	}
+
 	config.Logger.Printf("Setting up routes")
 	mux := httptrace.NewServeMux()
 	hatchery.RegisterSystem(mux)

@@ -1,12 +1,13 @@
 package hatchery
 
 import (
+	"errors"
+	"os"
 	"testing"
 	"time"
 
 	// AWS
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 
 	// monkey patch
@@ -14,31 +15,27 @@ import (
 )
 
 func resetTable() {
-	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: *conf,
-	}))
 
-	tableName := "licenses-test"
-	dynamodbSvc := dynamodb.New(sess)
+	if os.Getenv("DYNAMODB_URL") == "" {
+		panic(errors.New("Please set DYNAMODB_URL environment variable for local testing"))
+	}
+
+	Config = &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			LicensesDynamodbTable:  "licenses-test",
+			LicensesDynamodbRegion: DEFAULT_DDB_REGION,
+		},
+	}
+
+	dynamodbSvc := GetDynamoDBSVC()
 	dynamodbSvc.DeleteTable(&dynamodb.DeleteTableInput{
-		TableName: aws.String(tableName),
+		TableName: aws.String(Config.Config.LicensesDynamodbTable),
 	})
-	SetupTable(tableName)
-	err := LoadTableFromFile(tableName, "../testData/testLicenses.json")
+	SetupLicensesTable()
+	err := LoadLicensesTableFromFile("../testData/testLicenses.json")
 	if err != nil {
 		panic(err)
 	}
-	// marshalledLicense, _ := dynamodbattribute.MarshalMap(&License{
-	// 	LicenseName:  "STATA-HEAL",
-	// 	LicenseData:  "abcdefg123$$$",
-	// 	LicenseUsers: map[string]int64{},
-	// 	UserLimit:    6,
-	// })
-	// dynamodbSvc.PutItem(&dynamodb.PutItemInput{
-	// 	Item:      marshalledLicense,
-	// 	TableName: aws.String("licenses-test"),
-	// })
 }
 
 func TestGetLicenses(t *testing.T) {

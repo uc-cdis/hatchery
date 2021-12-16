@@ -1,33 +1,18 @@
 package hatchery
 
 import (
-
-	// AWS
-
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"time"
 
+	// AWS
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 )
-
-// type License struct {
-// 	Name        string          `json:"name"`
-// 	UserLimit   int             `json:"userLimit"`
-// 	LicenseData string          `json:"licenseData"`
-// 	Users       map[string]User `json:"users"`
-// 	// not marshalled
-// 	fileName string            `json:"-"`
-// 	updates  chan *Transaction `json:"-"`
-// 	logger   *log.Logger
-// }
 
 type License struct {
 	LicenseName  string
@@ -36,46 +21,20 @@ type License struct {
 	LicenseUsers map[string]int64
 }
 
+func (l License) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf("{\"name\": \"%s\", \"userLimit\": \"%v\"}", l.LicenseName, l.UserLimit)), nil
+}
+
 const (
-	TIMEOUT_SECONDS       = 60
-	MAX_CHECKOUT_ATTEMPTS = 5
-	LICENSE_TABLE         = "licenses-test"
+	LICENSE_TIMEOUT_SECONDS = 60
+	MAX_CHECKOUT_ATTEMPTS   = 5
+	LICENSE_TABLE           = "licenses-test"
 )
 
-// TODO
-// Create a table for the licenses
-// add Stata, determine schema
-// query for stata via CLI
-// add a function for querying licenses
-// checkout license via CLI
-// convert to function
-// function to renew license
-// function to release license
-// tests (?)
+func SetupLicensesTable() error {
 
-// aws dynamodb create-table --attribute-definitions AttributeName=name,AttributeType=S --table-name licenses-test --key-schema AttributeName=name,KeyType=HASH --provisioned-throughput ReadCapacityUnits=1,WriteCapacityUnits=1
-// aws dynamodb scan --table-name licenses-test
-// aws dynamodb put-item --table-name licenses-test  --item '{"name": {"S":"test1"}}'
-
-// License
-//	{
-//		"name": "STATA-HEAL",
-//		"licenseData":	"asfdwer",
-//		"userLimit": 6,
-//		"users": {
-//			[username]: 166902348, //timestamp
-//		}
-//	}
-
-func SetupTable(name string) error {
-	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: *conf,
-	}))
-
-	_, _ = os.Getwd()
-	dynamodbSvc := dynamodb.New(sess)
-	tableName := aws.String(name)
+	dynamodbSvc := GetDynamoDBSVC()
+	tableName := aws.String(Config.Config.LicensesDynamodbTable)
 	input := &dynamodb.CreateTableInput{
 		AttributeDefinitions: []*dynamodb.AttributeDefinition{
 			{
@@ -105,21 +64,16 @@ func SetupTable(name string) error {
 	return err
 }
 
-func LoadTableFromFile(tableName string, fileName string) error {
+func LoadLicensesTableFromFile(fileName string) error {
 	licenses := []License{}
-	fmt.Println(os.Getwd())
+
 	bytes, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		return err
 	} else {
 		json.Unmarshal(bytes, &licenses)
 
-		conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
-		sess := session.Must(session.NewSessionWithOptions(session.Options{
-			Config: *conf,
-		}))
-		dynamodbSvc := dynamodb.New(sess)
-
+		dynamodbSvc := GetDynamoDBSVC()
 		for _, license := range licenses {
 			marshalledLicense, err := dynamodbattribute.MarshalMap(&license)
 			if err != nil {
@@ -127,7 +81,7 @@ func LoadTableFromFile(tableName string, fileName string) error {
 			}
 			_, err = dynamodbSvc.PutItem(&dynamodb.PutItemInput{
 				Item:      marshalledLicense,
-				TableName: aws.String(tableName),
+				TableName: aws.String(Config.Config.LicensesDynamodbTable),
 			})
 			if err != nil {
 				return err
@@ -139,12 +93,8 @@ func LoadTableFromFile(tableName string, fileName string) error {
 }
 
 func AddLicense(license License) error {
-	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: *conf,
-	}))
 
-	dynamodbSvc := dynamodb.New(sess)
+	dynamodbSvc := GetDynamoDBSVC()
 	tableName := aws.String("licenses-test")
 
 	marshalledLicenseItem, _ := dynamodbattribute.MarshalMap(license)
@@ -158,12 +108,7 @@ func AddLicense(license License) error {
 
 func GetLicenses() ([]License, error) {
 
-	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: *conf,
-	}))
-
-	dynamodbSvc := dynamodb.New(sess)
+	dynamodbSvc := GetDynamoDBSVC()
 	scanInput := &dynamodb.ScanInput{
 		TableName: aws.String(LICENSE_TABLE),
 	}
@@ -257,6 +202,22 @@ func RenewLicense(licenseName string, user string) error {
 	)
 }
 
+func RevokeExpiredLicenses() {
+	for range time.Tick(time.Second * LICENSE_TIMEOUT_SECONDS) {
+		licenses, err := GetLicenses()
+		if err == nil {
+			for _, license := range licenses {
+				now := time.Now().Unix()
+				for user, timestamp := range license.LicenseUsers {
+					if timestamp <= now-LICENSE_TIMEOUT_SECONDS {
+						RevokeLicense(license.LicenseName, user)
+					}
+				}
+			}
+		}
+	}
+}
+
 func RevokeLicense(licenseName string, user string) {
 
 	license, _ := getLicense(licenseName)
@@ -270,11 +231,7 @@ func RevokeLicense(licenseName string, user string) {
 
 func getLicense(licenseName string) (License, error) {
 
-	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: *conf,
-	}))
-	dynamodbSvc := dynamodb.New(sess)
+	dynamodbSvc := GetDynamoDBSVC()
 
 	license := License{}
 	filt := expression.Name("LicenseName").Equal(expression.Value(licenseName))
@@ -312,11 +269,7 @@ func setUserLicenseIfNotStale(license License, user string) (bool, error) {
 		return false, err
 	}
 
-	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: *conf,
-	}))
-	dynamodbSvc := dynamodb.New(sess)
+	dynamodbSvc := GetDynamoDBSVC()
 
 	if license.LicenseUsers == nil {
 		license.LicenseUsers = make(map[string]int64)
@@ -355,11 +308,7 @@ func revokeUserLicenseIfNotStale(license License, user string) error {
 		return err
 	}
 
-	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: *conf,
-	}))
-	dynamodbSvc := dynamodb.New(sess)
+	dynamodbSvc := GetDynamoDBSVC()
 
 	delete(license.LicenseUsers, user)
 	marshalledLicenseItem, _ := dynamodbattribute.MarshalMap(license)
