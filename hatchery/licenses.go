@@ -22,7 +22,11 @@ type License struct {
 }
 
 func (l License) MarshalJSON() ([]byte, error) {
-	return []byte(fmt.Sprintf("{\"name\": \"%s\", \"userLimit\": \"%v\"}", l.LicenseName, l.UserLimit)), nil
+	return []byte(
+		fmt.Sprintf(
+			"{\"name\": \"%s\", \"userLimit\": %v, \"inUse\": %v}", l.LicenseName, l.UserLimit, len(l.LicenseUsers),
+		),
+	), nil
 }
 
 const (

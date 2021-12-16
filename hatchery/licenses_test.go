@@ -1,7 +1,6 @@
 package hatchery
 
 import (
-	"errors"
 	"os"
 	"testing"
 	"time"
@@ -15,11 +14,6 @@ import (
 )
 
 func resetTable() {
-
-	if os.Getenv("DYNAMODB_URL") == "" {
-		panic(errors.New("Please set DYNAMODB_URL environment variable for local testing"))
-	}
-
 	Config = &FullHatcheryConfig{
 		Config: HatcheryConfig{
 			LicensesDynamodbTable:  "licenses-test",
@@ -38,7 +32,14 @@ func resetTable() {
 	}
 }
 
+func skipNoDDB(t *testing.T) {
+	if os.Getenv("DYNAMODB_URL") == "" {
+		t.Skip("DYNAMODB_URL not set. Skipping...")
+	}
+}
+
 func TestGetLicenses(t *testing.T) {
+	skipNoDDB(t)
 	resetTable()
 	licenses, _ := GetLicenses()
 	if len(licenses) != 1 {
@@ -47,6 +48,7 @@ func TestGetLicenses(t *testing.T) {
 }
 
 func TestCheckoutLicense(t *testing.T) {
+	skipNoDDB(t)
 	resetTable()
 	err := CheckoutLicense("STATA-HEAL", "someUser")
 	if err != nil {
@@ -90,6 +92,7 @@ func TestCheckoutLicense(t *testing.T) {
 }
 
 func TestRenewLicense(t *testing.T) {
+	skipNoDDB(t)
 	resetTable()
 	_ = CheckoutLicense("STATA-HEAL", "someUser")
 
@@ -123,6 +126,7 @@ func TestRenewLicense(t *testing.T) {
 }
 
 func TestRevokeLicense(t *testing.T) {
+	skipNoDDB(t)
 	resetTable()
 	_ = CheckoutLicense("STATA-HEAL", "someUser")
 	RevokeLicense("STATA-HEAL", "someUser")
