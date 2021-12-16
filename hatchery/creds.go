@@ -13,13 +13,13 @@ type CREDS struct {
 	creds *credentials.Credentials
 }
 
-func NewSession(sess *session.Session, roleArn string) CREDS {
+func NewSVC(sess *session.Session, roleArn string) CREDS {
 	creds := stscreds.NewCredentials(sess, roleArn)
 	return CREDS{
 		creds: creds,
-		svc: ecs.New(session.New(&aws.Config{
+		svc: ecs.New(session.Must(session.NewSession(&aws.Config{
 			Credentials: creds,
 			Region:      aws.String("us-east-1"),
-		})),
+		}))),
 	}
 }

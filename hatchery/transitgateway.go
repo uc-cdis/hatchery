@@ -209,7 +209,7 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 		time.Sleep(10 * time.Second)
 		exTg, _ = svc.DescribeTransitGateways(tgInput)
 	}
-	networkInfo := &NetworkInfo{}
+	var networkInfo *NetworkInfo
 	if local {
 		networkInfo, err = describeMainNetwork(vpcid, svc)
 	} else {
@@ -298,6 +298,9 @@ func deleteTransitGatewayAttachment(svc *ec2.EC2, tgwid string) (*string, error)
 		TransitGatewayAttachmentId: exTgwAttachment.TransitGatewayAttachments[0].TransitGatewayAttachmentId,
 	}
 	delTGWAttachment, err := svc.DeleteTransitGatewayVpcAttachment(delTGWAttachmentInput)
+	if err != nil {
+		return nil, err
+	}
 
 	return delTGWAttachment.TransitGatewayVpcAttachment.TransitGatewayAttachmentId, nil
 }
@@ -346,6 +349,9 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 			ResourceArns:  []*string{&tgwArn},
 		}
 		listResources, err := svc.ListResources(listResourcesInput)
+		if err != nil {
+			return nil, err
+		}
 
 		listPrincipalsInput := &ram.ListPrincipalsInput{
 			ResourceArn:   aws.String(tgwArn),
@@ -380,13 +386,13 @@ func setupRemoteAccount(userName string, teardown bool) error {
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 
 	ec2Local := ec2.New(sess)
-	ec2Remote := ec2.New(session.New(&aws.Config{
+	ec2Remote := ec2.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: svc.creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	vpcid := os.Getenv("GEN3_VPCID")
 	Config.Logger.Printf("VPCID: %s", vpcid)
@@ -442,7 +448,7 @@ func setupRemoteAccount(userName string, teardown bool) error {
 	} else {
 		tgw_attachment, err = createTransitGatewayAttachments(ec2Remote, *vpc.Vpcs[0].VpcId, *exTg.TransitGateways[0].TransitGatewayId, false, &svc, userName)
 		if err != nil {
-			return fmt.Errorf("cannot create TransitGatewayAttachment: %s", err.Error())
+			return fmt.Errorf("Cannot create TransitGatewayAttachment: %s", err.Error())
 		}
 		Config.Logger.Printf("tgw_attachment: %s", *tgw_attachment)
 	}
@@ -450,7 +456,7 @@ func setupRemoteAccount(userName string, teardown bool) error {
 	// setup Transit Gateway Route Table
 	_, err = TGWRoutes(userName, exTg.TransitGateways[0].Options.AssociationDefaultRouteTableId, tgw_attachment, ec2Local, false, teardown, &svc)
 	if err != nil {
-		return fmt.Errorf("cannot create TGW Route %s", err.Error())
+		return fmt.Errorf("Cannot create TGW Route: %s", err.Error())
 	}
 	// setup VPC Route Table
 	err = VPCRoutes(networkInfo, mainNetworkInfo, exTg.TransitGateways[0].TransitGatewayId, ec2Remote, ec2Local, teardown)
@@ -462,10 +468,10 @@ func setupRemoteAccount(userName string, teardown bool) error {
 }
 
 func (creds *CREDS) acceptTGWShare() error {
-	session := session.New(&aws.Config{
+	session := session.Must(session.NewSession(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
-	})
+	}))
 	svc := ram.New(session)
 
 	resourceShareInvitation, err := svc.GetResourceShareInvitations(&ram.GetResourceShareInvitationsInput{})
@@ -490,7 +496,7 @@ func (creds *CREDS) acceptTGWShare() error {
 }
 
 func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string, svc *ec2.EC2, local bool, teardown bool, sess *CREDS) (*string, error) {
-	networkInfo := &NetworkInfo{}
+	var networkInfo *NetworkInfo
 	vpcid := os.Getenv("GEN3_VPCID")
 	Config.Logger.Printf("VPCID: %s", vpcid)
 	err := *new(error)

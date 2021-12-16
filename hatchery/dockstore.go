@@ -170,10 +170,10 @@ func (model *ComposeFull) Sanitize() error {
 // BuildK8sResource from a compose resource spec
 func (rspec *ComposeResourceSpec) BuildK8sResource() map[k8sv1.ResourceName]resource.Quantity {
 	result := make(map[k8sv1.ResourceName]resource.Quantity)
-	if "" != rspec.CPU {
+	if rspec.CPU != "" {
 		result[k8sv1.ResourceCPU] = resource.MustParse(rspec.CPU)
 	}
-	if "" != rspec.Memory {
+	if rspec.Memory != "" {
 		result[k8sv1.ResourceMemory] = resource.MustParse(rspec.Memory)
 	}
 	return result

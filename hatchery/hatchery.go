@@ -36,7 +36,7 @@ func home(w http.ResponseWriter, r *http.Request) {
 	htmlHeader := `<html>
 	<head>Gen3 Hatchery</head>
 	<body>`
-	fmt.Fprintf(w, htmlHeader)
+	fmt.Fprintln(w, htmlHeader)
 
 	for k, v := range Config.ContainersMap {
 		fmt.Fprintf(w, "<h1><a href=\"%s/launch?hash=%s\">Launch %s - %s CPU - %s Memory</a></h1>", Config.Config.SubDir, k, v.Name, v.CPULimit, v.MemoryLimit)
@@ -44,7 +44,7 @@ func home(w http.ResponseWriter, r *http.Request) {
 
 	htmlFooter := `</body>
 	</html>`
-	fmt.Fprintf(w, htmlFooter)
+	fmt.Fprintln(w, htmlFooter)
 
 }
 
@@ -72,7 +72,7 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fmt.Fprintf(w, string(out))
+	fmt.Fprint(w, string(out))
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +100,7 @@ func status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(w, string(out))
+	fmt.Fprint(w, string(out))
 }
 
 func options(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +139,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(w, string(out))
+	fmt.Fprint(w, string(out))
 }
 
 func launch(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +192,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		} else {
-			fmt.Fprintf(w, fmt.Sprintf("Terminated ECS workspace at %s", svc))
+			fmt.Fprintf(w, "Terminated ECS workspace at %s", svc)
 		}
 	} else {
 		err := deleteK8sPod(r.Context(), userName, accessToken, payModel)
@@ -247,14 +247,14 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 
 	result, err := svc.launchEcsCluster(userName)
 	if err != nil {
-		fmt.Fprintf(w, fmt.Sprintf("%s", err))
+		fmt.Fprint(w, err.Error())
 		Config.Logger.Printf("Error: %s", err)
 	} else {
-		fmt.Fprintf(w, fmt.Sprintf("%s", result))
+		fmt.Fprint(w, result.String())
 	}
 }
 
@@ -265,7 +265,7 @@ func statusEcs(ctx context.Context, userName string, accessToken string, awsAcct
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 	result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
 	if err != nil {
 		Config.Logger.Printf("Error: %s", err)

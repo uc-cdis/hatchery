@@ -31,5 +31,5 @@ func systemVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(w, string(out))
+	fmt.Fprint(w, string(out))
 }
