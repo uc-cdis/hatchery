@@ -632,7 +632,7 @@ func getPayModelForUser(userName string) (result *PayModel, err error) {
 				return &configPaymodel, nil
 			}
 		}
-		return nil, errors.New(fmt.Sprintf("No pay model data for username '%s'.", userName))
+		return nil, fmt.Errorf("No pay model data for username '%s'.", userName)
 	}
 	// query pay model data for this user from DynamoDB
 	sess := session.Must(session.NewSessionWithOptions(session.Options{

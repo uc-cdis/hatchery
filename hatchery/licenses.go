@@ -4,7 +4,10 @@ import (
 
 	// AWS
 
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -39,8 +42,6 @@ const (
 	LICENSE_TABLE         = "licenses-test"
 )
 
-var Now = time.Now
-
 // TODO
 // Create a table for the licenses
 // add Stata, determine schema
@@ -65,6 +66,95 @@ var Now = time.Now
 //			[username]: 166902348, //timestamp
 //		}
 //	}
+
+func SetupTable(name string) error {
+	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: *conf,
+	}))
+
+	_, _ = os.Getwd()
+	dynamodbSvc := dynamodb.New(sess)
+	tableName := aws.String(name)
+	input := &dynamodb.CreateTableInput{
+		AttributeDefinitions: []*dynamodb.AttributeDefinition{
+			{
+				AttributeName: aws.String("LicenseName"),
+				AttributeType: aws.String("S"),
+			},
+		},
+		KeySchema: []*dynamodb.KeySchemaElement{
+			{
+				AttributeName: aws.String("LicenseName"),
+				KeyType:       aws.String("HASH"),
+			},
+		},
+		ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
+			ReadCapacityUnits:  aws.Int64(1),
+			WriteCapacityUnits: aws.Int64(1),
+		},
+		TableName: tableName,
+	}
+
+	_, err := dynamodbSvc.CreateTable(input)
+
+	// ok if table already exists
+	if err != nil && err.(awserr.Error).Code() != "ResourceInUseException" {
+		return nil
+	}
+	return err
+}
+
+func LoadTableFromFile(tableName string, fileName string) error {
+	licenses := []License{}
+	fmt.Println(os.Getwd())
+	bytes, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		return err
+	} else {
+		json.Unmarshal(bytes, &licenses)
+
+		conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
+		sess := session.Must(session.NewSessionWithOptions(session.Options{
+			Config: *conf,
+		}))
+		dynamodbSvc := dynamodb.New(sess)
+
+		for _, license := range licenses {
+			marshalledLicense, err := dynamodbattribute.MarshalMap(&license)
+			if err != nil {
+				return err
+			}
+			_, err = dynamodbSvc.PutItem(&dynamodb.PutItemInput{
+				Item:      marshalledLicense,
+				TableName: aws.String(tableName),
+			})
+			if err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+}
+
+func AddLicense(license License) error {
+	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: *conf,
+	}))
+
+	dynamodbSvc := dynamodb.New(sess)
+	tableName := aws.String("licenses-test")
+
+	marshalledLicenseItem, _ := dynamodbattribute.MarshalMap(license)
+	_, err := dynamodbSvc.PutItem(&dynamodb.PutItemInput{
+		Item:      marshalledLicenseItem,
+		TableName: tableName,
+	})
+
+	return err
+}
 
 func GetLicenses() ([]License, error) {
 
@@ -231,7 +321,7 @@ func setUserLicenseIfNotStale(license License, user string) (bool, error) {
 	if license.LicenseUsers == nil {
 		license.LicenseUsers = make(map[string]int64)
 	}
-	license.LicenseUsers[user] = Now().Unix()
+	license.LicenseUsers[user] = time.Now().Unix()
 	marshalledLicenseItem, _ := dynamodbattribute.MarshalMap(license)
 
 	_, err = dynamodbSvc.PutItem(&dynamodb.PutItemInput{

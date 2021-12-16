@@ -1,74 +1,48 @@
 package hatchery
 
 import (
-	"log"
 	"testing"
 	"time"
 
 	// AWS
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 
 	// monkey patch
 	"github.com/undefinedlabs/go-mpatch"
 )
 
-func setupTable() {
+func resetTable() {
 	conf := aws.NewConfig().WithEndpoint("http://localhost:8000").WithRegion("us-west-1")
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: *conf,
 	}))
 
+	tableName := "licenses-test"
 	dynamodbSvc := dynamodb.New(sess)
-	tableName := aws.String("licenses-test")
-	input := &dynamodb.CreateTableInput{
-		AttributeDefinitions: []*dynamodb.AttributeDefinition{
-			{
-				AttributeName: aws.String("LicenseName"),
-				AttributeType: aws.String("S"),
-			},
-		},
-		KeySchema: []*dynamodb.KeySchemaElement{
-			{
-				AttributeName: aws.String("LicenseName"),
-				KeyType:       aws.String("HASH"),
-			},
-		},
-		ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
-			ReadCapacityUnits:  aws.Int64(10),
-			WriteCapacityUnits: aws.Int64(10),
-		},
-		TableName: tableName,
-	}
-	_, err := dynamodbSvc.CreateTable(input)
-
-	// ok if table already exists
-	if err != nil && err.(awserr.Error).Code() != "ResourceInUseException" {
-		log.Fatalf("Got error calling CreateTable: %s", err)
-	}
-
-	license := License{
-		LicenseName:  "STATA-HEAL",
-		UserLimit:    6,
-		LicenseData:  "abcdefg1234$$$",
-		LicenseUsers: make(map[string]int64),
-	}
-
-	marshalledLicenseItem, _ := dynamodbattribute.MarshalMap(license)
-	_, err = dynamodbSvc.PutItem(&dynamodb.PutItemInput{
-		Item:      marshalledLicenseItem,
-		TableName: tableName,
+	dynamodbSvc.DeleteTable(&dynamodb.DeleteTableInput{
+		TableName: aws.String(tableName),
 	})
+	SetupTable(tableName)
+	err := LoadTableFromFile(tableName, "../testData/testLicenses.json")
 	if err != nil {
-		log.Fatalf("Got error calling PutItem: %s", err)
+		panic(err)
 	}
+	// marshalledLicense, _ := dynamodbattribute.MarshalMap(&License{
+	// 	LicenseName:  "STATA-HEAL",
+	// 	LicenseData:  "abcdefg123$$$",
+	// 	LicenseUsers: map[string]int64{},
+	// 	UserLimit:    6,
+	// })
+	// dynamodbSvc.PutItem(&dynamodb.PutItemInput{
+	// 	Item:      marshalledLicense,
+	// 	TableName: aws.String("licenses-test"),
+	// })
 }
 
 func TestGetLicenses(t *testing.T) {
-	setupTable()
+	resetTable()
 	licenses, _ := GetLicenses()
 	if len(licenses) != 1 {
 		t.Errorf("Expected one license, got %v", licenses)
@@ -76,7 +50,7 @@ func TestGetLicenses(t *testing.T) {
 }
 
 func TestCheckoutLicense(t *testing.T) {
-	setupTable()
+	resetTable()
 	err := CheckoutLicense("STATA-HEAL", "someUser")
 	if err != nil {
 		t.Error(err)
@@ -119,7 +93,7 @@ func TestCheckoutLicense(t *testing.T) {
 }
 
 func TestRenewLicense(t *testing.T) {
-	setupTable()
+	resetTable()
 	_ = CheckoutLicense("STATA-HEAL", "someUser")
 
 	timeOfRenewal := time.Now().Add(time.Second * 30)
@@ -152,7 +126,7 @@ func TestRenewLicense(t *testing.T) {
 }
 
 func TestRevokeLicense(t *testing.T) {
-	setupTable()
+	resetTable()
 	_ = CheckoutLicense("STATA-HEAL", "someUser")
 	RevokeLicense("STATA-HEAL", "someUser")
 
