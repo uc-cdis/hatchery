@@ -12,6 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
 )
 
 type APIKeyStruct struct {
@@ -204,4 +208,19 @@ func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (last
 		return -1, errors.New("Unable to parse last activity time: " + err.Error())
 	}
 	return lastAct.Unix() * 1000, nil
+}
+
+func GetDynamoDBSVC() *dynamodb.DynamoDB {
+	var conf *aws.Config
+	if os.Getenv("DYNAMODB_URL") != "" {
+		conf = aws.NewConfig().WithEndpoint(os.Getenv("DYNAMODB_URL")).WithRegion(Config.Config.LicensesDynamodbRegion)
+	} else {
+		conf = aws.NewConfig().WithRegion(Config.Config.LicensesDynamodbRegion)
+	}
+
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: *conf,
+	}))
+	dynamodbSvc := dynamodb.New(sess)
+	return dynamodbSvc
 }

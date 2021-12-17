@@ -65,7 +65,7 @@ func setupVPC(userName string) (*string, error) {
 		if err != nil {
 			return nil, err
 		}
-		Config.Logger.Printf("VPC created in remote account")
+		Config.Logger.Print("VPC created in remote account")
 		_, err = createInternetGW(vpcname, *vpc.Vpc.VpcId, ec2Remote)
 		if err != nil {
 			return nil, err

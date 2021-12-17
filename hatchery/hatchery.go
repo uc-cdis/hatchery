@@ -27,6 +27,9 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 
 	// ECS functions
 	mux.HandleFunc("/create-ecs-cluster", createECSCluster)
+
+	// license functions
+	mux.HandleFunc("/licenses", getLicenses)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +81,7 @@ func status(w http.ResponseWriter, r *http.Request) {
 
 	payModel, err := getPayModelForUser(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Print(err.Error())
 	}
 	var result *WorkspaceStatus
 	if payModel != nil && payModel.Ecs == "true" {
@@ -156,7 +159,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	payModel, err := getPayModelForUser(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Print(err.Error())
 	}
 	if payModel == nil {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
@@ -169,7 +172,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fmt.Fprintf(w, "Success")
+	fmt.Fprint(w, "Success")
 }
 
 func terminate(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +184,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	payModel, err := getPayModelForUser(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Print(err.Error())
 	}
 	if payModel != nil && payModel.Ecs == "true" {
 		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
@@ -197,7 +200,18 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		fmt.Fprintf(w, "Terminated workspace")
+		fmt.Fprint(w, "Terminated workspace")
+	}
+}
+
+func getLicenses(w http.ResponseWriter, r *http.Request) {
+	licenses, err := GetLicenses()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	} else {
+		licensesJson, _ := json.Marshal(licenses)
+		fmt.Fprint(w, string(licensesJson))
 	}
 }
 

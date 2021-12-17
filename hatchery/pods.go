@@ -185,7 +185,7 @@ func podStatus(ctx context.Context, userName string, accessToken string, payMode
 	if err != nil {
 		if isExternalClient && serviceErr == nil {
 			// only worry for service if podClient is external EKS
-			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed.")
+			Config.Logger.Print("Pod has been terminated, but service is still being terminated. Wait for service to be killed.")
 			// Pod has been terminated, but service is still being terminated. Wait for service to be killed
 			status.Status = "Terminating"
 			return &status, nil
@@ -369,6 +369,23 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		}
 		envVars = append(envVars, envVar)
 	}
+
+	// for _, licenseInfo := range hatchApp.Licenses {
+	// 	var licenseErr error
+	// 	if license, licenseIsConfigured := Config.Licenses[licenseInfo.Name]; licenseIsConfigured {
+	// 		_, licenseErr = license.CheckoutToUser(userName)
+	// 		envVars = append(envVars, k8sv1.EnvVar{
+	// 			Name:  license.Name,
+	// 			Value: license.LicenseData,
+	// 		})
+	// 	} else {
+	// 		licenseErr = fmt.Errorf("no license configured for %v", licenseInfo.Name)
+	// 	}
+	// 	if licenseErr != nil && licenseInfo.FailIfUnvailable {
+	// 		Config.Logger.Printf("%v", licenseErr)
+	// 		return nil, licenseErr
+	// 	}
+	// }
 
 	//hatchConfig.Logger.Printf("environment configured")
 
@@ -619,7 +636,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 func getPayModelForUser(userName string) (result *PayModel, err error) {
 	if Config.Config.PayModelsDynamodbTable == "" {
 		// fallback for backward compatibility
-		Config.Logger.Printf("Unable to query pay model data in DynamoDB: no 'pay-models-dynamodb-table' in config. Fallback on config.")
+		Config.Logger.Print("Unable to query pay model data in DynamoDB: no 'pay-models-dynamodb-table' in config. Fallback on config.")
 		for _, configPaymodel := range Config.PayModelMap {
 			if configPaymodel.User == userName {
 				return &configPaymodel, nil

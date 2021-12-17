@@ -34,6 +34,7 @@ type Container struct {
 	Gen3VolumeLocation string            `json:"gen3-volume-location"`
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
+	Licenses           []string          `json:"licenses"`
 }
 
 // SidecarContainer holds fuse sidecar configuration
@@ -70,6 +71,8 @@ type HatcheryConfig struct {
 	UserNamespace          string           `json:"user-namespace"`
 	PayModels              []PayModel       `json:"pay-models"`
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
+	LicensesDynamodbTable  string           `json:"licenses-dynamodb-table"`
+	LicensesDynamodbRegion string           `json:"licenses-dynamodb-region"`
 	SubDir                 string           `json:"sub-dir"`
 	Containers             []Container      `json:"containers"`
 	UserVolumeSize         string           `json:"user-volume-size"`
@@ -84,6 +87,8 @@ type FullHatcheryConfig struct {
 	PayModelMap   map[string]PayModel
 	Logger        *log.Logger
 }
+
+const DEFAULT_DDB_REGION = "us-east-1"
 
 // LoadConfig from a json file
 func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatcheryConfig, err error) {
@@ -138,12 +143,16 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	}
 
 	if data.Config.PayModelsDynamodbTable == "" {
-		data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
+		data.Logger.Print("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
 	}
 
 	for _, payModel := range data.Config.PayModels {
 		user := payModel.User
 		data.PayModelMap[user] = payModel
+	}
+
+	if data.Config.LicensesDynamodbRegion == "" {
+		data.Config.LicensesDynamodbRegion = DEFAULT_DDB_REGION
 	}
 
 	return data, nil

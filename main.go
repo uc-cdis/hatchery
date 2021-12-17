@@ -14,6 +14,7 @@ import (
 )
 
 func main() {
+
 	configPath := "/hatchery.json"
 	if len(os.Args) > 2 && strings.HasSuffix(os.Args[1], "-config") {
 		configPath = os.Args[2]
@@ -30,10 +31,11 @@ func main() {
 		config.Logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
 		return
 	}
+
 	hatchery.Config = config
 	ddEnabled := os.Getenv("DD_ENABLED")
 	if strings.ToLower(ddEnabled) == "true" {
-		config.Logger.Printf("Setting up datadog")
+		config.Logger.Print("Setting up datadog")
 		tracer.Start()
 		defer tracer.Stop()
 		if err := profiler.Start(
@@ -51,14 +53,38 @@ func main() {
 		}
 		defer profiler.Stop()
 	} else {
-		config.Logger.Printf("Datadog not enabled in manifest, skipping...")
+		config.Logger.Print("Datadog not enabled in manifest, skipping...")
 	}
 
-	config.Logger.Printf("Setting up routes")
+	if config.Config.LicensesDynamodbTable != "" {
+		config.Logger.Printf("Using licenses table %s", config.Config.LicensesDynamodbTable)
+		err = hatchery.SetupLicensesTable()
+		if err != nil {
+			config.Logger.Printf("Error setting up licenses table %v", err)
+		} else {
+			licenseFile := os.Getenv("LICENSES_FILE")
+			if licenseFile == "" {
+				if _, err := os.Stat("/licenses.json"); err == nil {
+					licenseFile = "/licenses.json"
+				}
+			}
+			if licenseFile != "" {
+				config.Logger.Printf("Loading licenses from file %s", licenseFile)
+				err := hatchery.LoadLicensesTableFromFile(licenseFile)
+				if err != nil {
+					config.Logger.Printf("Error populating licenses table from file: %v", err)
+				}
+			}
+
+			go hatchery.RevokeExpiredLicenses()
+		}
+	}
+
+	config.Logger.Print("Setting up routes")
 	mux := httptrace.NewServeMux()
 	hatchery.RegisterSystem(mux)
 	hatchery.RegisterHatchery(mux)
 
-	config.Logger.Printf("Running main")
+	config.Logger.Print("Running main")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8000", mux))
 }
