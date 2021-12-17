@@ -67,7 +67,10 @@ func main() {
 		}
 		if licenseFile != "" {
 			config.Logger.Printf("Loading licenses from file %s", licenseFile)
-			hatchery.LoadLicensesTableFromFile(licenseFile)
+			err := hatchery.LoadLicensesTableFromFile(licenseFile)
+			if err != nil {
+				config.Logger.Printf("Error populating licenses table from file: %v", err)
+			}
 		}
 
 		go hatchery.RevokeExpiredLicenses()
