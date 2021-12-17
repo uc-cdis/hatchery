@@ -22,10 +22,10 @@ func resetTable() {
 	}
 
 	dynamodbSvc := GetDynamoDBSVC()
-	dynamodbSvc.DeleteTable(&dynamodb.DeleteTableInput{
+	_, _ = dynamodbSvc.DeleteTable(&dynamodb.DeleteTableInput{
 		TableName: aws.String(Config.Config.LicensesDynamodbTable),
 	})
-	SetupLicensesTable()
+	_ = SetupLicensesTable()
 	err := LoadLicensesTableFromFile("../testData/testLicenses.json")
 	if err != nil {
 		panic(err)

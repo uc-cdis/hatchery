@@ -75,8 +75,10 @@ func LoadLicensesTableFromFile(fileName string) error {
 	if err != nil {
 		return err
 	} else {
-		json.Unmarshal(bytes, &licenses)
-
+		err = json.Unmarshal(bytes, &licenses)
+		if err != nil {
+			return err
+		}
 		dynamodbSvc := GetDynamoDBSVC()
 		for _, license := range licenses {
 			marshalledLicense, err := dynamodbattribute.MarshalMap(&license)
@@ -120,13 +122,16 @@ func GetLicenses() ([]License, error) {
 	res, err := dynamodbSvc.Scan(scanInput)
 
 	if err != nil {
-		return []License{}, nil
+		return []License{}, err
 	}
 	var licenses []License
 
 	for _, licenseItem := range res.Items {
 		unmarshalledLicense := License{}
-		dynamodbattribute.UnmarshalMap(licenseItem, &unmarshalledLicense)
+		err = dynamodbattribute.UnmarshalMap(licenseItem, &unmarshalledLicense)
+		if err != nil {
+			return []License{}, err
+		}
 		licenses = append(licenses, unmarshalledLicense)
 	}
 	return licenses, nil
@@ -259,7 +264,10 @@ func getLicense(licenseName string) (License, error) {
 		return license, fmt.Errorf("License %s not found", licenseName)
 	}
 
-	dynamodbattribute.UnmarshalMap(res.Items[0], &license)
+	err = dynamodbattribute.UnmarshalMap(res.Items[0], &license)
+	if err != nil {
+		return license, err
+	}
 	return license, nil
 }
 
