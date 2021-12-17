@@ -58,6 +58,7 @@ func main() {
 
 	if config.Config.LicensesDynamodbTable != "" {
 		config.Logger.Printf("Using licenses table %s", config.Config.LicensesDynamodbTable)
+		hatchery.SetupLicensesTable()
 
 		licenseFile := os.Getenv("LICENSES_FILE")
 		if licenseFile == "" {

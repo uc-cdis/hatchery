@@ -37,6 +37,7 @@ const (
 
 func SetupLicensesTable() error {
 
+	Config.Logger.Printf("Attempting to setup licenses table %s\n", Config.Config.LicensesDynamodbTable)
 	dynamodbSvc := GetDynamoDBSVC()
 	tableName := aws.String(Config.Config.LicensesDynamodbTable)
 	input := &dynamodb.CreateTableInput{
@@ -63,9 +64,12 @@ func SetupLicensesTable() error {
 
 	// ok if table already exists
 	if err != nil && err.(awserr.Error).Code() != "ResourceInUseException" {
+		Config.Logger.Printf("Licenses table %s already exists.\n", Config.Config.LicensesDynamodbTable)
 		return nil
+	} else {
+		Config.Logger.Printf("Error setting up table %s: %v", Config.Config.LicensesDynamodbTable, err)
+		return err
 	}
-	return err
 }
 
 func LoadLicensesTableFromFile(fileName string) error {
