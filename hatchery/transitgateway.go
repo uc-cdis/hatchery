@@ -17,7 +17,7 @@ func setupTransitGateway(userName string) error {
 	if err != nil {
 		return fmt.Errorf("error creating transit gateway: %s", err.Error())
 	}
-	Config.Logger.Printf("Setting up remote account ")
+	Config.Logger.Print("Setting up remote account ")
 	err = setupRemoteAccount(userName, false)
 	if err != nil {
 		return fmt.Errorf("failed to setup remote account: %s", err.Error())
@@ -129,7 +129,7 @@ func createTransitGateway(userName string) (*string, error) {
 
 	// Create Transit Gateway if it doesn't exist
 	if len(exTg.TransitGateways) == 0 {
-		Config.Logger.Printf("No transit gateway found. Creating one...")
+		Config.Logger.Print("No transit gateway found. Creating one...")
 		tgwName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-tgw"
 		tg, err := ec2Local.CreateTransitGateway(&ec2.CreateTransitGatewayInput{
 			DryRun:      aws.Bool(false),
@@ -319,7 +319,7 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 		return nil, err
 	}
 	if len(exRs.ResourceShares) == 0 {
-		Config.Logger.Printf("Did not find existing resource share, creating a resource share")
+		Config.Logger.Print("Did not find existing resource share, creating a resource share")
 		resourceShareInput := &ram.CreateResourceShareInput{
 			// Indicates whether principals outside your organization in Organizations can
 			// be associated with a resource share.
@@ -417,7 +417,7 @@ func setupRemoteAccount(userName string, teardown bool) error {
 		return err
 	}
 	for len(exTg.TransitGateways) == 0 {
-		Config.Logger.Printf("Waiting to find ex_tgw")
+		Config.Logger.Print("Waiting to find ex_tgw")
 		err := svc.acceptTGWShare()
 		if err != nil {
 			return err

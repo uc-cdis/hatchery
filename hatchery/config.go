@@ -143,7 +143,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	}
 
 	if data.Config.PayModelsDynamodbTable == "" {
-		data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
+		data.Logger.Print("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
 	}
 
 	for _, payModel := range data.Config.PayModels {

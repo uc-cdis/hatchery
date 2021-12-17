@@ -35,7 +35,7 @@ func main() {
 	hatchery.Config = config
 	ddEnabled := os.Getenv("DD_ENABLED")
 	if strings.ToLower(ddEnabled) == "true" {
-		config.Logger.Printf("Setting up datadog")
+		config.Logger.Print("Setting up datadog")
 		tracer.Start()
 		defer tracer.Stop()
 		if err := profiler.Start(
@@ -53,7 +53,7 @@ func main() {
 		}
 		defer profiler.Stop()
 	} else {
-		config.Logger.Printf("Datadog not enabled in manifest, skipping...")
+		config.Logger.Print("Datadog not enabled in manifest, skipping...")
 	}
 
 	if config.Config.LicensesDynamodbTable != "" {
@@ -76,11 +76,11 @@ func main() {
 		go hatchery.RevokeExpiredLicenses()
 	}
 
-	config.Logger.Printf("Setting up routes")
+	config.Logger.Print("Setting up routes")
 	mux := httptrace.NewServeMux()
 	hatchery.RegisterSystem(mux)
 	hatchery.RegisterHatchery(mux)
 
-	config.Logger.Printf("Running main")
+	config.Logger.Print("Running main")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8000", mux))
 }

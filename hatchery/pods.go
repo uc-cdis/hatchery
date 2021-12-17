@@ -185,7 +185,7 @@ func podStatus(ctx context.Context, userName string, accessToken string, payMode
 	if err != nil {
 		if isExternalClient && serviceErr == nil {
 			// only worry for service if podClient is external EKS
-			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed.")
+			Config.Logger.Print("Pod has been terminated, but service is still being terminated. Wait for service to be killed.")
 			// Pod has been terminated, but service is still being terminated. Wait for service to be killed
 			status.Status = "Terminating"
 			return &status, nil
@@ -636,7 +636,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 func getPayModelForUser(userName string) (result *PayModel, err error) {
 	if Config.Config.PayModelsDynamodbTable == "" {
 		// fallback for backward compatibility
-		Config.Logger.Printf("Unable to query pay model data in DynamoDB: no 'pay-models-dynamodb-table' in config. Fallback on config.")
+		Config.Logger.Print("Unable to query pay model data in DynamoDB: no 'pay-models-dynamodb-table' in config. Fallback on config.")
 		for _, configPaymodel := range Config.PayModelMap {
 			if configPaymodel.User == userName {
 				return &configPaymodel, nil

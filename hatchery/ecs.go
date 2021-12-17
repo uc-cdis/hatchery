@@ -220,7 +220,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 						if len(args) > 0 {
 							for i, arg := range args {
 								if strings.Contains(*arg, "shutdown_no_activity_timeout=") {
-									Config.Logger.Printf("Found kernel idle shutdown time in args. Attempting to get last activity time\n")
+									Config.Logger.Print("Found kernel idle shutdown time in args. Attempting to get last activity time\n")
 									argSplit := strings.Split(*arg, "=")
 									idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
 									if err == nil {
@@ -236,7 +236,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 									break
 								}
 								if i == len(args)-1 {
-									Config.Logger.Printf("Unable to find kernel idle shutdown time in args\n")
+									Config.Logger.Print("Unable to find kernel idle shutdown time in args\n")
 								}
 							}
 						} else {
@@ -587,7 +587,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 		Region:      aws.String("us-east-1"),
 	})))
 
-	Config.Logger.Printf("Creating ECS task definition")
+	Config.Logger.Print("Creating ECS task definition")
 
 	logConfiguration := &ecs.LogConfiguration{
 		LogDriver: aws.String(ecs.LogDriverAwslogs),

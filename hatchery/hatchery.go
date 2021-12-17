@@ -81,7 +81,7 @@ func status(w http.ResponseWriter, r *http.Request) {
 
 	payModel, err := getPayModelForUser(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Print(err.Error())
 	}
 	var result *WorkspaceStatus
 	if payModel != nil && payModel.Ecs == "true" {
@@ -184,7 +184,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	payModel, err := getPayModelForUser(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Print(err.Error())
 	}
 	if payModel != nil && payModel.Ecs == "true" {
 		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
