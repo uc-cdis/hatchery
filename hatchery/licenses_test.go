@@ -97,7 +97,7 @@ func TestRenewLicense(t *testing.T) {
 	_ = CheckoutLicense("STATA-HEAL", "someUser")
 
 	timeOfRenewal := time.Now().Add(time.Second * 30)
-	_ = mpatch.PatchMethod(time.Now, func() time.Time { return timeOfRenewal })
+	_, _ = mpatch.PatchMethod(time.Now, func() time.Time { return timeOfRenewal })
 
 	err := RenewLicense("STATA-HEAL", "someUser")
 	if err != nil {
