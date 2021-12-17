@@ -36,6 +36,7 @@ require (
 	github.com/philhofer/fwd v1.1.1 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/tinylib/msgp v1.1.6 // indirect
+	github.com/undefinedlabs/go-mpatch v1.0.6 // indirect
 	golang.org/x/net v0.0.0-20211104170005-ce137452f963 // indirect
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8 // indirect
 	golang.org/x/sys v0.0.0-20211103235746-7861aae1554b // indirect
