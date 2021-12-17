@@ -58,23 +58,26 @@ func main() {
 
 	if config.Config.LicensesDynamodbTable != "" {
 		config.Logger.Printf("Using licenses table %s", config.Config.LicensesDynamodbTable)
-		_ = hatchery.SetupLicensesTable()
-
-		licenseFile := os.Getenv("LICENSES_FILE")
-		if licenseFile == "" {
-			if _, err := os.Stat("/licenses.json"); err == nil {
-				licenseFile = "/licenses.json"
+		err = hatchery.SetupLicensesTable()
+		if err != nil {
+			config.Logger.Printf("Error setting up licenses table %v", err)
+		} else {
+			licenseFile := os.Getenv("LICENSES_FILE")
+			if licenseFile == "" {
+				if _, err := os.Stat("/licenses.json"); err == nil {
+					licenseFile = "/licenses.json"
+				}
 			}
-		}
-		if licenseFile != "" {
-			config.Logger.Printf("Loading licenses from file %s", licenseFile)
-			err := hatchery.LoadLicensesTableFromFile(licenseFile)
-			if err != nil {
-				config.Logger.Printf("Error populating licenses table from file: %v", err)
+			if licenseFile != "" {
+				config.Logger.Printf("Loading licenses from file %s", licenseFile)
+				err := hatchery.LoadLicensesTableFromFile(licenseFile)
+				if err != nil {
+					config.Logger.Printf("Error populating licenses table from file: %v", err)
+				}
 			}
-		}
 
-		go hatchery.RevokeExpiredLicenses()
+			go hatchery.RevokeExpiredLicenses()
+		}
 	}
 
 	config.Logger.Print("Setting up routes")
