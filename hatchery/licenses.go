@@ -65,6 +65,7 @@ func SetupLicensesTable() error {
 	// ok if table already exists
 	if err != nil && err.(awserr.Error).Code() != "ResourceInUseException" {
 		Config.Logger.Printf("Licenses table %s already exists.\n", Config.Config.LicensesDynamodbTable)
+		Config.Logger.Println(err.Error())
 		return nil
 	} else {
 		Config.Logger.Printf("Error setting up table %s: %v", Config.Config.LicensesDynamodbTable, err)
