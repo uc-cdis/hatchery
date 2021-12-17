@@ -20,7 +20,7 @@ func RegisterSystem(mux *httptrace.ServeMux) {
 }
 
 func systemStatus(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Healthy")
+	fmt.Fprint(w, "Healthy")
 }
 
 func systemVersion(w http.ResponseWriter, r *http.Request) {

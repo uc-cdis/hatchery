@@ -159,7 +159,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	payModel, err := getPayModelForUser(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Print(err.Error())
 	}
 	if payModel == nil {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
@@ -172,7 +172,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fmt.Fprintf(w, "Success")
+	fmt.Fprint(w, "Success")
 }
 
 func terminate(w http.ResponseWriter, r *http.Request) {
@@ -200,7 +200,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		fmt.Fprintf(w, "Terminated workspace")
+		fmt.Fprint(w, "Terminated workspace")
 	}
 }
 
@@ -211,7 +211,7 @@ func getLicenses(w http.ResponseWriter, r *http.Request) {
 		return
 	} else {
 		licensesJson, _ := json.Marshal(licenses)
-		fmt.Fprintf(w, string(licensesJson))
+		fmt.Fprint(w, string(licensesJson))
 	}
 }
 
