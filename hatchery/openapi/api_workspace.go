@@ -50,31 +50,31 @@ func (c *WorkspaceApiController) Routes() Routes {
 		{
 			"Launch",
 			strings.ToUpper("Post"),
-			"/lw-workspace/launch",
+			"/launch",
 			c.Launch,
 		},
 		{
 			"Options",
 			strings.ToUpper("Get"),
-			"/lw-workspace/options",
+			"/options",
 			c.Options,
 		},
 		{
 			"Paymodels",
 			strings.ToUpper("Get"),
-			"/lw-workspace/paymodels",
+			"/paymodels",
 			c.Paymodels,
 		},
 		{
 			"Status",
 			strings.ToUpper("Get"),
-			"/lw-workspace/status",
+			"/status",
 			c.Status,
 		},
 		{
 			"Terminate",
 			strings.ToUpper("Post"),
-			"/lw-workspace/terminate",
+			"/terminate",
 			c.Terminate,
 		},
 	}

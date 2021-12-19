@@ -10,6 +10,7 @@ import (
 	"github.com/uc-cdis/hatchery/hatchery"
 	"github.com/uc-cdis/hatchery/hatchery/openapi"
 
+	"github.com/gorilla/mux"
 	muxtrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/gorilla/mux"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
@@ -67,6 +68,20 @@ func main() {
 
 	hatchery.RegisterUI(router)
 	hatchery.RegisterSystem(router)
+
+	if config.Config.SubDir != "" {
+		config.Logger.Printf("Setting subdir: %s", config.Config.SubDir)
+
+		r := mux.NewRouter()
+		r.Path(config.Config.SubDir).Handler(router.StrictSlash(false))
+
+		baseRouter := router
+		r.PathPrefix(config.Config.SubDir).HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+			req.URL.Path = strings.TrimPrefix(req.URL.Path, config.Config.SubDir)
+			baseRouter.ServeHTTP(resp, req)
+		})
+		router = r
+	}
 
 	traceRouter := muxtrace.NewRouter()
 	traceRouter.Router = router
