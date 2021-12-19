@@ -5,6 +5,8 @@ go 1.17
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/aws/aws-sdk-go v1.41.18
+	github.com/ghodss/yaml v1.0.0
+	github.com/gorilla/mux v1.8.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.33.0
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.22.3

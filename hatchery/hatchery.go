@@ -10,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/gorilla/mux"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
 
@@ -27,6 +28,10 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 
 	// ECS functions
 	mux.HandleFunc("/create-ecs-cluster", createECSCluster)
+}
+
+func RegisterUI(mux *mux.Router) {
+	mux.HandleFunc("/", home)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {

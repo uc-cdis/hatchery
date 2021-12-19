@@ -64,6 +64,7 @@ type ContainerStates struct {
 }
 
 type WorkspaceStatus struct {
+	Id               string            `json:"id"`
 	Status           string            `json:"status"`
 	Conditions       []PodConditions   `json:"conditions"`
 	ContainerStates  []ContainerStates `json:"containerStates"`
@@ -179,6 +180,7 @@ func podStatus(ctx context.Context, userName string, accessToken string, payMode
 	podName := userToResourceName(userName, "pod")
 
 	serviceName := userToResourceName(userName, "service")
+	status.Id = serviceName
 
 	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
 	_, serviceErr := podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
