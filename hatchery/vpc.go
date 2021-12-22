@@ -20,12 +20,12 @@ func setupVPC(userName string) (*string, error) {
 		Region: aws.String("us-east-1"),
 	}))
 
-	svc := NewSession(sess, roleARN)
+	svc := NewSVC(sess, roleARN)
 
-	ec2Remote := ec2.New(session.New(&aws.Config{
+	ec2Remote := ec2.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: svc.creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	// Subnets
 	// TODO: make base CIDR configurable?
@@ -115,12 +115,15 @@ func createVPC(cidr string, vpcname string, svc *ec2.EC2) (*ec2.CreateVpcOutput,
 		return nil, err
 	}
 
-	svc.ModifyVpcAttribute(&ec2.ModifyVpcAttributeInput{
+	_, err = svc.ModifyVpcAttribute(&ec2.ModifyVpcAttributeInput{
 		EnableDnsHostnames: &ec2.AttributeBooleanValue{
 			Value: aws.Bool(true),
 		},
 		VpcId: vpc.Vpc.VpcId,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	return vpc, nil
 }
@@ -214,6 +217,9 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 				},
 			},
 		})
+		if err != nil {
+			return nil, err
+		}
 		route, err := svc.CreateRoute(&ec2.CreateRouteInput{
 			DestinationCidrBlock: aws.String("0.0.0.0/0"),
 			GatewayId:            igw.InternetGateway.InternetGatewayId,

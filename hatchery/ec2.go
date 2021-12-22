@@ -19,10 +19,10 @@ type NetworkInfo struct {
 }
 
 func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, error) {
-	svc := ec2.New(session.New(&aws.Config{
+	svc := ec2.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
-	}))
+	})))
 
 	vpcname := userToResourceName(userName, "service") + "-" + strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-vpc"
 	vpcInput := &ec2.DescribeVpcsInput{
