@@ -184,7 +184,15 @@ func podStatus(ctx context.Context, userName string, accessToken string, payMode
 	_, serviceErr := podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err != nil {
 		if isExternalClient && serviceErr == nil {
-			// only worry for service if podClient is external EKS
+			// only worry about service if podClient is external EKS
+			policy := metav1.DeletePropagationBackground
+			deleteOptions := metav1.DeleteOptions{
+				PropagationPolicy: &policy,
+			}
+			podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
+			if err != nil {
+				Config.Logger.Printf("Error deleting service. %s", err)
+			}
 			Config.Logger.Printf("Pod has been terminated, but service is still being terminated. Wait for service to be killed.")
 			// Pod has been terminated, but service is still being terminated. Wait for service to be killed
 			status.Status = "Terminating"
@@ -617,13 +625,19 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 }
 
 func getPayModelForUser(userName string) (result *PayModel, err error) {
+	if userName == "" {
+		return nil, fmt.Errorf("No username sent in header")
+	}
 	if Config.Config.PayModelsDynamodbTable == "" {
 		// fallback for backward compatibility
-		Config.Logger.Printf("Unable to query pay model data in DynamoDB: no 'pay-models-dynamodb-table' in config. Fallback on config.")
+		payModel := Config.Config.DefaultPayModel
 		for _, configPaymodel := range Config.PayModelMap {
 			if configPaymodel.User == userName {
-				return &configPaymodel, nil
+				payModel = configPaymodel
 			}
+		}
+		if (PayModel{} != payModel) {
+			return &payModel, nil
 		}
 		return nil, fmt.Errorf("No pay model data for username '%s'.", userName)
 	}
@@ -659,12 +673,15 @@ func getPayModelForUser(userName string) (result *PayModel, err error) {
 		// in DynamoDB
 		// TODO: remove this block once we only rely on DynamoDB
 		Config.Logger.Printf("No pay model data for username '%s' in DynamoDB. Fallback on config.", userName)
+		payModel := Config.Config.DefaultPayModel
 		for _, configPaymodel := range Config.PayModelMap {
 			if configPaymodel.User == userName {
-				return &configPaymodel, nil
+				payModel = configPaymodel
 			}
 		}
-
+		if (PayModel{} != payModel) {
+			return &payModel, nil
+		}
 		return nil, fmt.Errorf("No pay model data for username '%s'.", userName)
 	}
 
@@ -765,8 +782,6 @@ func createLocalK8sPod(ctx context.Context, hash string, userName string, access
 
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err == nil {
-		// This probably happened as the result of some error... there was no pod but was a service
-		// Lets just clean it up and proceed
 		policy := metav1.DeletePropagationBackground
 		deleteOptions := metav1.DeleteOptions{
 			PropagationPolicy: &policy,
