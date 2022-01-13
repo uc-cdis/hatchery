@@ -189,7 +189,7 @@ func podStatus(ctx context.Context, userName string, accessToken string, payMode
 			deleteOptions := metav1.DeleteOptions{
 				PropagationPolicy: &policy,
 			}
-			podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
+			err := podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
 			if err != nil {
 				Config.Logger.Printf("Error deleting service. %s", err)
 			}
