@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 )
@@ -21,6 +22,7 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 	if taskRole.Role != nil {
 		return taskRole.Role.Arn, nil
 	} else {
+		policyAlreadyExists := false
 		policy, err := svc.CreatePolicy(&iam.CreatePolicyInput{
 			PolicyDocument: aws.String(`{
 				"Version": "2012-10-17",
@@ -39,7 +41,25 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 			PolicyName: aws.String(fmt.Sprintf("ws-task-policy-%s", userName)),
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create policy: %s", err)
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				// Update the policy to the latest spec if it is existed already
+				case iam.ErrCodeEntityAlreadyExistsException:
+					policyAlreadyExists = true
+					fmt.Println(iam.ErrCodeEntityAlreadyExistsException, aerr.Error())
+				case iam.ErrCodeLimitExceededException:
+					fmt.Println(iam.ErrCodeLimitExceededException, aerr.Error())
+				case iam.ErrCodeNoSuchEntityException:
+					fmt.Println(iam.ErrCodeNoSuchEntityException, aerr.Error())
+				case iam.ErrCodeServiceFailureException:
+					fmt.Println(iam.ErrCodeServiceFailureException, aerr.Error())
+				default:
+					fmt.Println(aerr.Error())
+				}
+			}
+			if !policyAlreadyExists {
+				return nil, err
+			}
 		}
 		createTaskRoleInput := &iam.CreateRoleInput{
 			RoleName: aws.String(userToResourceName(userName, "pod")),
@@ -59,16 +79,17 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 			  `),
 		}
 
+		createTaskRole, err := svc.CreateRole(createTaskRoleInput)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TaskRole: %s", err)
+		}
+
 		_, err = svc.AttachRolePolicy(&iam.AttachRolePolicyInput{
 			PolicyArn: policy.Policy.Arn,
 			RoleName:  aws.String(userToResourceName(userName, "pod")),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to attach RolePolicy: %s", err)
-		}
-		createTaskRole, err := svc.CreateRole(createTaskRoleInput)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create TaskRole: %s", err)
 		}
 
 		return createTaskRole.Role.Arn, nil
