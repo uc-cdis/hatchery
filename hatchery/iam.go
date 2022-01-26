@@ -14,7 +14,8 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
 	})))
-
+	pm := Config.PayModelMap[userName]
+	policyArn := fmt.Sprintf("arn:aws:iam::%s:policy/%s", pm.AWSAccountId, fmt.Sprintf("ws-task-policy-%s", userName))
 	taskRoleInput := &iam.GetRoleInput{
 		RoleName: aws.String(userToResourceName(userName, "pod")),
 	}
@@ -23,7 +24,7 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 		return taskRole.Role.Arn, nil
 	} else {
 		policyAlreadyExists := false
-		policy, err := svc.CreatePolicy(&iam.CreatePolicyInput{
+		_, err := svc.CreatePolicy(&iam.CreatePolicyInput{
 			PolicyDocument: aws.String(`{
 				"Version": "2012-10-17",
 				"Statement": [
@@ -46,7 +47,6 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 				// Update the policy to the latest spec if it is existed already
 				case iam.ErrCodeEntityAlreadyExistsException:
 					policyAlreadyExists = true
-					fmt.Println(iam.ErrCodeEntityAlreadyExistsException, aerr.Error())
 				case iam.ErrCodeLimitExceededException:
 					fmt.Println(iam.ErrCodeLimitExceededException, aerr.Error())
 				case iam.ErrCodeNoSuchEntityException:
@@ -85,7 +85,7 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 		}
 
 		_, err = svc.AttachRolePolicy(&iam.AttachRolePolicyInput{
-			PolicyArn: policy.Policy.Arn,
+			PolicyArn: &policyArn,
 			RoleName:  aws.String(userToResourceName(userName, "pod")),
 		})
 		if err != nil {
@@ -95,4 +95,64 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 		return createTaskRole.Role.Arn, nil
 	}
 
+}
+
+const ecsTaskExecutionRoleName = "ecsTaskExecutionRole"
+const ecsTaskExecutionPolicyArn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+const ecsTaskExecutionRoleAssumeRolePolicyDocument = `{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}`
+
+func (creds *CREDS) CreateEcsTaskExecutionRole() (*string, error) {
+	svc := iam.New(session.Must(session.NewSession(&aws.Config{
+		Credentials: creds.creds,
+		Region:      aws.String("us-east-1"),
+	})))
+	getRoleResp, err := svc.GetRole(
+		&iam.GetRoleInput{
+			RoleName: aws.String(ecsTaskExecutionRoleName),
+		},
+	)
+
+	if err == nil {
+		return getRoleResp.Role.Arn, nil
+	}
+
+	createRoleResp, err := svc.CreateRole(
+		&iam.CreateRoleInput{
+			AssumeRolePolicyDocument: aws.String(ecsTaskExecutionRoleAssumeRolePolicyDocument),
+			RoleName:                 aws.String(ecsTaskExecutionRoleName),
+		},
+	)
+
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	ecsTaskExecutionRoleArn := createRoleResp.Role.Arn
+
+	_, err = svc.AttachRolePolicy(
+		&iam.AttachRolePolicyInput{
+			RoleName:  aws.String(ecsTaskExecutionRoleName),
+			PolicyArn: aws.String(ecsTaskExecutionPolicyArn),
+		},
+	)
+
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
+	}
+
+	return ecsTaskExecutionRoleArn, nil
 }

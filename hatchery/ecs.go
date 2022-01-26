@@ -405,6 +405,11 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		return err
 	}
 
+	_, err = svc.CreateEcsTaskExecutionRole()
+	if err != nil {
+		return err
+	}
+
 	taskDef := CreateTaskDefinitionInput{
 		Image:      hatchApp.Image,
 		Cpu:        cpu,
