@@ -29,13 +29,13 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 				"Version": "2012-10-17",
 				"Statement": [
 					{
-						"Sid": "HatcheryPolicy",
 						"Effect": "Allow",
-						"Action": "elasticfilesystem:*",
-						"Resource": [
-							"arn:aws:elasticfilesystem:*:*:access-point/*",
-							"arn:aws:elasticfilesystem:*:*:file-system/*"
-						]
+						"Action": [
+							"elasticfilesystem:ClientMount",
+							"elasticfilesystem:ClientWrite",
+							"elasticfilesystem:ClientRootAccess"
+						],
+						"Resource": "*"
 					}
 				]
 			}`),

@@ -76,9 +76,9 @@ func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc 
 				CreationInfo: &efs.CreationInfo{
 					OwnerGid:    aws.Int64(100),
 					OwnerUid:    aws.Int64(1000),
-					Permissions: aws.String("0755"),
+					Permissions: aws.String("755"),
 				},
-				Path: aws.String("/"),
+				Path: aws.String("/pd"),
 			},
 		}
 
