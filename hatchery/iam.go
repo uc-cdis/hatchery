@@ -96,7 +96,8 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 	}
 
 }
-
+// https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_execution_IAM_role.html 
+// The task execution role grants the Amazon ECS container and Fargate agents permission to make AWS API calls on your behalf. 
 const ecsTaskExecutionRoleName = "ecsTaskExecutionRole"
 const ecsTaskExecutionPolicyArn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 const ecsTaskExecutionRoleAssumeRolePolicyDocument = `{
