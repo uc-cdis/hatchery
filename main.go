@@ -57,12 +57,12 @@ func main() {
 	}
 
 	if config.Config.LicensesDynamodbTable != "" {
-		config.Logger.Printf("Using licenses table %s", config.Config.LicensesDynamodbTable)
 		err = hatchery.SetupLicensesTable()
 		if err != nil {
 			config.Logger.Printf("Error setting up licenses table %v", err)
 		} else {
 			licenseFile := os.Getenv("LICENSES_FILE")
+			config.Logger.Printf("Licenses file %s\n", licenseFile)
 			if licenseFile == "" {
 				if _, err := os.Stat("/licenses.json"); err == nil {
 					licenseFile = "/licenses.json"

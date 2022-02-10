@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"log"
 	"os"
 	"testing"
 	"time"
@@ -19,12 +20,14 @@ func resetTable() {
 			LicensesDynamodbTable:  "licenses-test",
 			LicensesDynamodbRegion: DEFAULT_DDB_REGION,
 		},
+		Logger: log.New(os.Stdout, "", log.LstdFlags),
 	}
 
 	dynamodbSvc := GetDynamoDBSVC()
 	_, _ = dynamodbSvc.DeleteTable(&dynamodb.DeleteTableInput{
 		TableName: aws.String(Config.Config.LicensesDynamodbTable),
 	})
+
 	_ = SetupLicensesTable()
 	err := LoadLicensesTableFromFile("../testData/testLicenses.json")
 	if err != nil {

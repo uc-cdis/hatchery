@@ -30,15 +30,16 @@ func (l License) MarshalJSON() ([]byte, error) {
 }
 
 const (
-	LICENSE_TIMEOUT_SECONDS = 60
-	MAX_CHECKOUT_ATTEMPTS   = 5
-	LICENSE_TABLE           = "licenses-test"
+	LICENSE_TIMEOUT_SECONDS  = 60
+	MAX_SET_LICENSE_ATTEMPTS = 5
+	LICENSE_TABLE            = "licenses-test"
 )
 
 func SetupLicensesTable() error {
 
 	Config.Logger.Printf("Attempting to setup licenses table %s\n", Config.Config.LicensesDynamodbTable)
 	dynamodbSvc := GetDynamoDBSVC()
+
 	tableName := aws.String(Config.Config.LicensesDynamodbTable)
 	input := &dynamodb.CreateTableInput{
 		AttributeDefinitions: []*dynamodb.AttributeDefinition{
@@ -70,6 +71,8 @@ func SetupLicensesTable() error {
 		} else {
 			Config.Logger.Printf("Error setting up table %s: %v", Config.Config.LicensesDynamodbTable, err)
 		}
+	} else {
+		Config.Logger.Printf("Successfully setup table %s\n", Config.Config.LicensesDynamodbTable)
 	}
 	return err
 }
@@ -154,7 +157,7 @@ func CheckoutLicense(licenseName string, user string) error {
 	} else {
 		// retry if someone else modifies this license document while we attempt to
 
-		for attempts := 0; attempts < MAX_CHECKOUT_ATTEMPTS; attempts++ {
+		for attempts := 0; attempts < MAX_SET_LICENSE_ATTEMPTS; attempts++ {
 
 			if len(license.LicenseUsers) == license.UserLimit {
 				return fmt.Errorf("license %s is already at max user capacity", licenseName)
@@ -190,7 +193,7 @@ func RenewLicense(licenseName string, user string) error {
 	}
 
 	// retry if someone else modifies this license document while we attempt to
-	for attempts := 0; attempts < MAX_CHECKOUT_ATTEMPTS; attempts++ {
+	for attempts := 0; attempts < MAX_SET_LICENSE_ATTEMPTS; attempts++ {
 
 		if _, isCheckedOut := license.LicenseUsers[user]; !isCheckedOut {
 			return fmt.Errorf("user %s has not checked out license %s", user, licenseName)
@@ -237,7 +240,7 @@ func RevokeLicense(licenseName string, user string) {
 
 	license, _ := getLicense(licenseName)
 
-	for attempts := 0; attempts < MAX_CHECKOUT_ATTEMPTS; attempts++ {
+	for attempts := 0; attempts < MAX_SET_LICENSE_ATTEMPTS; attempts++ {
 		if revokeUserLicenseIfNotStale(license, user) == nil {
 			return
 		}

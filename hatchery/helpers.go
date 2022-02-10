@@ -213,6 +213,8 @@ func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (last
 func GetDynamoDBSVC() *dynamodb.DynamoDB {
 	var conf *aws.Config
 	if os.Getenv("DYNAMODB_URL") != "" {
+		Config.Logger.Printf("Region: %s\n", Config.Config.LicensesDynamodbRegion)
+		Config.Logger.Printf("URL: %s\n", os.Getenv("DYNAMODB_URL"))
 		conf = aws.NewConfig().WithEndpoint(os.Getenv("DYNAMODB_URL")).WithRegion(Config.Config.LicensesDynamodbRegion)
 	} else {
 		conf = aws.NewConfig().WithRegion(Config.Config.LicensesDynamodbRegion)
