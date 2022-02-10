@@ -405,6 +405,11 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		return err
 	}
 
+	_, err = svc.CreateEcsTaskExecutionRole()
+	if err != nil {
+		return err
+	}
+
 	taskDef := CreateTaskDefinitionInput{
 		Image:      hatchApp.Image,
 		Cpu:        cpu,
@@ -438,14 +443,17 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 			{
 				ContainerPath: aws.String("/home/jovyan/data"),
 				SourceVolume:  aws.String("data-volume"),
+				ReadOnly:      aws.Bool(false),
 			},
 			{
 				ContainerPath: aws.String("/home/jovyan/pd"),
 				SourceVolume:  aws.String("pd"),
+				ReadOnly:      aws.Bool(false),
 			},
 			{
 				ContainerPath: aws.String("/home/jovyan/.gen3"),
 				SourceVolume:  aws.String("gen3"),
+				ReadOnly:      aws.Bool(false),
 			},
 		},
 		Args:             hatchApp.Args,
