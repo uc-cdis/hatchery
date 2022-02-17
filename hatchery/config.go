@@ -56,19 +56,29 @@ type AppConfigInfo struct {
 
 // TODO remove PayModel from config once DynamoDB contains all necessary data
 type PayModel struct {
-	Name         string `json:"name"`
-	User         string `json:"user_id"`
-	AWSAccountId string `json:"aws_account_id"`
-	Region       string `json:"region"`
-	Ecs          string `json:"ecs"`
-	VpcId        string `json:"vpcid"`
-	Subnet       int    `json:"subnet"`
+	Id              string `json:"bmh_workspace_id"`
+	Name            string `json:"workspace_type"`
+	User            string `json:"user_id"`
+	AWSAccountId    string `json:"account_id"`
+	Region          string `json:"region"`
+	Ecs             string `json:"ecs"`
+	Subnet          int    `json:"subnet"`
+	HardLimit       int    `json:"hard-limit"`
+	SoftLimit       int    `json:"soft-limit"`
+	TotalUsage      int    `json:"total-usage"`
+	CurrentPayModel bool   `json:"current_pay_model"`
+}
+
+type AllPayModels struct {
+	CurrentPayModel *PayModel  `json:"current_pay_model"`
+	PayModels       []PayModel `json:"all_pay_models"`
 }
 
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace          string           `json:"user-namespace"`
 	DefaultPayModel        PayModel         `json:"default-pay-model"`
+	DisableLocalWS         bool             `json:"disable-local-ws"`
 	PayModels              []PayModel       `json:"pay-models"`
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
 	SubDir                 string           `json:"sub-dir"`

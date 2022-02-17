@@ -21,9 +21,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 	"github.com/aws/aws-sdk-go/service/eks"
 
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
@@ -622,102 +619,6 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	pod.Spec.Containers = append(pod.Spec.Containers, hatchApp.Friends...)
 	//hatchConfig.Logger.Printf("friends added")
 	return pod, nil
-}
-
-func getPayModelForUser(userName string) (result *PayModel, err error) {
-	if userName == "" {
-		return nil, fmt.Errorf("No username sent in header")
-	}
-	if Config.Config.PayModelsDynamodbTable == "" {
-		// fallback for backward compatibility
-		payModel := Config.Config.DefaultPayModel
-		for _, configPaymodel := range Config.PayModelMap {
-			if configPaymodel.User == userName {
-				payModel = configPaymodel
-			}
-		}
-		if (PayModel{} != payModel) {
-			return &payModel, nil
-		}
-		return nil, fmt.Errorf("No pay model data for username '%s'.", userName)
-	}
-	// query pay model data for this user from DynamoDB
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region: aws.String("us-east-1"),
-		},
-	}))
-	dynamodbSvc := dynamodb.New(sess)
-
-	filt := expression.Name("user_id").Equal(expression.Value(userName))
-	expr, err := expression.NewBuilder().WithFilter(filt).Build()
-	if err != nil {
-		Config.Logger.Printf("Got error building expression: %s", err)
-		return nil, err
-	}
-
-	params := &dynamodb.ScanInput{
-		ExpressionAttributeNames:  expr.Names(),
-		ExpressionAttributeValues: expr.Values(),
-		FilterExpression:          expr.Filter(),
-		TableName:                 aws.String(Config.Config.PayModelsDynamodbTable),
-	}
-	res, err := dynamodbSvc.Scan(params)
-	if err != nil {
-		Config.Logger.Printf("Query API call failed: %s", err)
-		return nil, err
-	}
-
-	if len(res.Items) == 0 {
-		// temporary fallback to the config to get data for users that are not
-		// in DynamoDB
-		// TODO: remove this block once we only rely on DynamoDB
-		Config.Logger.Printf("No pay model data for username '%s' in DynamoDB. Fallback on config.", userName)
-		payModel := Config.Config.DefaultPayModel
-		for _, configPaymodel := range Config.PayModelMap {
-			if configPaymodel.User == userName {
-				payModel = configPaymodel
-			}
-		}
-		if (PayModel{} != payModel) {
-			return &payModel, nil
-		}
-		return nil, fmt.Errorf("No pay model data for username '%s'.", userName)
-	}
-
-	if len(res.Items) > 1 {
-		Config.Logger.Printf("There is more than one pay model item in DynamoDB for username '%s'. Defaulting to the first one.", userName)
-	}
-
-	// parse pay model data
-	payModel := PayModel{}
-	err = dynamodbattribute.UnmarshalMap(res.Items[0], &payModel)
-	if err != nil {
-		Config.Logger.Printf("Got error unmarshalling: %s", err)
-		return nil, err
-	}
-
-	// temporary fallback to the config to get data that is not in DynamoDB
-	// TODO: remove this block once DynamoDB contains all necessary data
-	for _, configPaymodel := range Config.PayModelMap {
-		if configPaymodel.User == userName {
-			if payModel.Name == "" {
-				payModel.Name = configPaymodel.Name
-			}
-			if payModel.AWSAccountId == "" {
-				payModel.AWSAccountId = configPaymodel.AWSAccountId
-			}
-			if payModel.Region == "" {
-				payModel.Region = configPaymodel.Region
-			}
-			if payModel.Ecs == "" {
-				payModel.Ecs = configPaymodel.Ecs
-			}
-			break
-		}
-	}
-
-	return &payModel, nil
 }
 
 func createLocalK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {

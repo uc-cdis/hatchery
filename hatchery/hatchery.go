@@ -24,6 +24,8 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/status", status)
 	mux.HandleFunc("/options", options)
 	mux.HandleFunc("/paymodels", paymodels)
+	mux.HandleFunc("/setpaymodel", setpaymodel)
+	mux.HandleFunc("/allpaymodels", allpaymodels)
 
 	// ECS functions
 	mux.HandleFunc("/create-ecs-cluster", createECSCluster)
@@ -55,16 +57,65 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userName := getCurrentUserName(r)
-	payModel, err := getPayModelForUser(userName)
-	if payModel == nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
+
+	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if payModel == nil {
+		http.Error(w, "Current paymodel not set", http.StatusNotFound)
+		return
+	}
 	out, err := json.Marshal(payModel)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprint(w, string(out))
+}
+
+func allpaymodels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	userName := getCurrentUserName(r)
+
+	payModels, err := getPayModelsForUser(userName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if payModels == nil {
+		http.Error(w, "No paymodel set", http.StatusNotFound)
+		return
+	}
+	out, err := json.Marshal(payModels)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprint(w, string(out))
+}
+
+func setpaymodel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	userName := getCurrentUserName(r)
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "Missing ID argument", http.StatusBadRequest)
+		return
+	}
+	pm, err := setCurrentPaymodel(userName, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out, err := json.Marshal(pm)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -76,19 +127,28 @@ func status(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	accessToken := getBearerToken(r)
 
-	payModel, err := getPayModelForUser(userName)
+	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		if err != NopaymodelsError {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	var result *WorkspaceStatus
-	if payModel != nil && payModel.Ecs == "true" {
+
+	if payModel.Ecs == "true" {
 		result, err = statusEcs(r.Context(), userName, accessToken, payModel.AWSAccountId)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 	} else {
 		result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
-	}
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	out, err := json.Marshal(result)
@@ -154,7 +214,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := getCurrentUserName(r)
-	payModel, err := getPayModelForUser(userName)
+	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
@@ -166,6 +226,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
 	}
 	if err != nil {
+		Config.Logger.Printf("error during launch: %s", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -179,7 +240,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
-	payModel, err := getPayModelForUser(userName)
+	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
@@ -219,8 +280,8 @@ func getBearerToken(r *http.Request) string {
 // TODO: NEED TO CALL THIS FUNCTION IF IT DOESN'T EXIST!!!
 func createECSCluster(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
-	payModel, err := getPayModelForUser(userName)
-	if payModel == nil {
+	payModel, err := getCurrentPayModel(userName)
+	if &payModel == nil {
 		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
 		return
 	}
