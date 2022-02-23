@@ -138,6 +138,7 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 			return nil, NopaymodelsError
 		}
 		PayModels.CurrentPayModel = pm
+		PayModels.PayModels = append(PayModels.PayModels, *pm)
 		return &PayModels, nil
 	}
 
