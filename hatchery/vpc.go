@@ -12,7 +12,10 @@ import (
 )
 
 func setupVPC(userName string) (*string, error) {
-	pm := Config.PayModelMap[userName]
+	pm, err := getCurrentPayModel(userName)
+	if err != nil {
+		return nil, err
+	}
 
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
@@ -31,7 +34,7 @@ func setupVPC(userName string) (*string, error) {
 	// TODO: make base CIDR configurable?
 	cidrstring := "192.165.0.0/12"
 	_, IPNet, _ := net.ParseCIDR(cidrstring)
-	subnet, err := cidr.Subnet(IPNet, 15, pm.Subnet)
+	subnet, err := cidr.Subnet(IPNet, 14, pm.Subnet)
 	if err != nil {
 		return nil, err
 	}

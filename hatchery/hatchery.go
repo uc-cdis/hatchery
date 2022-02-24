@@ -142,7 +142,6 @@ func status(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 	} else {
 		result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
 		if err != nil {
@@ -226,7 +225,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
 	}
 	if err != nil {
-		Config.Logger.Printf("error during launch: %s", err)
+		Config.Logger.Printf("error during launch: %-v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

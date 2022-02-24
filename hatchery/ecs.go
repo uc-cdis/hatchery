@@ -339,8 +339,6 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 }
 
 func launchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string, payModel PayModel) error {
-	// TODO: Setup EBS volume as pd
-	// Must create volume using SDK too.. :(
 	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
@@ -486,10 +484,6 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		}
 		return err
 	}
-	err = setupTransitGateway(userName)
-	if err != nil {
-		return err
-	}
 
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash, payModel)
 	if err != nil {
@@ -497,6 +491,11 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		if aerr != nil {
 			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
 		}
+		return err
+	}
+
+	err = setupTransitGateway(userName)
+	if err != nil {
 		return err
 	}
 
