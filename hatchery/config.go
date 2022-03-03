@@ -56,17 +56,17 @@ type AppConfigInfo struct {
 
 // TODO remove PayModel from config once DynamoDB contains all necessary data
 type PayModel struct {
-	Id              string `json:"bmh_workspace_id"`
-	Name            string `json:"workspace_type"`
-	User            string `json:"user_id"`
-	AWSAccountId    string `json:"account_id"`
-	Region          string `json:"region"`
-	Ecs             string `json:"ecs"`
-	Subnet          int    `json:"subnet"`
-	HardLimit       int    `json:"hard-limit"`
-	SoftLimit       int    `json:"soft-limit"`
-	TotalUsage      int    `json:"total-usage"`
-	CurrentPayModel bool   `json:"current_pay_model"`
+	Id              string  `json:"bmh_workspace_id"`
+	Name            string  `json:"workspace_type"`
+	User            string  `json:"user_id"`
+	AWSAccountId    string  `json:"account_id"`
+	Region          string  `json:"region"`
+	Ecs             string  `json:"ecs"`
+	Subnet          int     `json:"subnet"`
+	HardLimit       float32 `json:"hard-limit"`
+	SoftLimit       float32 `json:"soft-limit"`
+	TotalUsage      float32 `json:"total-usage"`
+	CurrentPayModel bool    `json:"current_pay_model"`
 }
 
 type AllPayModels struct {
