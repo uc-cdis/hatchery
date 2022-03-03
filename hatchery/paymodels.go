@@ -185,7 +185,9 @@ func setCurrentPaymodel(userName string, workspaceid string) (paymodel *PayModel
 	}
 	pm_config, err := payModelFromConfig(userName)
 	if err != nil {
-		return nil, err
+		if err != NopaymodelsError {
+			return nil, err
+		}
 	}
 	if pm_config.Id == workspaceid {
 		resetCurrentPaymodel(userName, dynamodbSvc)
