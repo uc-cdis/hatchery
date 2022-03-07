@@ -191,13 +191,19 @@ func setCurrentPaymodel(userName string, workspaceid string) (paymodel *PayModel
 	}
 	if pm_config != nil {
 		if pm_config.Id == workspaceid {
-			resetCurrentPaymodel(userName, dynamodbSvc)
+			err := resetCurrentPaymodel(userName, dynamodbSvc)
+			if err != nil {
+				return nil, err
+			}
 			return pm_config, nil
 		}
 	}
 	for _, pm := range *pm_db {
 		if pm.Id == workspaceid {
-			updateCurrentPaymodelInDB(userName, workspaceid, dynamodbSvc)
+			err := updateCurrentPaymodelInDB(userName, workspaceid, dynamodbSvc)
+			if err != nil {
+				return nil, err
+			}
 			return &pm, nil
 		}
 	}

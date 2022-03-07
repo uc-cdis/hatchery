@@ -280,7 +280,7 @@ func getBearerToken(r *http.Request) string {
 func createECSCluster(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	payModel, err := getCurrentPayModel(userName)
-	if &payModel == nil {
+	if payModel == nil {
 		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
 		return
 	}
