@@ -98,7 +98,7 @@ paths:
       tags:
       - workspace
       summary: Get the current user's all pay model data, including the currently activated one
-      operationId: paymodels
+      operationId: allpaymodels
       responses:
         200:
           description: successful operation
@@ -117,8 +117,25 @@ paths:
     POST:
       tags:
       - workspace
-      summary: Get the current user's al pay model data
-      operationId: paymodels
+      summary: Set the currently activated paymodel for user
+      operationId: setpaymodel
+      parameters:
+      - in: query
+        name: id
+        schema:
+          type: string
+        description: The unique ID of the pay model
+      responses:
+        200:
+          description: successfully set current pay model
+        400:
+          $ref: '#/components/responses/BadRequestError'
+        401:
+          $ref: '#/components/responses/UnauthorizedError'
+        404:
+          $ref: '#/components/responses/NotFoundError'
+        500:
+          $ref: '#/components/responses/InternalServerError'
 
 components:
   schemas:
@@ -230,6 +247,8 @@ components:
             $ref: '#/components/schemas/PayModel'
           description: All pay models associated with this user, including the currently activated one
   responses:
+    BadRequestError:
+      description: Missing required information in request
     UnauthorizedError:
       description: Access token is missing or invalid
     NotFoundError:
