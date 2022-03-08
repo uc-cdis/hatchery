@@ -85,8 +85,7 @@ paths:
           content:
             application/json:
               schema:
-                items:
-                    $ref: '#/components/schemas/PayModel'
+                  $ref: '#/components/schemas/PayModel'
         401:
           $ref: '#/components/responses/UnauthorizedError'
         404:
@@ -105,8 +104,7 @@ paths:
           content:
             application/json:
               schema:
-                items:
-                    $ref: '#/components/schemas/PayModel'
+                  $ref: '#/components/schemas/AllPayModels'
         401:
           $ref: '#/components/responses/UnauthorizedError'
         404:
@@ -114,7 +112,7 @@ paths:
         500:
           $ref: '#/components/responses/InternalServerError'
   /setpaymodel:
-    POST:
+    post:
       tags:
       - workspace
       summary: Set the currently activated paymodel for user
@@ -183,63 +181,62 @@ components:
         type:
           type: string
           enum: [PodScheduled, Initialized, ContainersReady, Ready]
-          description: 	Name of this Pod condition
+          description: Name of this Pod condition
         status:
           type: string
           enum: ["True", "False", Unknown]
-          description: 	Indicates whether that condition is applicable
+          description: Indicates whether that condition is applicable
     ContainerState:
       type: object
       properties:
         name:
           type: string
-          description: 	Name of this container
+          description: Name of this container
         state:
           type: object
-          description: 	Details about the container's current condition
+          description: Details about the container's current condition
     PayModel:
       type: object
       properties:
         bmh_workspace_id:
           type: string
-          description: 	Unique ID of this pay model
+          description: Unique ID of this pay model
         workspace_type:
           type: string
-          description: 	Type of this pay model, can be used as the name of pay model
+          description: Type of this pay model, can be used as the name of pay model
         user_id:
           type: string
-          description: 	The ID of user
+          description: The ID of user
         account_id:
           type: string
-          description: 	The ID of the provisioned AWS account for this pay model
+          description: The ID of the provisioned AWS account for this pay model
         region:
           type: string
-          description: 	The region of the provisioned AWS account for this pay model
+          description: The region of the provisioned AWS account for this pay model
         ecs:
           type: string
-          description: 	Whether to launch workspace using AWS ECS for this pay model
+          description: Whether to launch workspace using AWS ECS for this pay model
         subnet:
           type: string
-          description: 	The subnet identifier
+          description: The subnet identifier
         hard-limit:
           type: string
-          description: 	The hard limit set for this AWS account
+          description: The hard limit set for this AWS account
         soft-limit:
           type: string
-          description: 	The soft limit set for this AWS account
+          description: The soft limit set for this AWS account
         total-usage:
           type: string
-          description: 	The total occurred usage so far for this AWS account
+          description: The total occurred usage so far for this AWS account
         current_pay_model:
           type: boolean
-          description: 	Is this pay model activated as current pay model
+          description: Is this pay model activated as current pay model
     AllPayModels:
       type: object
       properties:
         current_pay_model:
           type: object
-          schema:
-            $ref: '#/components/schemas/PayModel'
+          $ref: '#/components/schemas/PayModel'
           description: The currently activated pay model associated with this user
         all_pay_models:
           type: array
