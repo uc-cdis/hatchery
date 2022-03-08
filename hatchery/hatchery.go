@@ -100,7 +100,7 @@ func allpaymodels(w http.ResponseWriter, r *http.Request) {
 }
 
 func setpaymodel(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
+	if r.Method != "POST" {
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
