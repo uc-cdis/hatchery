@@ -61,7 +61,7 @@ type PayModel struct {
 	User            string  `json:"user_id"`
 	AWSAccountId    string  `json:"account_id"`
 	Region          string  `json:"region"`
-	Ecs             string  `json:"ecs"`
+	Ecs             bool    `json:"ecs"`
 	Subnet          int     `json:"subnet"`
 	HardLimit       float32 `json:"hard-limit"`
 	SoftLimit       float32 `json:"soft-limit"`
