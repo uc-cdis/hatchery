@@ -911,7 +911,7 @@ tls: %s
 
 	serviceName := userToResourceName(userName, "service")
 	NodePort := int32(80)
-	if payModel.Ecs != "true" {
+	if payModel.Ecs != true {
 		externalPodClient, err := NewEKSClientset(ctx, userName, payModel)
 		if err != nil {
 			return err

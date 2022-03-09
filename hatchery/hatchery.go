@@ -136,7 +136,7 @@ func status(w http.ResponseWriter, r *http.Request) {
 	}
 	var result *WorkspaceStatus
 
-	if payModel.Ecs == "true" {
+	if payModel.Ecs {
 		result, err = statusEcs(r.Context(), userName, accessToken, payModel.AWSAccountId)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -219,7 +219,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 	if payModel == nil {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
-	} else if payModel.Ecs == "true" {
+	} else if payModel.Ecs {
 		err = launchEcsWorkspace(r.Context(), userName, hash, accessToken, *payModel)
 	} else {
 		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
@@ -243,7 +243,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
-	if payModel != nil && payModel.Ecs == "true" {
+	if payModel != nil && payModel.Ecs {
 		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
