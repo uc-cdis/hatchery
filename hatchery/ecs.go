@@ -54,7 +54,6 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 }
 
 // Create ECS cluster
-// TODO: Evaluate if this is still this needed..
 func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
 	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
@@ -485,6 +484,11 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		return err
 	}
 
+	err = setupTransitGateway(userName)
+	if err != nil {
+		return err
+	}
+
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash, payModel)
 	if err != nil {
 		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
@@ -493,12 +497,6 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		}
 		return err
 	}
-
-	err = setupTransitGateway(userName)
-	if err != nil {
-		return err
-	}
-
 	fmt.Printf("Launched ECS workspace service at %s for user %s\n", launchTask, userName)
 	return nil
 }
