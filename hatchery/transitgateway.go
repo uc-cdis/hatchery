@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ram"
@@ -204,6 +205,19 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 	}
 	exTg, err := svc.DescribeTransitGateways(tgInput)
 	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case "InvalidTransitGatewayID.NotFound":
+				// Accept any pending invites again
+				sess.acceptTGWShare()
+				exTg, err = svc.DescribeTransitGateways(tgInput)
+				if err != nil {
+					return nil, fmt.Errorf("Cannot DescribeTransitGateways again: %s", err.Error())
+				}
+			default:
+				return nil, fmt.Errorf("Cannot DescribeTransitGateways: %s", err.Error())
+			}
+		}
 		return nil, err
 	}
 	for *exTg.TransitGateways[0].State != "available" {

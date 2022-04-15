@@ -216,3 +216,29 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 	}
 	return loadBalancer, targetGroup.TargetGroups[0].TargetGroupArn, listener, nil
 }
+
+func (creds *CREDS) terminateLoadBalancer(userName string) error {
+	svc := elbv2.New(session.Must(session.NewSession(&aws.Config{
+		Credentials: creds.creds,
+		Region:      aws.String("us-east-1"),
+	})))
+	albName := truncateString(strings.ReplaceAll(userToResourceName(userName, "service")+os.Getenv("GEN3_ENDPOINT"), ".", "-")+"alb", 32)
+
+	getInput := &elbv2.DescribeLoadBalancersInput{
+		Names: []*string{aws.String(albName)},
+	}
+	result, err := svc.DescribeLoadBalancers(getInput)
+	if err != nil {
+		return err
+	}
+	if len(result.LoadBalancers) == 1 {
+		delInput := &elbv2.DeleteLoadBalancerInput{
+			LoadBalancerArn: result.LoadBalancers[0].LoadBalancerArn,
+		}
+		_, err := svc.DeleteLoadBalancer(delInput)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

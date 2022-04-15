@@ -110,7 +110,6 @@ func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, err
 		}
 		Config.Logger.Printf("Create Security Group: %s", *newSecurityGroup.GroupId)
 
-		// TODO: Make this secure. Right now it's wide open
 		ingressRules := ec2.AuthorizeSecurityGroupIngressInput{
 			GroupId: newSecurityGroup.GroupId,
 			IpPermissions: []*ec2.IpPermission{

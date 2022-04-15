@@ -329,7 +329,13 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	if err != nil {
 		return "", err
 	}
-	// TODO: Terminate ALB + target group here too
+
+	// Terminate load balancer
+	err = svc.terminateLoadBalancer(userName)
+	if err != nil {
+		return "", err
+	}
+
 	err = teardownTransitGateway(userName)
 	if err != nil {
 		return "", err
