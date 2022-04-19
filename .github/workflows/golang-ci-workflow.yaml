@@ -1,4 +1,4 @@
-name: Golang tests with coverage
+name: Golang CI Workflow
 
 on: push
 
