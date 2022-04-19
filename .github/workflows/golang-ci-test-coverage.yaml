@@ -1,0 +1,10 @@
+name: Golang tests with coverage
+
+on: push
+
+jobs:
+  ci:
+    name: Golang tests with coverage
+    uses: uc-cdis/.github/.github/workflows/golang-ci-test-coverage.yaml@master
+    secrets:
+      REPO_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
