@@ -6,5 +6,7 @@ jobs:
   ci:
     name: Golang tests with coverage
     uses: uc-cdis/.github/.github/workflows/golang-ci-workflow.yaml@master
+    with:
+      GO_VERSION: "1.17"
     secrets:
       REPO_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
