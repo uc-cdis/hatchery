@@ -1,0 +1,8 @@
+name: Golang CI Workflow
+
+on: push
+
+jobs:
+  ci:
+    name: Golang tests with coverage
+    uses: uc-cdis/.github/.github/workflows/golang-ci-workflow.yaml@master
