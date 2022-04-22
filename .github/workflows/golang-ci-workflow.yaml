@@ -5,6 +5,7 @@ on: push
 jobs:
   ci:
     steps:
+      runs-on: ubuntu-latest
       - name: Checkout code / lint code / install dependencies for goveralls
         id: get_coverage_profile
         uses: uc-cdis/.github/.github/actions/golang-ci@add_golang_ci_action
