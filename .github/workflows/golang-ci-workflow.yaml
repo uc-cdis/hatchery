@@ -4,5 +4,11 @@ on: push
 
 jobs:
   ci:
-    name: Golang tests with coverage
-    uses: uc-cdis/.github/.github/workflows/golang-ci-workflow.yaml@master
+    steps:
+      - name: Checkout code / lint code / install dependencies for goveralls
+        id: get_coverage_profile
+        uses: uc-cdis/.github/.github/actions/golang-ci@add_golang_ci_action
+      - name: Send coverage
+        env:
+          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: goveralls -coverprofile=${{ steps.get_coverage_profile.outputs.COVERAGE_OUTPUT_LOCATION }} -service=github
