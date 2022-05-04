@@ -136,17 +136,25 @@ func status(w http.ResponseWriter, r *http.Request) {
 	}
 	var result *WorkspaceStatus
 
-	if payModel.Ecs {
-		result, err = statusEcs(r.Context(), userName, accessToken, payModel.AWSAccountId)
+	if payModel == nil {
+		result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	} else {
-		result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		if payModel.Ecs {
+			result, err = statusEcs(r.Context(), userName, accessToken, payModel.AWSAccountId)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		} else {
+			result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 

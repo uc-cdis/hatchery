@@ -200,7 +200,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 	if err != nil {
 		return &status, err
 	}
-
+	// TODO: Check TransitGatewayAttachment is not in Deleting state (Can't create new one until it's deleted).
 	var taskDefName string
 	if len(service.Services) > 0 {
 		statusMessage = *service.Services[0].Status
