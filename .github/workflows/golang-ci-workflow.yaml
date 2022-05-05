@@ -4,6 +4,7 @@ on: push
 
 jobs:
   ci:
+    name: golang-ci
     runs-on: ubuntu-latest
     env:
       COVERAGE_PROFILE_OUTPUT_LOCATION: "./profile.cov"
