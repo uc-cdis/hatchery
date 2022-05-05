@@ -209,13 +209,16 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 			switch aerr.Code() {
 			case "InvalidTransitGatewayID.NotFound":
 				// Accept any pending invites again
-				sess.acceptTGWShare()
-				exTg, err = svc.DescribeTransitGateways(tgInput)
+				err = sess.acceptTGWShare()
 				if err != nil {
-					return nil, fmt.Errorf("Cannot DescribeTransitGateways again: %s", err.Error())
+					return nil, err
+				}
+				_, err = svc.DescribeTransitGateways(tgInput)
+				if err != nil {
+					return nil, fmt.Errorf("cannot DescribeTransitGateways again: %s", err.Error())
 				}
 			default:
-				return nil, fmt.Errorf("Cannot DescribeTransitGateways: %s", err.Error())
+				return nil, fmt.Errorf("cannot DescribeTransitGateways: %s", err.Error())
 			}
 		}
 		return nil, err
