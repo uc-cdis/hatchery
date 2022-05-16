@@ -18,7 +18,7 @@ paths:
     post:
       tags:
       - workspace
-      summary: LaunchAWorkspace
+      summary: Launch a workspace
       operationId: launch
       parameters:
       - in: query
@@ -69,7 +69,6 @@ paths:
           content:
             application/json:
               schema:
-                type: array
                 items:
                     $ref: '#/components/schemas/Container'
         401:
@@ -80,6 +79,61 @@ paths:
       - workspace
       summary: Get the current user's pay model data
       operationId: paymodels
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                  $ref: '#/components/schemas/PayModel'
+        401:
+          $ref: '#/components/responses/UnauthorizedError'
+        404:
+          $ref: '#/components/responses/NotFoundError'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+  /allpaymodels:
+    get:
+      tags:
+      - workspace
+      summary: Get the current user's all pay model data, including the currently activated one
+      operationId: allpaymodels
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                  $ref: '#/components/schemas/AllPayModels'
+        401:
+          $ref: '#/components/responses/UnauthorizedError'
+        404:
+          $ref: '#/components/responses/NotFoundError'
+        500:
+          $ref: '#/components/responses/InternalServerError'
+  /setpaymodel:
+    post:
+      tags:
+      - workspace
+      summary: Set the currently activated paymodel for user
+      operationId: setpaymodel
+      parameters:
+      - in: query
+        name: id
+        schema:
+          type: string
+        description: The unique ID of the pay model
+      responses:
+        200:
+          description: successfully set current pay model
+        400:
+          $ref: '#/components/responses/BadRequestError'
+        401:
+          $ref: '#/components/responses/UnauthorizedError'
+        404:
+          $ref: '#/components/responses/NotFoundError'
+        500:
+          $ref: '#/components/responses/InternalServerError'
 
 components:
   schemas:
@@ -127,20 +181,74 @@ components:
         type:
           type: string
           enum: [PodScheduled, Initialized, ContainersReady, Ready]
-          description: 	Name of this Pod condition
+          description: Name of this Pod condition
         status:
           type: string
           enum: ["True", "False", Unknown]
-          description: 	Indicates whether that condition is applicable
+          description: Indicates whether that condition is applicable
     ContainerState:
       type: object
       properties:
         name:
           type: string
-          description: 	Name of this container
+          description: Name of this container
         state:
           type: object
-          description: 	Details about the container's current condition
+          description: Details about the container's current condition
+    PayModel:
+      type: object
+      properties:
+        bmh_workspace_id:
+          type: string
+          description: Unique ID of this pay model
+        workspace_type:
+          type: string
+          description: Type of this pay model, can be used as the name of pay model
+        user_id:
+          type: string
+          description: The ID of user
+        account_id:
+          type: string
+          description: The ID of the provisioned AWS account for this pay model
+        region:
+          type: string
+          description: The region of the provisioned AWS account for this pay model
+        ecs:
+          type: string
+          description: Whether to launch workspace using AWS ECS for this pay model
+        subnet:
+          type: string
+          description: The subnet identifier
+        hard-limit:
+          type: string
+          description: The hard limit set for this AWS account
+        soft-limit:
+          type: string
+          description: The soft limit set for this AWS account
+        total-usage:
+          type: string
+          description: The total occurred usage so far for this AWS account
+        current_pay_model:
+          type: boolean
+          description: Is this pay model activated as current pay model
+    AllPayModels:
+      type: object
+      properties:
+        current_pay_model:
+          type: object
+          $ref: '#/components/schemas/PayModel'
+          description: The currently activated pay model associated with this user
+        all_pay_models:
+          type: array
+          items:
+            $ref: '#/components/schemas/PayModel'
+          description: All pay models associated with this user, including the currently activated one
   responses:
+    BadRequestError:
+      description: Missing required information in request
     UnauthorizedError:
       description: Access token is missing or invalid
+    NotFoundError:
+      description: Can't find pay model information for user
+    InternalServerError:
+      description: Can't process user's request

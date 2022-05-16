@@ -14,7 +14,10 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
 	})))
-	pm := Config.PayModelMap[userName]
+	pm, err := getCurrentPayModel(userName)
+	if err != nil {
+		return nil, err
+	}
 	policyArn := fmt.Sprintf("arn:aws:iam::%s:policy/%s", pm.AWSAccountId, fmt.Sprintf("ws-task-policy-%s", userName))
 	taskRoleInput := &iam.GetRoleInput{
 		RoleName: aws.String(userToResourceName(userName, "pod")),
@@ -96,8 +99,9 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 	}
 
 }
-// https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_execution_IAM_role.html 
-// The task execution role grants the Amazon ECS container and Fargate agents permission to make AWS API calls on your behalf. 
+
+// https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_execution_IAM_role.html
+// The task execution role grants the Amazon ECS container and Fargate agents permission to make AWS API calls on your behalf.
 const ecsTaskExecutionRoleName = "ecsTaskExecutionRole"
 const ecsTaskExecutionPolicyArn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 const ecsTaskExecutionRoleAssumeRolePolicyDocument = `{

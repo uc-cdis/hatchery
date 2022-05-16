@@ -54,7 +54,6 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 }
 
 // Create ECS cluster
-// TODO: Evaluate if this is still this needed..
 func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
 	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
@@ -201,7 +200,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 	if err != nil {
 		return &status, err
 	}
-
+	// TODO: Check TransitGatewayAttachment is not in Deleting state (Can't create new one until it's deleted).
 	var taskDefName string
 	if len(service.Services) > 0 {
 		statusMessage = *service.Services[0].Status
@@ -330,7 +329,13 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	if err != nil {
 		return "", err
 	}
-	// TODO: Terminate ALB + target group here too
+
+	// Terminate load balancer
+	err = svc.terminateLoadBalancer(userName)
+	if err != nil {
+		return "", err
+	}
+
 	err = teardownTransitGateway(userName)
 	if err != nil {
 		return "", err
@@ -339,8 +344,6 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 }
 
 func launchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string, payModel PayModel) error {
-	// TODO: Setup EBS volume as pd
-	// Must create volume using SDK too.. :(
 	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
@@ -486,6 +489,7 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		}
 		return err
 	}
+
 	err = setupTransitGateway(userName)
 	if err != nil {
 		return err
@@ -499,7 +503,6 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		}
 		return err
 	}
-
 	fmt.Printf("Launched ECS workspace service at %s for user %s\n", launchTask, userName)
 	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ram"
@@ -98,7 +99,10 @@ func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
 }
 
 func createTransitGateway(userName string) (*string, error) {
-	pm := Config.PayModelMap[userName]
+	pm, err := getCurrentPayModel(userName)
+	if err != nil {
+		return nil, err
+	}
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
@@ -201,6 +205,22 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 	}
 	exTg, err := svc.DescribeTransitGateways(tgInput)
 	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case "InvalidTransitGatewayID.NotFound":
+				// Accept any pending invites again
+				err = sess.acceptTGWShare()
+				if err != nil {
+					return nil, err
+				}
+				_, err = svc.DescribeTransitGateways(tgInput)
+				if err != nil {
+					return nil, fmt.Errorf("cannot DescribeTransitGateways again: %s", err.Error())
+				}
+			default:
+				return nil, fmt.Errorf("cannot DescribeTransitGateways: %s", err.Error())
+			}
+		}
 		return nil, err
 	}
 	for *exTg.TransitGateways[0].State != "available" {
@@ -380,7 +400,10 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 }
 
 func setupRemoteAccount(userName string, teardown bool) error {
-	pm := Config.PayModelMap[userName]
+	pm, err := getCurrentPayModel(userName)
+	if err != nil {
+		return err
+	}
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
@@ -396,7 +419,7 @@ func setupRemoteAccount(userName string, teardown bool) error {
 
 	vpcid := os.Getenv("GEN3_VPCID")
 	Config.Logger.Printf("VPCID: %s", vpcid)
-	err := svc.acceptTGWShare()
+	err = svc.acceptTGWShare()
 	if err != nil {
 		return err
 	}
@@ -448,7 +471,7 @@ func setupRemoteAccount(userName string, teardown bool) error {
 	} else {
 		tgw_attachment, err = createTransitGatewayAttachments(ec2Remote, *vpc.Vpcs[0].VpcId, *exTg.TransitGateways[0].TransitGatewayId, false, &svc, userName)
 		if err != nil {
-			return fmt.Errorf("Cannot create TransitGatewayAttachment: %s", err.Error())
+			return fmt.Errorf("Cannot create remote TransitGatewayAttachment: %s", err.Error())
 		}
 		Config.Logger.Printf("tgw_attachment: %s", *tgw_attachment)
 	}
@@ -562,7 +585,6 @@ func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string
 				return nil, err
 			}
 		}
-
 		tgRouteInput := &ec2.CreateTransitGatewayRouteInput{
 			TransitGatewayRouteTableId: tgwRoutetableId,
 			DestinationCidrBlock:       networkInfo.vpc.Vpcs[0].CidrBlock,

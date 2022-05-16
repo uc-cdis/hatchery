@@ -63,10 +63,10 @@ func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc 
 	if err != nil {
 		return nil, err
 	}
-
+	ap := userToResourceName(userName, "service") + "-" + strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-accesspoint"
 	if len(exResult.AccessPoints) == 0 {
 		input := &efs.CreateAccessPointInput{
-			ClientToken:  aws.String(fmt.Sprintf("ap-%s", userToResourceName(userName, "pod"))),
+			ClientToken:  aws.String(ap),
 			FileSystemId: aws.String(FileSystemId),
 			PosixUser: &efs.PosixUser{
 				Gid: aws.Int64(100),
