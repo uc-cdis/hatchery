@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,23 +15,34 @@ import (
 )
 
 func main() {
-	configPath := "/hatchery.json"
-	if len(os.Args) > 2 && strings.HasSuffix(os.Args[1], "-config") {
-		configPath = os.Args[2]
-	} else if len(os.Args) > 1 {
-		os.Stderr.WriteString(
-			`Use: hatchery -config path/to/hatchery.json
-		- also harvests dockstore/bla.yml app definitions where dockstore/
-		  is in the same folder as hatchery.json
-`)
-		return
-	}
-	config, err := hatchery.LoadConfig(configPath, log.New(os.Stdout, "", log.LstdFlags))
+	configPath := flag.String("config", "/hatchery.json", "Use: hatchery --config path/to/hatchery.json")
+	job := flag.String("job", "", "Job to kick off")
+	flag.Parse()
+	config, err := hatchery.LoadConfig(*configPath, log.New(os.Stdout, "", log.LstdFlags))
 	if err != nil {
 		config.Logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
 		return
 	}
 	hatchery.Config = config
+
+	if *job != "" {
+		switch job := *job; job {
+		case "LaunchEcsWorkspace":
+			userName := os.Getenv("USER")
+			config.Logger.Printf("Launching ECS Workspace for %s\n", userName)
+			// payModel, err := hatchery.GetCurrentPayModel(userName)
+			if err != nil {
+				config.Logger.Fatalf("Error getting PayModel: %s\n", err)
+				return
+			}
+			// hatchery.LaunchEcsWorkspace(context.TODO(), userName, os.Getenv("HASH"), os.Getenv("ACCESS_TOKEN"), *payModel)
+			hatchery.LaunchEcsWsJob(userName)
+		default:
+			config.Logger.Fatalf("No such job defined: %s\n", job)
+		}
+		return
+	}
+
 	ddEnabled := os.Getenv("DD_ENABLED")
 	if strings.ToLower(ddEnabled) == "true" {
 		config.Logger.Printf("Setting up datadog")

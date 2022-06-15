@@ -343,14 +343,14 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
-func launchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string, payModel PayModel) error {
+func LaunchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string, payModel PayModel) error {
 	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
+
 	svc := NewSVC(sess, roleARN)
-	Config.Logger.Printf("%s", userName)
 
 	hatchApp := Config.ContainersMap[hash]
 	mem, err := mem(hatchApp.MemoryLimit)
@@ -364,9 +364,9 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 
 	_, err = svc.launchEcsCluster(userName)
 	if err != nil {
+		Config.Logger.Printf("%s", err)
 		return err
 	}
-
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
 		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)

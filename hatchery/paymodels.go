@@ -68,7 +68,7 @@ func payModelFromConfig(userName string) (pm *PayModel, err error) {
 	return &payModel, nil
 }
 
-func getCurrentPayModel(userName string) (result *PayModel, err error) {
+func GetCurrentPayModel(userName string) (result *PayModel, err error) {
 	if Config.Config.PayModelsDynamodbTable == "" {
 		// fallback for backward compatibility.
 		// Multiple paymodels not supported
@@ -162,7 +162,7 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 
 	PayModels.PayModels = *payModelMap
 
-	payModel, err = getCurrentPayModel(userName)
+	payModel, err = GetCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
 	}

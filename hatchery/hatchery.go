@@ -58,7 +58,7 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 	}
 	userName := getCurrentUserName(r)
 
-	payModel, err := getCurrentPayModel(userName)
+	payModel, err := GetCurrentPayModel(userName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -127,7 +127,7 @@ func status(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	accessToken := getBearerToken(r)
 
-	payModel, err := getCurrentPayModel(userName)
+	payModel, err := GetCurrentPayModel(userName)
 	if err != nil {
 		if err != NopaymodelsError {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -221,14 +221,14 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := getCurrentUserName(r)
-	payModel, err := getCurrentPayModel(userName)
+	payModel, err := GetCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
 	if payModel == nil {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
 	} else if payModel.Ecs {
-		err = launchEcsWorkspace(r.Context(), userName, hash, accessToken, *payModel)
+		err = LaunchEcsWorkspace(r.Context(), userName, hash, accessToken, *payModel)
 	} else {
 		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
 	}
@@ -247,7 +247,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
-	payModel, err := getCurrentPayModel(userName)
+	payModel, err := GetCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
@@ -287,7 +287,7 @@ func getBearerToken(r *http.Request) string {
 // TODO: NEED TO CALL THIS FUNCTION IF IT DOESN'T EXIST!!!
 func createECSCluster(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
-	payModel, err := getCurrentPayModel(userName)
+	payModel, err := GetCurrentPayModel(userName)
 	if payModel == nil {
 		http.Error(w, "Paymodel has not been setup for user", http.StatusNotFound)
 		return

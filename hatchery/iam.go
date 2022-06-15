@@ -14,7 +14,7 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 		Credentials: creds.creds,
 		Region:      aws.String("us-east-1"),
 	})))
-	pm, err := getCurrentPayModel(userName)
+	pm, err := GetCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
 	}

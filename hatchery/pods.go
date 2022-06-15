@@ -345,6 +345,9 @@ func userToResourceName(userName string, resourceType string) string {
 	if resourceType == "mapping" { // ambassador mapping
 		return fmt.Sprintf("%s-mapping", safeUserName)
 	}
+	if resourceType == "ecs" { // ambassador mapping
+		return fmt.Sprintf("%s-ecs", safeUserName)
+	}
 
 	return fmt.Sprintf("%s-%s", resourceType, safeUserName)
 }

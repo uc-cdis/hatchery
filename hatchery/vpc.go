@@ -12,7 +12,7 @@ import (
 )
 
 func setupVPC(userName string) (*string, error) {
-	pm, err := getCurrentPayModel(userName)
+	pm, err := GetCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
 	}

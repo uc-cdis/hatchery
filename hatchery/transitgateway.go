@@ -99,7 +99,7 @@ func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
 }
 
 func createTransitGateway(userName string) (*string, error) {
-	pm, err := getCurrentPayModel(userName)
+	pm, err := GetCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +400,7 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 }
 
 func setupRemoteAccount(userName string, teardown bool) error {
-	pm, err := getCurrentPayModel(userName)
+	pm, err := GetCurrentPayModel(userName)
 	if err != nil {
 		return err
 	}
