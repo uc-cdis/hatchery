@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -29,14 +30,19 @@ func main() {
 		switch job := *job; job {
 		case "LaunchEcsWorkspace":
 			userName := os.Getenv("USER")
+			hash := os.Getenv("HASH")
+			accessToken := os.Getenv("ACCESS_TOKEN")
+			if hatchery.ContainsEmpty(userName, hash, accessToken) {
+				config.Logger.Fatalf("need to supply username, hash and accesstoken for job to run. Username: %s, hash: %s, access token: %s\n", userName, hash, accessToken)
+				os.Exit(2)
+			}
 			config.Logger.Printf("Launching ECS Workspace for %s\n", userName)
-			// payModel, err := hatchery.GetCurrentPayModel(userName)
+			payModel, err := hatchery.GetCurrentPayModel(userName)
 			if err != nil {
 				config.Logger.Fatalf("Error getting PayModel: %s\n", err)
 				return
 			}
-			// hatchery.LaunchEcsWorkspace(context.TODO(), userName, os.Getenv("HASH"), os.Getenv("ACCESS_TOKEN"), *payModel)
-			hatchery.LaunchEcsWsJob(userName)
+			hatchery.LaunchEcsWorkspace(context.TODO(), userName, hash, accessToken, *payModel)
 		default:
 			config.Logger.Fatalf("No such job defined: %s\n", job)
 		}

@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
 	batchv1 "k8s.io/api/batch/v1"
+	k8sv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -46,6 +48,7 @@ func LaunchEcsWsJob(userName string) {
 			Namespace: namespace,
 		},
 		Spec: batchv1.JobSpec{
+			TTLSecondsAfterFinished: aws.Int32(100),
 			Template: v1.PodTemplateSpec{
 				Spec: v1.PodSpec{
 					Containers:    hatcheryPod.Items[0].Spec.Containers,
@@ -56,7 +59,10 @@ func LaunchEcsWsJob(userName string) {
 		},
 	}
 
+	var envVars []k8sv1.EnvVar
+
 	jobSpec.Spec.Template.Spec.Containers[0].Command = strings.Split(cmd, " ")
+	jobSpec.Spec.Template.Spec.Containers[0].Env = append(jobSpec.Spec.Template.Spec.Containers[0].Env, envVars)
 
 	_, err = jobs.Create(context.TODO(), jobSpec, metav1.CreateOptions{})
 	if err != nil {
