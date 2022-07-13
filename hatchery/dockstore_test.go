@@ -1,7 +1,6 @@
 package hatchery
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -12,7 +11,7 @@ func TestDockstoreComposeLoad(t *testing.T) {
 	path := "../testData/dockstore/docker-compose.yml"
 	composeModel, err := DockstoreComposeFromFile(path)
 	if nil != err {
-		t.Error(fmt.Sprintf("failed to load config from %v, got: %v", path, err))
+		t.Errorf("failed to load config from %v, got: %v", path, err)
 		return
 	}
 	if nil == composeModel {
@@ -22,14 +21,14 @@ func TestDockstoreComposeLoad(t *testing.T) {
 	composeBytes, _ := yaml.Marshal(composeModel)
 	dslog.Printf("loaded composes services: %v", string(composeBytes))
 	if count := len(composeModel.Services); count != 5 {
-		t.Error(fmt.Sprintf("Unexpected number of services: %v", count))
+		t.Errorf("Unexpected number of services: %v", count)
 	}
 	service, ok := composeModel.Services["viewer"]
 	if !ok {
 		t.Error("viewer service not loaded")
 	}
 	if len(service.Environment) != 2 {
-		t.Error(fmt.Sprintf("viewer does not have expected environment: %v", service.Environment))
+		t.Errorf("viewer does not have expected environment: %v", service.Environment)
 	}
 
 	service, ok = composeModel.Services["mon_Go"]
@@ -44,7 +43,7 @@ func TestDockstoreComposeLoad(t *testing.T) {
 		t.Error("mon_Go service failed to load resource limits")
 	}
 	if service.Name != "mon-go" { // DNS safe name
-		t.Error(fmt.Sprintf("mon_Go service has wrong name: %v", service.Name))
+		t.Errorf("mon_Go service has wrong name: %v", service.Name)
 	}
 
 	service, ok = composeModel.Services["cloudtop"]
@@ -52,11 +51,11 @@ func TestDockstoreComposeLoad(t *testing.T) {
 		t.Error("cloudtop service not loaded")
 	}
 	if len(service.Healthcheck.Test) != 4 {
-		t.Error(fmt.Sprintf("unexpected health check %v", strings.Join(service.Healthcheck.Test, " ")))
+		t.Errorf("unexpected health check %v", strings.Join(service.Healthcheck.Test, " "))
 	}
 
 	if composeModel.RootService != "viewer" {
-		t.Error(fmt.Sprintf("expected viewer root service, got %v", composeModel.RootService))
+		t.Errorf("expected viewer root service, got %v", composeModel.RootService)
 	}
 }
 
@@ -64,7 +63,7 @@ func TestDockstoreComposeTranslate(t *testing.T) {
 	path := "../testData/dockstore/docker-compose.yml"
 	composeModel, err := DockstoreComposeFromFile(path)
 	if nil != err {
-		t.Error(fmt.Sprintf("failed to load config from %v, got: %v", path, err))
+		t.Errorf("failed to load config from %v, got: %v", path, err)
 		return
 	}
 	if nil == composeModel {
@@ -73,7 +72,7 @@ func TestDockstoreComposeTranslate(t *testing.T) {
 	}
 	hatchApp, err := composeModel.BuildHatchApp()
 	if nil != err {
-		t.Error(fmt.Sprintf("failed to translate app, got: %v", err))
+		t.Errorf("failed to translate app, got: %v", err)
 		return
 	}
 	if hatchApp.UserVolumeLocation == "" {
@@ -88,7 +87,7 @@ func TestFirefoxAppTranslate(t *testing.T) {
 	path := "../testData/dockstore/firefox-app.yml"
 	composeModel, err := DockstoreComposeFromFile(path)
 	if nil != err {
-		t.Error(fmt.Sprintf("failed to load config from %v, got: %v", path, err))
+		t.Errorf("failed to load config from %v, got: %v", path, err)
 		return
 	}
 	if nil == composeModel {
@@ -97,7 +96,7 @@ func TestFirefoxAppTranslate(t *testing.T) {
 	}
 	hatchApp, err := composeModel.BuildHatchApp()
 	if nil != err {
-		t.Error(fmt.Sprintf("failed to translate app, got: %v", err))
+		t.Errorf("failed to translate app, got: %v", err)
 		return
 	}
 	if hatchApp.UseSharedMemory != "true" {
