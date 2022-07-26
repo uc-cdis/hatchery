@@ -19,6 +19,9 @@ type EFS struct {
 
 func (creds *CREDS) getEFSFileSystem(userName string, svc *efs.EFS) (*efs.DescribeFileSystemsOutput, error) {
 	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "fs"
+	if len(fsName) > 63 {
+		fsName = fsName[:63]
+	}
 	input := &efs.DescribeFileSystemsInput{
 		CreationToken: aws.String(fsName),
 	}
