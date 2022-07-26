@@ -104,6 +104,9 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 		Region: aws.String("us-east-1"),
 	})))
 	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "fs"
+	if len(fsName) > 63 {
+		fsName = fsName[:63]
+	}
 	exisitingFS, err := creds.getEFSFileSystem(userName, svc)
 	if err != nil {
 		return nil, err
