@@ -67,6 +67,9 @@ func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc 
 		return nil, err
 	}
 	ap := userToResourceName(userName, "service") + "-" + strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-accesspoint"
+	if len(ap) > 63 {
+		ap = ap[:63]
+	}
 	if len(exResult.AccessPoints) == 0 {
 		input := &efs.CreateAccessPointInput{
 			ClientToken:  aws.String(ap),
