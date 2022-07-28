@@ -506,14 +506,16 @@ func (creds *CREDS) acceptTGWShare() error {
 		Config.Logger.Print("No pending ResourceShareInvitations")
 		return nil
 	} else {
-		if *resourceShareInvitation.ResourceShareInvitations[0].Status != "ACCEPTED" {
-			_, err := svc.AcceptResourceShareInvitation(&ram.AcceptResourceShareInvitationInput{
-				ResourceShareInvitationArn: resourceShareInvitation.ResourceShareInvitations[0].ResourceShareInvitationArn,
-			})
-			if err != nil {
-				return err
+		for _, rsi := range resourceShareInvitation.ResourceShareInvitations {
+			if *rsi.Status != "ACCEPTED" {
+				_, err := svc.AcceptResourceShareInvitation(&ram.AcceptResourceShareInvitationInput{
+					ResourceShareInvitationArn: resourceShareInvitation.ResourceShareInvitations[0].ResourceShareInvitationArn,
+				})
+				if err != nil {
+					return err
+				}
+				return nil
 			}
-			return nil
 		}
 		return nil
 	}
