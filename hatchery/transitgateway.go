@@ -213,6 +213,8 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 				if err != nil {
 					return nil, err
 				}
+				Config.Logger.Printf("Retrying DescribeTransitGateways...")
+				time.Sleep(10 * time.Second)
 				_, err = svc.DescribeTransitGateways(tgInput)
 				if err != nil {
 					return nil, fmt.Errorf("cannot DescribeTransitGateways again: %s", err.Error())
@@ -507,8 +509,8 @@ func (creds *CREDS) acceptTGWShare() error {
 		return nil
 	} else {
 		for _, rsi := range resourceShareInvitation.ResourceShareInvitations {
-			Config.Logger.Printf("ResourceShareInvitation: %s", *rsi)
 			if *rsi.Status != "ACCEPTED" {
+				Config.Logger.Printf("ResourceShareInvitation: %s", *rsi)
 				_, err := svc.AcceptResourceShareInvitation(&ram.AcceptResourceShareInvitationInput{
 					ResourceShareInvitationArn: rsi.ResourceShareInvitationArn,
 				})
