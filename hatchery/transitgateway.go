@@ -503,6 +503,7 @@ func (creds *CREDS) acceptTGWShare() error {
 	}
 
 	if len(resourceShareInvitation.ResourceShareInvitations) == 0 {
+		Config.Logger.Print("No pending ResourceShareInvitations")
 		return nil
 	} else {
 		if *resourceShareInvitation.ResourceShareInvitations[0].Status != "ACCEPTED" {
