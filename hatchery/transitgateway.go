@@ -507,6 +507,7 @@ func (creds *CREDS) acceptTGWShare() error {
 		return nil
 	} else {
 		for _, rsi := range resourceShareInvitation.ResourceShareInvitations {
+			Config.Logger.Printf("ResourceShareInvitation: %s", *rsi)
 			if *rsi.Status != "ACCEPTED" {
 				_, err := svc.AcceptResourceShareInvitation(&ram.AcceptResourceShareInvitationInput{
 					ResourceShareInvitationArn: resourceShareInvitation.ResourceShareInvitations[0].ResourceShareInvitationArn,
