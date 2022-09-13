@@ -19,6 +19,7 @@ type EFS struct {
 
 func (creds *CREDS) getEFSFileSystem(userName string, svc *efs.EFS) (*efs.DescribeFileSystemsOutput, error) {
 	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "fs"
+	fsName = truncateString(fsName, 64)
 	input := &efs.DescribeFileSystemsInput{
 		CreationToken: aws.String(fsName),
 	}
@@ -64,8 +65,10 @@ func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc 
 		return nil, err
 	}
 	ap := userToResourceName(userName, "service") + "-" + strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-accesspoint"
+	ap = truncateString(ap, 64)
 	if len(exResult.AccessPoints) == 0 {
 		input := &efs.CreateAccessPointInput{
+			// A string of up to 64 ASCII characters that Amazon EFS uses to ensure idempotent creation.
 			ClientToken:  aws.String(ap),
 			FileSystemId: aws.String(FileSystemId),
 			PosixUser: &efs.PosixUser{
@@ -101,6 +104,7 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 		Region: aws.String("us-east-1"),
 	})))
 	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "fs"
+	fsName = truncateString(fsName, 64)
 	exisitingFS, err := creds.getEFSFileSystem(userName, svc)
 	if err != nil {
 		return nil, err
