@@ -653,8 +653,6 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 			return "", err
 		}
 
-		Config.Logger.Println(*image)
-
 		paloAltoContainerDefinition := ecs.ContainerDefinition{
 			EntryPoint: aws.StringSlice([]string{
 				"/usr/local/bin/defender",

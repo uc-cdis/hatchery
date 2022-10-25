@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strconv"
 )
 
 type Token struct {
@@ -58,7 +59,7 @@ func getInstallBundle() (*InstallBundle, error) {
 		return nil, err
 	}
 
-	installBundleEndpoint := Config.Config.PrismaConfig.ConsoleAddress + "/api/v22.06/defenders/install-bundle?consoleaddr=" + Config.Config.PrismaConfig.ConsoleAddress
+	installBundleEndpoint := Config.Config.PrismaConfig.ConsoleAddress + "/api/v22.06/defenders/install-bundle?consoleaddr=" + Config.Config.PrismaConfig.ConsoleAddress + "&defenderType=appEmbedded"
 	var bearer = "Bearer " + *token
 	// Create a new request using http
 	req, err := http.NewRequest("GET", installBundleEndpoint, nil)
@@ -127,8 +128,9 @@ func getPrismaImage() (*string, error) {
 	if err != nil {
 		return nil, err
 	}
-	sb := string(body)
-	Config.Logger.Print(sb)
+	sb, err := strconv.Unquote(string(body))
+	if err != nil {
+		return nil, err
+	}
 	return &sb, nil
-
 }
