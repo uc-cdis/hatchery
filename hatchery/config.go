@@ -86,6 +86,13 @@ type HatcheryConfig struct {
 	UserVolumeSize         string           `json:"user-volume-size"`
 	Sidecar                SidecarContainer `json:"sidecar"`
 	MoreConfigs            []AppConfigInfo  `json:"more-configs"`
+	PrismaConfig           PrismaConfig     `json:"prisma"`
+}
+
+// Config to allow for Prisma Agents
+type PrismaConfig struct {
+	ConsoleAddress string `json:"console-address"`
+	Enable         bool   `json:"enable"`
 }
 
 // FullHatcheryConfig bucket result from loadConfig

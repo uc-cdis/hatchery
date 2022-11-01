@@ -635,12 +635,76 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 		)
 	}
 
+	containerDefinitions := []*ecs.ContainerDefinition{
+		containerDefinition,
+		&sidecarContainerDefinition,
+	}
+
+	if Config.Config.PrismaConfig.Enable {
+		installBundle, err := getInstallBundle()
+		if err != nil {
+			Config.Logger.Print(err, " error getting prisma install bundle")
+			return "", err
+		}
+
+		image, err := getPrismaImage()
+		if err != nil {
+			Config.Logger.Print(err, " error getting prisma image")
+			return "", err
+		}
+
+		paloAltoContainerDefinition := ecs.ContainerDefinition{
+			EntryPoint: aws.StringSlice([]string{
+				"/usr/local/bin/defender",
+				"fargate",
+				"sidecar",
+			}),
+			Environment: []*ecs.KeyValuePair{
+				{
+					Name:  aws.String("INSTALL_BUNDLE"),
+					Value: aws.String(installBundle.Bundle),
+				},
+				{
+					Name:  aws.String("DEFENDER_TYPE"),
+					Value: aws.String("fargate"),
+				},
+				{
+					Name:  aws.String("FARGATE_TASK"),
+					Value: aws.String(userName),
+				},
+				{
+					Name: aws.String("WS_ADDRESS"),
+					// TODO: Hardcoding in the address for now as the prisma api is returning wrong value
+					Value: aws.String("wss://us-west1.cloud.twistlock.com:443"),
+				},
+				{
+					Name:  aws.String("FILESYSTEM_MONITORING"),
+					Value: aws.String("false"),
+				},
+			},
+			Essential: aws.Bool(true),
+			HealthCheck: &ecs.HealthCheck{
+				Command: aws.StringSlice([]string{
+					"/usr/local/bin/defender",
+					"fargate",
+					"healthcheck",
+				}),
+				Interval:    aws.Int64(5),
+				Retries:     aws.Int64(3),
+				StartPeriod: aws.Int64(1),
+				Timeout:     aws.Int64(5),
+			},
+			Image:            aws.String(*image),
+			Name:             aws.String("TwistlockDefender"),
+			LogConfiguration: logConfiguration,
+		}
+
+		containerDefinitions = append(containerDefinitions, &paloAltoContainerDefinition)
+	}
+
 	resp, err := svc.RegisterTaskDefinition(
 		&ecs.RegisterTaskDefinitionInput{
-			ContainerDefinitions: []*ecs.ContainerDefinition{
-				containerDefinition,
-				&sidecarContainerDefinition,
-			},
+			ContainerDefinitions:    containerDefinitions,
 			Cpu:                     aws.String(input.Cpu),
 			ExecutionRoleArn:        aws.String(input.ExecutionRoleArn),
 			Family:                  aws.String(fmt.Sprintf("%s_%s", input.Type, input.Name)),
