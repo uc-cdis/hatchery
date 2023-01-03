@@ -511,6 +511,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		Spec: k8sv1.PodSpec{
 			SecurityContext: &securityContext,
 			InitContainers:  []k8sv1.Container{},
+			EnableServiceLinks: &falseVal,
 			Containers: []k8sv1.Container{
 				{
 					Name:  "fuse-container",
