@@ -305,13 +305,16 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 	svc := NewSVC(sess, roleARN)
 
 	result, err := svc.launchEcsCluster(userName)
+	var reader *strings.Reader
 	if err != nil {
-		reader := strings.NewReader(err.Error())
-		io.Copy(w, reader)
+		reader = strings.NewReader(err.Error())
 		Config.Logger.Printf("Error: %s", err)
 	} else {
-		reader := strings.NewReader(result.String())
-		io.Copy(w, reader)
+		reader = strings.NewReader(result.String())
+	}
+	_, err = io.Copy(w, reader)
+	if err != nil {
+		Config.Logger.Printf("Error: %s", err)
 	}
 }
 
