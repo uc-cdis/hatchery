@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/uc-cdis/hatchery/hatchery"
@@ -12,6 +14,15 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
+
+func verifyPath(path string) (string, error) {
+	c := filepath.Clean(path)
+	r, err := filepath.EvalSymlinks(c)
+	if err != nil {
+		return c, errors.New("Unsafe or invalid path specified")
+	}
+	return r, nil
+}
 
 func main() {
 	configPath := "/hatchery.json"
@@ -25,7 +36,13 @@ func main() {
 `)
 		return
 	}
-	config, err := hatchery.LoadConfig(configPath, log.New(os.Stdout, "", log.LstdFlags))
+	logger := log.New(os.Stdout, "", log.LstdFlags)
+	cleanPath, err := verifyPath(configPath)
+	if err != nil {
+		logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
+		return
+	}
+	config, err := hatchery.LoadConfig(cleanPath, logger)
 	if err != nil {
 		config.Logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
 		return

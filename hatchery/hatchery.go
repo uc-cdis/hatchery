@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -304,11 +305,16 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 	svc := NewSVC(sess, roleARN)
 
 	result, err := svc.launchEcsCluster(userName)
+	var reader *strings.Reader
 	if err != nil {
-		fmt.Fprint(w, err.Error())
+		reader = strings.NewReader(err.Error())
 		Config.Logger.Printf("Error: %s", err)
 	} else {
-		fmt.Fprint(w, result.String())
+		reader = strings.NewReader(result.String())
+	}
+	_, err = io.Copy(w, reader)
+	if err != nil {
+		Config.Logger.Printf("Error: %s", err)
 	}
 }
 
