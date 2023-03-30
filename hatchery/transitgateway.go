@@ -112,7 +112,6 @@ func createTransitGateway(userName string) (*string, error) {
 	ec2Local := ec2.New(sess)
 
 	vpcid := os.Getenv("GEN3_VPCID")
-	Config.Logger.Printf("VPCID: %s", vpcid)
 	tgwName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-tgw"
 	// Check for existing transit gateway
 	exTg, err := ec2Local.DescribeTransitGateways(&ec2.DescribeTransitGatewaysInput{
@@ -308,10 +307,21 @@ func deleteTransitGatewayAttachment(svc *ec2.EC2, tgwid string) (*string, error)
 	}
 	exTgwAttachment, err := svc.DescribeTransitGatewayAttachments(exTgwAttachmentInput)
 	if err != nil {
-		return nil, err
+		Config.Logger.Printf("Error: %s", err.Error())
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case "InvalidTransitGatewayID.NotFound":
+				// No TGW attachment found, we are happy :)
+				return nil, nil
+			}
+		} else {
+			Config.Logger.Printf("Error: %s", err.Error())
+			return nil, err
+		}
 	}
 	if len(exTgwAttachment.TransitGatewayAttachments) == 0 {
-		return nil, fmt.Errorf("No transit gateway attachments found")
+		// No transit gateway attachment found, we are happy :)
+		return nil, nil
 	}
 
 	delTGWAttachmentInput := &ec2.DeleteTransitGatewayVpcAttachmentInput{
@@ -418,7 +428,6 @@ func setupRemoteAccount(userName string, teardown bool) error {
 	})))
 
 	vpcid := os.Getenv("GEN3_VPCID")
-	Config.Logger.Printf("VPCID: %s", vpcid)
 	err = svc.acceptTGWShare()
 	if err != nil {
 		return err
@@ -467,7 +476,6 @@ func setupRemoteAccount(userName string, teardown bool) error {
 		if err != nil {
 			return err
 		}
-		Config.Logger.Printf("tgw_attachment: %s", *tgw_attachment)
 	} else {
 		tgw_attachment, err = createTransitGatewayAttachments(ec2Remote, *vpc.Vpcs[0].VpcId, *exTg.TransitGateways[0].TransitGatewayId, false, &svc, userName)
 		if err != nil {
@@ -521,7 +529,6 @@ func (creds *CREDS) acceptTGWShare() error {
 func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string, svc *ec2.EC2, local bool, teardown bool, sess *CREDS) (*string, error) {
 	var networkInfo *NetworkInfo
 	vpcid := os.Getenv("GEN3_VPCID")
-	Config.Logger.Printf("VPCID: %s", vpcid)
 	err := *new(error)
 	if local {
 		networkInfo, err = describeMainNetwork(vpcid, svc)
@@ -548,6 +555,13 @@ func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string
 		}
 		_, err := svc.DeleteTransitGatewayRoute(delRouteInput)
 		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				case "InvalidRoute.NotFound":
+					// Route already deleted, we are happy :)
+					return nil, nil
+				}
+			}
 			return nil, err
 		}
 		return delRouteInput.TransitGatewayRouteTableId, nil
@@ -651,12 +665,20 @@ func VPCRoutes(remote_network_info *NetworkInfo, main_network_info *NetworkInfo,
 		Config.Logger.Printf("Route added to local VPC. %s", localRoute)
 		return nil
 	} else {
+		// Delete Routes for VPC
+		Config.Logger.Printf("Deleting Routes for remote VPC %s", *remote_network_info.vpc.Vpcs[0].VpcId)
 		remoteDeleteRouteInput := &ec2.DeleteRouteInput{
 			DestinationCidrBlock: main_network_info.vpc.Vpcs[0].CidrBlock,
 			RouteTableId:         remote_network_info.routeTable.RouteTables[0].RouteTableId,
 		}
 		_, err := ec2_remote.DeleteRoute(remoteDeleteRouteInput)
 		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				case "InvalidRoute.NotFound":
+					return nil
+				}
+			}
 			return err
 		}
 		localDeleteRouteInput := &ec2.DeleteRouteInput{

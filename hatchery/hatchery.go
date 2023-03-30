@@ -229,7 +229,10 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	if payModel == nil {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
 	} else if payModel.Ecs {
-		err = launchEcsWorkspace(r.Context(), userName, hash, accessToken, *payModel)
+		Config.Logger.Printf("Launching ECS workspace for user %s", userName)
+		// Sending a 202 response straigh away, but starting the launch in a goroutine
+		w.WriteHeader(http.StatusAccepted)
+		go launchEcsWorkspace(r.Context(), userName, hash, accessToken, *payModel)
 	} else {
 		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
 	}
@@ -248,17 +251,19 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
+	Config.Logger.Printf("Terminating workspace for user %s", userName)
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
 	if payModel != nil && payModel.Ecs {
-		svc, err := terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
+		_, err := terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		} else {
-			fmt.Fprintf(w, "Terminated ECS workspace at %s", svc)
+			Config.Logger.Printf("Succesfully terminated all resources related to ECS workspace for user %s", userName)
+			fmt.Fprintf(w, "Terminated ECS workspace")
 		}
 	} else {
 		err := deleteK8sPod(r.Context(), userName, accessToken, payModel)
@@ -266,6 +271,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		Config.Logger.Printf("Terminated workspace for user %s", userName)
 		fmt.Fprintf(w, "Terminated workspace")
 	}
 }
