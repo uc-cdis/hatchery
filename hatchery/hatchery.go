@@ -230,8 +230,8 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
 	} else if payModel.Ecs {
 		Config.Logger.Printf("Launching ECS workspace for user %s", userName)
-		// Sending a 202 response straigh away, but starting the launch in a goroutine
-		w.WriteHeader(http.StatusAccepted)
+		// Sending a 200 response straigh away, but starting the launch in a goroutine
+		w.WriteHeader(http.StatusOK)
 		go launchEcsWorkspace(userName, hash, accessToken, *payModel)
 	} else {
 		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
