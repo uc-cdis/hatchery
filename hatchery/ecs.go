@@ -352,7 +352,8 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
-func launchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string, payModel PayModel) error {
+func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel) error {
+	ctx := context.Background()
 	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
@@ -533,7 +534,6 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 	if err != nil {
 		return "", err
 	}
-	Config.Logger.Printf("Cluster: %s", *cluster.ClusterName)
 
 	networkConfig, err := sess.NetworkConfig(userName)
 	if err != nil {

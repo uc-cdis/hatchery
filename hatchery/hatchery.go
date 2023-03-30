@@ -232,7 +232,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Launching ECS workspace for user %s", userName)
 		// Sending a 202 response straigh away, but starting the launch in a goroutine
 		w.WriteHeader(http.StatusAccepted)
-		go launchEcsWorkspace(r.Context(), userName, hash, accessToken, *payModel)
+		go launchEcsWorkspace(userName, hash, accessToken, *payModel)
 	} else {
 		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
 	}
