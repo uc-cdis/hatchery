@@ -353,7 +353,9 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 }
 
 func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel) error {
+	// Set up background context, as this runs in a goroutine
 	ctx := context.Background()
+
 	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
@@ -508,7 +510,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	}
 
 	Config.Logger.Printf("Setting up Transit Gateway for user %s", userName)
-	go setupTransitGateway(userName)
+	err = setupTransitGateway(userName)
 	if err != nil {
 		return err
 	}

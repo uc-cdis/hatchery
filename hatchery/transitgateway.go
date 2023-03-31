@@ -14,6 +14,7 @@ import (
 )
 
 func setupTransitGateway(userName string) error {
+	Config.Logger.Printf("Setting up transit gateway")
 	_, err := createTransitGateway(userName)
 	if err != nil {
 		return fmt.Errorf("error creating transit gateway: %s", err.Error())
@@ -23,7 +24,7 @@ func setupTransitGateway(userName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to setup remote account: %s", err.Error())
 	}
-
+	Config.Logger.Printf("Remote account setup complete")
 	return nil
 }
 
@@ -177,6 +178,7 @@ func createTransitGateway(userName string) (*string, error) {
 		Config.Logger.Printf("Resources shared: %s", *resourceshare)
 		return tg.TransitGateway.TransitGatewayId, nil
 	} else {
+		Config.Logger.Print("Existing transit gateway found. Skipping creation...")
 		tgwAttachment, err := createTransitGatewayAttachments(ec2Local, vpcid, *exTg.TransitGateways[len(exTg.TransitGateways)-1].TransitGatewayId, true, nil, userName)
 		if err != nil {
 			return nil, err
@@ -192,6 +194,7 @@ func createTransitGateway(userName string) (*string, error) {
 }
 
 func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, local bool, sess *CREDS, userName string) (*string, error) {
+	Config.Logger.Printf("Creating transit gateway attachment for VPC: %s", vpcid)
 	// Check for existing transit gateway
 	tgInput := &ec2.DescribeTransitGatewaysInput{
 		TransitGatewayIds: []*string{aws.String(tgwid)},
