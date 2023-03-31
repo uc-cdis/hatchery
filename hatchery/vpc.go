@@ -33,7 +33,7 @@ func setupVPC(userName string) (*string, error) {
 
 	// Subnets
 	// TODO: make base CIDR configurable?
-	cidrstring := "192.165.0.0/12"
+	cidrstring := "192.160.0.0/12"
 	_, IPNet, _ := net.ParseCIDR(cidrstring)
 	subnet, err := cidr.Subnet(IPNet, 14, pm.Subnet)
 	if err != nil {

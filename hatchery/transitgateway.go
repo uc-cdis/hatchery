@@ -84,7 +84,7 @@ func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
 			},
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String("main")},
+				Values: []*string{aws.String("eks_private")},
 			},
 		},
 	}
