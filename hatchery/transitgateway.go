@@ -29,6 +29,7 @@ func setupTransitGateway(userName string) error {
 }
 
 func teardownTransitGateway(userName string) error {
+	Config.Logger.Printf("Terminating remote transit gateway attachment for user %s\n", userName)
 	err := setupRemoteAccount(userName, true)
 	if err != nil {
 		return err
@@ -162,11 +163,16 @@ func createTransitGateway(userName string) (*string, error) {
 			return nil, err
 		}
 		Config.Logger.Printf("Transit gateway created: %s", *tg.TransitGateway.TransitGatewayId)
+
+		// Create Transit Gateway Attachment in local VPC
+		Config.Logger.Printf("Creating tgw attachment in local VPC: %s", vpcid)
 		tgwAttachment, err := createTransitGatewayAttachments(ec2Local, vpcid, *tg.TransitGateway.TransitGatewayId, true, nil, userName)
 		if err != nil {
 			return nil, err
 		}
 		Config.Logger.Printf("Attachment created: %s", *tgwAttachment)
+
+		// Create Transit Gateway Route Table
 		_, err = TGWRoutes(userName, tg.TransitGateway.Options.AssociationDefaultRouteTableId, tgwAttachment, ec2Local, true, false, nil)
 		if err != nil {
 			return nil, err
@@ -183,7 +189,7 @@ func createTransitGateway(userName string) (*string, error) {
 		if err != nil {
 			return nil, err
 		}
-		Config.Logger.Printf("Attachment created: %s", *tgwAttachment)
+		Config.Logger.Printf("Local TGW Attachment created: %s", *tgwAttachment)
 		resourceshare, err := shareTransitGateway(sess, *exTg.TransitGateways[len(exTg.TransitGateways)-1].TransitGatewayArn, pm.AWSAccountId)
 		if err != nil {
 			return nil, err
@@ -227,7 +233,7 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 	}
 	for *exTg.TransitGateways[0].State != "available" {
 		Config.Logger.Printf("TransitGateway is in state: %s ...  Waiting for 5 seconds", *exTg.TransitGateways[0].State)
-		// sleep for 2 sec
+		// sleep for 10 sec
 		time.Sleep(10 * time.Second)
 		exTg, _ = svc.DescribeTransitGateways(tgInput)
 	}
@@ -294,8 +300,8 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 	}
 }
 
-func deleteTransitGatewayAttachment(svc *ec2.EC2, tgwid string) (*string, error) {
-
+func deleteTransitGatewayAttachment(svc *ec2.EC2, tgwid string, userName string) (*string, error) {
+	tgwAttachmentName := userToResourceName(userName, "service") + "tgwa"
 	exTgwAttachmentInput := &ec2.DescribeTransitGatewayAttachmentsInput{
 		Filters: []*ec2.Filter{
 			{
@@ -305,6 +311,18 @@ func deleteTransitGatewayAttachment(svc *ec2.EC2, tgwid string) (*string, error)
 			{
 				Name:   aws.String("state"),
 				Values: []*string{aws.String("available"), aws.String("pending")},
+			},
+			{
+				Name: aws.String("tag:Name"),
+				Values: []*string{
+					aws.String(tgwAttachmentName),
+				},
+			},
+			{
+				Name: aws.String("tag:Environment"),
+				Values: []*string{
+					aws.String(os.Getenv("GEN3_ENDPOINT")),
+				},
 			},
 		},
 	}
@@ -324,6 +342,7 @@ func deleteTransitGatewayAttachment(svc *ec2.EC2, tgwid string) (*string, error)
 	}
 	if len(exTgwAttachment.TransitGatewayAttachments) == 0 {
 		// No transit gateway attachment found, we are happy :)
+		Config.Logger.Printf("No TGW attachment found, we are happy :)")
 		return nil, nil
 	}
 
@@ -475,7 +494,7 @@ func setupRemoteAccount(userName string, teardown bool) error {
 	}
 	var tgw_attachment *string
 	if teardown {
-		tgw_attachment, err = deleteTransitGatewayAttachment(ec2Remote, *exTg.TransitGateways[0].TransitGatewayId)
+		tgw_attachment, err = deleteTransitGatewayAttachment(ec2Remote, *exTg.TransitGateways[0].TransitGatewayId, userName)
 		if err != nil {
 			return err
 		}
@@ -552,6 +571,7 @@ func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string
 		return nil, fmt.Errorf("error DescribeTransitGatewayAttachments: %s", err.Error())
 	}
 	if teardown {
+
 		delRouteInput := &ec2.DeleteTransitGatewayRouteInput{
 			DestinationCidrBlock:       networkInfo.vpc.Vpcs[0].CidrBlock,
 			TransitGatewayRouteTableId: tgwRoutetableId,

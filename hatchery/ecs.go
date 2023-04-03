@@ -220,7 +220,6 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 						if len(args) > 0 {
 							for i, arg := range args {
 								if strings.Contains(*arg, "shutdown_no_activity_timeout=") {
-									Config.Logger.Printf("Found kernel idle shutdown time in args. Attempting to get last activity time\n")
 									argSplit := strings.Split(*arg, "=")
 									idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
 									if err == nil {
@@ -228,7 +227,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 										lastActivityTime, err := getKernelIdleTimeWithContext(ctx, accessToken)
 										status.LastActivityTime = lastActivityTime
 										if err != nil {
-											Config.Logger.Println(err.Error())
+											// Config.Logger.Println(err.Error())
 										}
 									} else {
 										Config.Logger.Println(err.Error())
@@ -344,10 +343,9 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	svc.terminateLoadBalancerTargetGroup(userName)
 
 	// Terminate transit gateway
-	Config.Logger.Printf("Terminating transit gateway for user %s\n", userName)
 	err = teardownTransitGateway(userName)
 	if err != nil {
-		Config.Logger.Printf("Error occurred when terminating transit gateway for user %s: %s\n", userName, err.Error())
+		Config.Logger.Printf("Error occurred when terminating transit gateway resources for user %s: %s\n", userName, err.Error())
 	}
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
@@ -372,13 +370,13 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		return err
 	}
 
-	// Launch ECS cluster
+	// Make sure ECS cluster exists
 	_, err = svc.launchEcsCluster(userName)
 	if err != nil {
 		return err
 	}
 
-	// Get API key
+	// Get Gen3 API key to be used in workspace
 	Config.Logger.Printf("Creating API key for user %s", userName)
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
@@ -509,12 +507,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		return err
 	}
 
-	Config.Logger.Printf("Setting up Transit Gateway for user %s", userName)
-	err = setupTransitGateway(userName)
-	if err != nil {
-		return err
-	}
-
 	Config.Logger.Printf("Launching ECS workspace service for user %s", userName)
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash, payModel)
 	if err != nil {
@@ -524,6 +516,13 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		}
 		return err
 	}
+
+	Config.Logger.Printf("Setting up Transit Gateway for user %s", userName)
+	err = setupTransitGateway(userName)
+	if err != nil {
+		return err
+	}
+
 	Config.Logger.Printf("Launched ECS workspace service at %s for user %s\n", launchTask, userName)
 	return nil
 }
