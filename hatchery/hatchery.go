@@ -229,6 +229,12 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	if payModel == nil {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
 	} else if payModel.Ecs {
+
+		if payModel.Status != "active" {
+			http.Error(w, "Paymodel is not active. Launch forbidden", http.StatusForbidden)
+			return
+		}
+
 		Config.Logger.Printf("Launching ECS workspace for user %s", userName)
 		// Sending a 200 response straigh away, but starting the launch in a goroutine
 		w.WriteHeader(http.StatusOK)

@@ -22,8 +22,10 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	}))
 	dynamodbSvc := dynamodb.New(sess)
 
-	filt := expression.Name("user_id").Equal(expression.Value(userName))
-	filt = filt.And(expression.Name("request_status").Equal(expression.Value("active")))
+	filtActive := expression.Name("request_status").Equal(expression.Value("active"))
+	filtAboveLimit := expression.Name("request_status").Equal(expression.Value("above limit"))
+	filt := expression.Name("user_id").Equal(expression.Value(userName)).And(filtActive.Or(filtAboveLimit))
+
 	if current {
 		filt = filt.And(expression.Name("current_pay_model").Equal(expression.Value(true)))
 	}
