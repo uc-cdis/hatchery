@@ -233,6 +233,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		if payModel.Status != "active" {
 			// send 500 response.
 			// TODO: 403 is the correct code, but it triggers a 302 to the default 403 page in revproxy instead of showing error message.
+			Config.Logger.Printf("Paymodel is not active. Launch forbidden for user %s", userName)
 			http.Error(w, "Paymodel is not active. Launch forbidden", http.StatusInternalServerError)
 			return
 		}
