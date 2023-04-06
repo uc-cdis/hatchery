@@ -373,6 +373,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	// Make sure ECS cluster exists
 	_, err = svc.launchEcsCluster(userName)
 	if err != nil {
+		Config.Logger.Printf("Failed to launch ECS cluster for user %v, Error: %v", userName, err)
 		return err
 	}
 
@@ -414,18 +415,23 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	Config.Logger.Printf("Settign up EFS for user %s", userName)
 	volumes, err := svc.EFSFileSystem(userName)
 	if err != nil {
+		Config.Logger.Printf("Failed to set up EFS for user %v, Error: %v", userName, err)
 		return err
 	}
 
 	Config.Logger.Printf("Setting up task role for user %s", userName)
 	taskRole, err := svc.taskRole(userName)
 	if err != nil {
+		// Log the error
+		Config.Logger.Printf("Failed to set up task role for user %v, Error: %v", userName, err)
 		return err
 	}
 
 	Config.Logger.Printf("Setting up execution role for user %s", userName)
 	_, err = svc.CreateEcsTaskExecutionRole()
 	if err != nil {
+		// Log the error
+		Config.Logger.Printf("Failed to set up execution role for user %v, Error: %v", userName, err)
 		return err
 	}
 
@@ -500,6 +506,8 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	}
 	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash, payModel.AWSAccountId)
 	if err != nil {
+		// Log the error
+		Config.Logger.Printf("Failed to set up task definition for user %v, Error: %v", userName, err)
 		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		if aerr != nil {
 			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
@@ -510,6 +518,8 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	Config.Logger.Printf("Launching ECS workspace service for user %s", userName)
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash, payModel)
 	if err != nil {
+		// Log the error
+		Config.Logger.Printf("Failed to launch ECS workspace service for user %v, Error: %v", userName, err)
 		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		if aerr != nil {
 			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
@@ -520,6 +530,8 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	Config.Logger.Printf("Setting up Transit Gateway for user %s", userName)
 	err = setupTransitGateway(userName)
 	if err != nil {
+		// Log the error
+		Config.Logger.Printf("Failed to set up Transit Gateway for user %v, Error: %v", userName, err)
 		return err
 	}
 
