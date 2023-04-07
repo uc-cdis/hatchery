@@ -340,7 +340,10 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	}
 
 	// Terminate target group
-	svc.terminateLoadBalancerTargetGroup(userName)
+	err = svc.terminateLoadBalancerTargetGroup(userName)
+	if err != nil {
+		Config.Logger.Printf("Error occurred when terminating load balancer target group for user %s: %s\n", userName, err.Error())
+	}
 
 	// Terminate transit gateway
 	err = teardownTransitGateway(userName)
@@ -350,7 +353,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
-func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel) error {
+func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel) {
 	// Set up background context, as this runs in a goroutine
 	ctx := context.Background()
 
@@ -363,18 +366,21 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	hatchApp := Config.ContainersMap[hash]
 	mem, err := mem(hatchApp.MemoryLimit)
 	if err != nil {
-		return err
+		// Log error and return without launching workspace
+		Config.Logger.Printf("Failed to launch ECS workspace for user %v, Error: %v", userName, err)
+		return
 	}
 	cpu, err := cpu(hatchApp.CPULimit)
 	if err != nil {
-		return err
+		// Log error and return without launching workspace
+		Config.Logger.Printf("Failed to launch ECS workspace for user %v, Error: %v", userName, err)
 	}
 
 	// Make sure ECS cluster exists
 	_, err = svc.launchEcsCluster(userName)
 	if err != nil {
 		Config.Logger.Printf("Failed to launch ECS cluster for user %v, Error: %v", userName, err)
-		return err
+		return
 	}
 
 	// Get Gen3 API key to be used in workspace
@@ -416,7 +422,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	volumes, err := svc.EFSFileSystem(userName)
 	if err != nil {
 		Config.Logger.Printf("Failed to set up EFS for user %v, Error: %v", userName, err)
-		return err
+		return
 	}
 
 	Config.Logger.Printf("Setting up task role for user %s", userName)
@@ -424,7 +430,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	if err != nil {
 		// Log the error
 		Config.Logger.Printf("Failed to set up task role for user %v, Error: %v", userName, err)
-		return err
+		return
 	}
 
 	Config.Logger.Printf("Setting up execution role for user %s", userName)
@@ -432,7 +438,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	if err != nil {
 		// Log the error
 		Config.Logger.Printf("Failed to set up execution role for user %v, Error: %v", userName, err)
-		return err
+		return
 	}
 
 	Config.Logger.Printf("Setting up ECS task definition for user %s", userName)
@@ -512,7 +518,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		if aerr != nil {
 			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
 		}
-		return err
+		return
 	}
 
 	Config.Logger.Printf("Launching ECS workspace service for user %s", userName)
@@ -524,7 +530,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		if aerr != nil {
 			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
 		}
-		return err
+		return
 	}
 
 	Config.Logger.Printf("Setting up Transit Gateway for user %s", userName)
@@ -532,11 +538,10 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	if err != nil {
 		// Log the error
 		Config.Logger.Printf("Failed to set up Transit Gateway for user %v, Error: %v", userName, err)
-		return err
+		return
 	}
 
 	Config.Logger.Printf("Launched ECS workspace service at %s for user %s\n", launchTask, userName)
-	return nil
 }
 
 // Launch ECS service for task definition + LB for routing
