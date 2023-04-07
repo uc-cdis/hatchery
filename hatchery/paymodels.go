@@ -99,7 +99,7 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 			// If error occurs, attempt to get default pay model
 			pm, err = getDefaultPayModel()
 			if err != nil {
-				return nil, NopaymodelsError
+				return nil, nil
 			}
 		}
 		return pm, nil
@@ -165,6 +165,12 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 	}
 
 	PayModels.CurrentPayModel = payModel
+
+	// Check if PayModels is empty
+	if len(PayModels.PayModels) == 0 {
+		return nil, nil
+	}
+
 	return &PayModels, nil
 }
 
