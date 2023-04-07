@@ -227,7 +227,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 										lastActivityTime, err := getKernelIdleTimeWithContext(ctx, accessToken)
 										status.LastActivityTime = lastActivityTime
 										if err != nil {
-											// Config.Logger.Println(err.Error())
+											Config.Logger.Println(err.Error())
 										}
 									} else {
 										Config.Logger.Println(err.Error())
