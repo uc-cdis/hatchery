@@ -242,9 +242,6 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 	input := &elbv2.DeleteTargetGroupInput{
 		TargetGroupArn: tgArn.TargetGroups[0].TargetGroupArn,
 	}
-	// input := &elbv2.CreateTargetGroupInput{
-	// 	Name: aws.String(tgName),
-	// }
 
 	_, err = svc.DeleteTargetGroup(input)
 	if err != nil {
