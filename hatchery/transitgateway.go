@@ -175,6 +175,8 @@ func createTransitGateway(userName string) (*string, error) {
 		// Create Transit Gateway Route Table
 		_, err = TGWRoutes(userName, tg.TransitGateway.Options.AssociationDefaultRouteTableId, tgwAttachment, ec2Local, true, false, nil)
 		if err != nil {
+			// Log error
+			Config.Logger.Printf("Failed to create TGW route table: %s", err.Error())
 			return nil, err
 		}
 		resourceshare, err := shareTransitGateway(sess, *tg.TransitGateway.TransitGatewayArn, pm.AWSAccountId)
@@ -194,6 +196,16 @@ func createTransitGateway(userName string) (*string, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// Updating the route table to include the new attachment
+		Config.Logger.Printf("Updating route table to include new attachment: %s", *tgwAttachment)
+		_, err = TGWRoutes(userName, exTg.TransitGateways[len(exTg.TransitGateways)-1].Options.AssociationDefaultRouteTableId, tgwAttachment, ec2Local, true, false, nil)
+		if err != nil {
+			// Log error
+			Config.Logger.Printf("Failed to create TGW route table: %s", err.Error())
+			return nil, err
+		}
+
 		Config.Logger.Printf("Resources shared: %s", *resourceshare)
 		return exTg.TransitGateways[len(exTg.TransitGateways)-1].TransitGatewayId, nil
 	}
@@ -609,6 +621,8 @@ func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string
 		}
 		exRoutes, err := svc.SearchTransitGatewayRoutes(exRoutesInput)
 		if err != nil {
+			// log error
+			Config.Logger.Printf("error SearchTransitGatewayRoutes: %s", err.Error())
 			return nil, err
 		}
 

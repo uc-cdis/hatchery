@@ -51,6 +51,7 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	var payModelMap []PayModel
 	err = dynamodbattribute.UnmarshalListOfMaps(res.Items, &payModelMap)
 	if err != nil {
+		Config.Logger.Printf("Got error unmarshalling paymodels: %s", err)
 		return nil, err
 	}
 
@@ -71,11 +72,12 @@ func payModelFromConfig(userName string) (pm *PayModel, err error) {
 }
 
 func getCurrentPayModel(userName string) (result *PayModel, err error) {
+	// If no DynamoDB table is configured, fall back to config-only
 	if Config.Config.PayModelsDynamodbTable == "" {
-		// fallback for backward compatibility.
-		// Multiple paymodels not supported
+		// Attempt to fetch pay model from config file
 		pm, err := payModelFromConfig(userName)
 		if err != nil {
+			// If error occurs, attempt to get default pay model
 			pm, err = getDefaultPayModel()
 			if err != nil {
 				return nil, NopaymodelsError
@@ -86,18 +88,23 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 
 	payModel := PayModel{}
 
+	// Fetch pay models from DynamoDB
 	pm, err := payModelsFromDatabase(userName, true)
 
+	// If no pay models are found in the database
 	if len(*pm) == 0 {
+		// Attempt to fetch pay model from config file
 		pm, err := payModelFromConfig(userName)
 		if err != nil {
+			// If error occurs, attempt to get default pay model
 			pm, err = getDefaultPayModel()
 			if err != nil {
-				return nil, nil
+				return nil, NopaymodelsError
 			}
 		}
 		return pm, nil
 	}
+	// If exactly one pay model is found in the database
 	if len(*pm) == 1 {
 		payModel = (*pm)[0]
 		if err != nil {
@@ -105,10 +112,11 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 			return nil, err
 		}
 	}
+	// If more than one current pay model is found in the database
 	if len(*pm) > 1 {
-		// TODO: Reset to zero current paymodels here.
-		// We don't want to be in a situation with multiple current paymodels
-		return nil, fmt.Errorf("multiple current paymodels set")
+		// TODO: Reset to zero current pay models here.
+		// We don't want to be in a situation with multiple current pay models
+		return nil, fmt.Errorf("multiple current pay models set")
 	}
 	return &payModel, nil
 }
@@ -149,28 +157,14 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 		return nil, err
 	}
 
-	// temporary fallback to the config to get data for users that are not
-	// in DynamoDB
-	// TODO: remove this block once we only rely on DynamoDB
-	payModel, err := payModelFromConfig(userName)
-	if err == nil {
-		*payModelMap = append(*payModelMap, *payModel)
-	}
-
-	if len(*payModelMap) == 0 {
-		payModel, _ := getDefaultPayModel()
-		*payModelMap = append(*payModelMap, *payModel)
-	}
-
 	PayModels.PayModels = *payModelMap
 
-	payModel, err = getCurrentPayModel(userName)
+	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
 	}
 
 	PayModels.CurrentPayModel = payModel
-
 	return &PayModels, nil
 }
 
