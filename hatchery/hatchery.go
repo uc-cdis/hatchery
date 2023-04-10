@@ -239,7 +239,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		}
 
 		Config.Logger.Printf("Launching ECS workspace for user %s", userName)
-		// Sending a 200 response straigh away, but starting the launch in a goroutine
+		// Sending a 200 response straight away, but starting the launch in a goroutine
 		// TODO: Do more sanity checks before returning 200.
 		w.WriteHeader(http.StatusOK)
 		go launchEcsWorkspace(userName, hash, accessToken, *payModel)
