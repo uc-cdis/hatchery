@@ -602,10 +602,10 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 		}
 	}
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
-	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, payModel)
-	if err != nil {
-		return "", err
-	}
+	// err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, payModel)
+	// if err != nil {
+	// 	return "", err
+	// }
 	return *loadBalancer.LoadBalancers[0].DNSName, nil
 }
 

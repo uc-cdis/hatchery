@@ -61,6 +61,7 @@ type PayModel struct {
 	User            string  `json:"user_id"`
 	AWSAccountId    string  `json:"account_id"`
 	Status          string  `json:"request_status"`
+	Local           bool    `json:"local"`
 	Region          string  `json:"region"`
 	Ecs             bool    `json:"ecs"`
 	Subnet          int     `json:"subnet"`
