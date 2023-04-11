@@ -76,15 +76,15 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 	var pm *[]PayModel
 
 	if Config.Config.PayModelsDynamodbTable != "" {
-		// Fetch pay models from DynamoDB
+		// Fetch pay models from DynamoDB with current_pay_model as `true`
 		pm, err = payModelsFromDatabase(userName, true)
 	}
 
 	payModel := PayModel{}
 
-	// If no pay models are found in the database
+	// If no dynamoDB or no current pay models in the DB,
+	// fallback to defaultPayModel from config
 	if pm == nil || len(*pm) == 0 {
-		// If error occurs, attempt to get default pay model
 		pm, err := getDefaultPayModel()
 		if err != nil {
 			return nil, nil
@@ -99,7 +99,7 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 		return nil, fmt.Errorf("multiple current pay models set")
 	}
 
-	// If exactly one pay model is found in the database
+	// If exactly one current pay model is found in the database
 	payModel = (*pm)[0]
 	if err != nil {
 		Config.Logger.Printf("Got error unmarshalling: %s", err)
@@ -134,7 +134,8 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 		return nil, err
 	}
 
-	// Check if PayModels is empty
+	// If `getCurrentPayModel` returns nil,
+	// then there are no other paymodels to fallback to
 	if payModel == nil {
 		return nil, nil
 	}
