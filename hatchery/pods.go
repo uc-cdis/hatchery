@@ -624,7 +624,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 
 func createLocalK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
 	hatchApp := Config.ContainersMap[hash]
-	Config.Logger.Printf("Creating a Local K8s Pod with access token %s", accessToken)
+	Config.Logger.Printf("Creating a Local K8s Pod")
 	var extraVars []k8sv1.EnvVar
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
