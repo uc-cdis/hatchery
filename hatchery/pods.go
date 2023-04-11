@@ -69,7 +69,7 @@ type WorkspaceStatus struct {
 }
 
 func getPodClient(ctx context.Context, userName string, payModelPtr *PayModel) (corev1.CoreV1Interface, bool, error) {
-	if payModelPtr != nil {
+	if payModelPtr != nil && !(*payModelPtr).Local {
 		podClient, err := NewEKSClientset(ctx, userName, *payModelPtr)
 		if err != nil {
 			Config.Logger.Printf("Error fetching EKS kubeconfig: %v", err)
