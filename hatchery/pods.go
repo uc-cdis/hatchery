@@ -69,7 +69,7 @@ type WorkspaceStatus struct {
 }
 
 func getPodClient(ctx context.Context, userName string, payModelPtr *PayModel) (corev1.CoreV1Interface, bool, error) {
-	if payModelPtr != nil {
+	if payModelPtr != nil && !(*payModelPtr).Local {
 		podClient, err := NewEKSClientset(ctx, userName, *payModelPtr)
 		if err != nil {
 			Config.Logger.Printf("Error fetching EKS kubeconfig: %v", err)
@@ -509,8 +509,8 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			Annotations: annotations,
 		},
 		Spec: k8sv1.PodSpec{
-			SecurityContext: &securityContext,
-			InitContainers:  []k8sv1.Container{},
+			SecurityContext:    &securityContext,
+			InitContainers:     []k8sv1.Container{},
 			EnableServiceLinks: &falseVal,
 			Containers: []k8sv1.Container{
 				{
@@ -624,7 +624,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 
 func createLocalK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
 	hatchApp := Config.ContainersMap[hash]
-
+	Config.Logger.Printf("Creating a Local K8s Pod")
 	var extraVars []k8sv1.EnvVar
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
@@ -747,7 +747,7 @@ func createLocalK8sPod(ctx context.Context, hash string, userName string, access
 
 func createExternalK8sPod(ctx context.Context, hash string, userName string, accessToken string, payModel PayModel) error {
 	hatchApp := Config.ContainersMap[hash]
-
+	Config.Logger.Printf("Creating a External K8s Pod")
 	podClient, err := NewEKSClientset(ctx, userName, payModel)
 	if err != nil {
 		Config.Logger.Printf("Failed to create pod client for user %v, Error: %v", userName, err)

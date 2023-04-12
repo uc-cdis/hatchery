@@ -226,7 +226,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
-	if payModel == nil {
+	if payModel == nil || payModel.Local {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
 	} else if payModel.Ecs {
 
