@@ -217,6 +217,47 @@ func (creds *CREDS) CreateLoadBalancer(userName string) (*elbv2.CreateLoadBalanc
 	return loadBalancer, targetGroup.TargetGroups[0].TargetGroupArn, listener, nil
 }
 
+func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
+	svc := elbv2.New(session.Must(session.NewSession(&aws.Config{
+		Credentials: creds.creds,
+		Region:      aws.String("us-east-1"),
+	})))
+	tgName := truncateString(strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")+userToResourceName(userName, "service")+"tg", 32)
+	Config.Logger.Printf("Deleting target group: %s", tgName)
+	tgArn, err := svc.DescribeTargetGroups(&elbv2.DescribeTargetGroupsInput{
+		Names: []*string{aws.String(tgName)},
+	})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case elbv2.ErrCodeTargetGroupNotFoundException:
+				// Target group not found, nothing to do
+				return nil
+			}
+		} else {
+			Config.Logger.Printf("Error describing target group: %s", err.Error())
+			return err
+		}
+	}
+	input := &elbv2.DeleteTargetGroupInput{
+		TargetGroupArn: tgArn.TargetGroups[0].TargetGroupArn,
+	}
+
+	_, err = svc.DeleteTargetGroup(input)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case elbv2.ErrCodeResourceInUseException:
+				// Target group in use, nothing to do
+				return nil
+			}
+		} else {
+			Config.Logger.Printf("Error deleting target group: %s", err.Error())
+		}
+	}
+	return nil
+}
+
 func (creds *CREDS) terminateLoadBalancer(userName string) error {
 	svc := elbv2.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: creds.creds,
@@ -229,7 +270,15 @@ func (creds *CREDS) terminateLoadBalancer(userName string) error {
 	}
 	result, err := svc.DescribeLoadBalancers(getInput)
 	if err != nil {
-		return err
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case elbv2.ErrCodeLoadBalancerNotFoundException:
+				// Load balancer doesn't exist, we are happy! :)
+				return nil
+			}
+		} else {
+			return err
+		}
 	}
 	if len(result.LoadBalancers) == 1 {
 		delInput := &elbv2.DeleteLoadBalancerInput{
@@ -237,8 +286,16 @@ func (creds *CREDS) terminateLoadBalancer(userName string) error {
 		}
 		_, err := svc.DeleteLoadBalancer(delInput)
 		if err != nil {
-			return err
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				case elbv2.ErrCodeLoadBalancerNotFoundException:
+					fmt.Println(elbv2.ErrCodeLoadBalancerNotFoundException, aerr.Error())
+				}
+			} else {
+				return err
+			}
 		}
 	}
+
 	return nil
 }

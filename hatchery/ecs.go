@@ -58,6 +58,7 @@ func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	svc := sess.svc
 	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
 
+	// Setting up remote VPC
 	_, err := setupVPC(userName)
 	if err != nil {
 		return nil, err
@@ -219,7 +220,6 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 						if len(args) > 0 {
 							for i, arg := range args {
 								if strings.Contains(*arg, "shutdown_no_activity_timeout=") {
-									Config.Logger.Printf("Found kernel idle shutdown time in args. Attempting to get last activity time\n")
 									argSplit := strings.Split(*arg, "=")
 									idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
 									if err == nil {
@@ -261,6 +261,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 // Terminate workspace running in ECS
 // TODO: Make this terminate ALB as well.
 func terminateEcsWorkspace(ctx context.Context, userName string, accessToken string, awsAcctID string) (string, error) {
+	Config.Logger.Printf("Terminating ECS workspace for user %s", userName)
 	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
@@ -320,7 +321,8 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 			Config.Logger.Printf("No container definition found for task definition %s, skipping API key deletion\n", taskDefName)
 		}
 	}
-
+	// Terminate ECS service
+	Config.Logger.Printf("Terminating ECS service %s for user %s\n", svcName, userName)
 	delServiceOutput, err := svc.svc.DeleteService(&ecs.DeleteServiceInput{
 		Cluster: cluster.ClusterName,
 		Force:   aws.Bool(true),
@@ -331,48 +333,65 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	}
 
 	// Terminate load balancer
+	Config.Logger.Printf("Terminating load balancer for user %s\n", userName)
 	err = svc.terminateLoadBalancer(userName)
 	if err != nil {
-		return "", err
+		Config.Logger.Printf("Error occurred when terminating load balancer for user %s: %s\n", userName, err.Error())
 	}
 
+	// Terminate target group
+	err = svc.terminateLoadBalancerTargetGroup(userName)
+	if err != nil {
+		Config.Logger.Printf("Error occurred when terminating load balancer target group for user %s: %s\n", userName, err.Error())
+	}
+
+	// Terminate transit gateway
 	err = teardownTransitGateway(userName)
 	if err != nil {
-		return "", err
+		Config.Logger.Printf("Error occurred when terminating transit gateway resources for user %s: %s\n", userName, err.Error())
 	}
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
-func launchEcsWorkspace(ctx context.Context, userName string, hash string, accessToken string, payModel PayModel) error {
+func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel) {
+	// Set up background context, as this runs in a goroutine
+	ctx := context.Background()
+
 	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
 	}))
 	svc := NewSVC(sess, roleARN)
-	Config.Logger.Printf("%s", userName)
-
 	hatchApp := Config.ContainersMap[hash]
 	mem, err := mem(hatchApp.MemoryLimit)
 	if err != nil {
-		return err
+		// Log error and return without launching workspace
+		Config.Logger.Printf("Failed to launch ECS workspace for user %v, Error: %v", userName, err)
+		return
 	}
 	cpu, err := cpu(hatchApp.CPULimit)
 	if err != nil {
-		return err
+		// Log error and return without launching workspace
+		Config.Logger.Printf("Failed to launch ECS workspace for user %v, Error: %v", userName, err)
 	}
 
+	// Make sure ECS cluster exists
 	_, err = svc.launchEcsCluster(userName)
 	if err != nil {
-		return err
+		Config.Logger.Printf("Failed to launch ECS cluster for user %v, Error: %v", userName, err)
+		return
 	}
 
+	// Get Gen3 API key to be used in workspace
+	Config.Logger.Printf("Creating API key for user %s", userName)
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
-		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
-		return err
+		Config.Logger.Printf("Failed to create API key for user %v, Error: %v. Moving on but workspace won't have API key", userName, err)
+		apiKey = &APIKeyStruct{}
+	} else {
+		Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
 	}
-	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
 
 	envVars := []EnvVar{}
 	for k, v := range hatchApp.Env {
@@ -398,21 +417,31 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 		Key:   "GEN3_ENDPOINT",
 		Value: os.Getenv("GEN3_ENDPOINT"),
 	})
+
+	Config.Logger.Printf("Settign up EFS for user %s", userName)
 	volumes, err := svc.EFSFileSystem(userName)
 	if err != nil {
-		return err
+		Config.Logger.Printf("Failed to set up EFS for user %v, Error: %v", userName, err)
+		return
 	}
 
+	Config.Logger.Printf("Setting up task role for user %s", userName)
 	taskRole, err := svc.taskRole(userName)
 	if err != nil {
-		return err
+		// Log the error
+		Config.Logger.Printf("Failed to set up task role for user %v, Error: %v", userName, err)
+		return
 	}
 
+	Config.Logger.Printf("Setting up execution role for user %s", userName)
 	_, err = svc.CreateEcsTaskExecutionRole()
 	if err != nil {
-		return err
+		// Log the error
+		Config.Logger.Printf("Failed to set up execution role for user %v, Error: %v", userName, err)
+		return
 	}
 
+	Config.Logger.Printf("Setting up ECS task definition for user %s", userName)
 	taskDef := CreateTaskDefinitionInput{
 		Image:      hatchApp.Image,
 		Cpu:        cpu,
@@ -483,28 +512,36 @@ func launchEcsWorkspace(ctx context.Context, userName string, hash string, acces
 	}
 	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash, payModel.AWSAccountId)
 	if err != nil {
+		// Log the error
+		Config.Logger.Printf("Failed to set up task definition for user %v, Error: %v", userName, err)
 		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		if aerr != nil {
 			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
 		}
-		return err
+		return
 	}
 
-	err = setupTransitGateway(userName)
-	if err != nil {
-		return err
-	}
-
+	Config.Logger.Printf("Launching ECS workspace service for user %s", userName)
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash, payModel)
 	if err != nil {
+		// Log the error
+		Config.Logger.Printf("Failed to launch ECS workspace service for user %v, Error: %v", userName, err)
 		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		if aerr != nil {
 			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
 		}
-		return err
+		return
 	}
-	fmt.Printf("Launched ECS workspace service at %s for user %s\n", launchTask, userName)
-	return nil
+
+	Config.Logger.Printf("Setting up Transit Gateway for user %s", userName)
+	err = setupTransitGateway(userName)
+	if err != nil {
+		// Log the error
+		Config.Logger.Printf("Failed to set up Transit Gateway for user %v, Error: %v", userName, err)
+		return
+	}
+
+	Config.Logger.Printf("Launched ECS workspace service at %s for user %s\n", launchTask, userName)
 }
 
 // Launch ECS service for task definition + LB for routing
@@ -515,7 +552,6 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 	if err != nil {
 		return "", err
 	}
-	Config.Logger.Printf("Cluster: %s", *cluster.ClusterName)
 
 	networkConfig, err := sess.NetworkConfig(userName)
 	if err != nil {
@@ -551,31 +587,19 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
-			case ecs.ErrCodeServerException:
-				Config.Logger.Println(ecs.ErrCodeServerException, aerr.Error())
-			case ecs.ErrCodeClientException:
-				Config.Logger.Println(ecs.ErrCodeClientException, aerr.Error())
 			case ecs.ErrCodeInvalidParameterException:
-				Config.Logger.Println(ecs.ErrCodeInvalidParameterException, aerr.Error())
-			case ecs.ErrCodeClusterNotFoundException:
-				Config.Logger.Println(ecs.ErrCodeClusterNotFoundException, aerr.Error())
-			case ecs.ErrCodeUnsupportedFeatureException:
-				Config.Logger.Println(ecs.ErrCodeUnsupportedFeatureException, aerr.Error())
-			case ecs.ErrCodePlatformUnknownException:
-				Config.Logger.Println(ecs.ErrCodePlatformUnknownException, aerr.Error())
-			case ecs.ErrCodePlatformTaskDefinitionIncompatibilityException:
-				Config.Logger.Println(ecs.ErrCodePlatformTaskDefinitionIncompatibilityException, aerr.Error())
-			case ecs.ErrCodeAccessDeniedException:
-				Config.Logger.Println(ecs.ErrCodeAccessDeniedException, aerr.Error())
-			default:
-				Config.Logger.Println(aerr.Error())
+				if aerr.Error() == "InvalidParameterException: Creation of service was not idempotent." {
+					Config.Logger.Print("Service already exists.. ")
+					return "", nil
+				} else {
+					Config.Logger.Println(ecs.ErrCodeInvalidParameterException, aerr.Error())
+				}
 			}
 		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
+
 			Config.Logger.Println(err.Error())
+			return "", err
 		}
-		return "", err
 	}
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
 	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, payModel)

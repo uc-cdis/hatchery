@@ -22,8 +22,10 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	}))
 	dynamodbSvc := dynamodb.New(sess)
 
-	filt := expression.Name("user_id").Equal(expression.Value(userName))
-	filt = filt.And(expression.Name("request_status").Equal(expression.Value("active")))
+	filtActive := expression.Name("request_status").Equal(expression.Value("active"))
+	filtAboveLimit := expression.Name("request_status").Equal(expression.Value("above limit"))
+	filt := expression.Name("user_id").Equal(expression.Value(userName)).And(filtActive.Or(filtAboveLimit))
+
 	if current {
 		filt = filt.And(expression.Name("current_pay_model").Equal(expression.Value(true)))
 	}
@@ -49,6 +51,7 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	var payModelMap []PayModel
 	err = dynamodbattribute.UnmarshalListOfMaps(res.Items, &payModelMap)
 	if err != nil {
+		Config.Logger.Printf("Got error unmarshalling paymodels: %s", err)
 		return nil, err
 	}
 
@@ -69,44 +72,38 @@ func payModelFromConfig(userName string) (pm *PayModel, err error) {
 }
 
 func getCurrentPayModel(userName string) (result *PayModel, err error) {
-	if Config.Config.PayModelsDynamodbTable == "" {
-		// fallback for backward compatibility.
-		// Multiple paymodels not supported
-		pm, err := payModelFromConfig(userName)
-		if err != nil {
-			pm, err = getDefaultPayModel()
-			if err != nil {
-				return nil, NopaymodelsError
-			}
-		}
-		return pm, nil
+
+	var pm *[]PayModel
+
+	if Config.Config.PayModelsDynamodbTable != "" {
+		// Fetch pay models from DynamoDB with current_pay_model as `true`
+		pm, err = payModelsFromDatabase(userName, true)
 	}
 
 	payModel := PayModel{}
 
-	pm, err := payModelsFromDatabase(userName, true)
-
-	if len(*pm) == 0 {
-		pm, err := payModelFromConfig(userName)
+	// If no dynamoDB or no current pay models in the DB,
+	// fallback to defaultPayModel from config
+	if pm == nil || len(*pm) == 0 {
+		pm, err := getDefaultPayModel()
 		if err != nil {
-			pm, err = getDefaultPayModel()
-			if err != nil {
-				return nil, nil
-			}
+			return nil, nil
 		}
 		return pm, nil
 	}
-	if len(*pm) == 1 {
-		payModel = (*pm)[0]
-		if err != nil {
-			Config.Logger.Printf("Got error unmarshalling: %s", err)
-			return nil, err
-		}
-	}
+
+	// If more than one current pay model is found in the database
 	if len(*pm) > 1 {
-		// TODO: Reset to zero current paymodels here.
-		// We don't want to be in a situation with multiple current paymodels
-		return nil, fmt.Errorf("multiple current paymodels set")
+		// TODO: Reset to zero current pay models here.
+		// We don't want to be in a situation with multiple current pay models
+		return nil, fmt.Errorf("multiple current pay models set")
+	}
+
+	// If exactly one current pay model is found in the database
+	payModel = (*pm)[0]
+	if err != nil {
+		Config.Logger.Printf("Got error unmarshalling: %s", err)
+		return nil, err
 	}
 	return &payModel, nil
 }
@@ -124,48 +121,32 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 		return nil, fmt.Errorf("no username sent in header")
 	}
 	PayModels := AllPayModels{}
+	var payModelMap *[]PayModel
 
-	// Fallback to config-only if DynamoDB table is not configured
-	if Config.Config.PayModelsDynamodbTable == "" {
-		pm, err := payModelFromConfig(userName)
+	if Config.Config.PayModelsDynamodbTable != "" {
+		payModelMap, err = payModelsFromDatabase(userName, false)
 		if err != nil {
-			pm, err = getDefaultPayModel()
-			if err != nil {
-				return nil, nil
-			}
+			return nil, err
 		}
-		if pm == nil {
-			return nil, NopaymodelsError
-		}
-		PayModels.CurrentPayModel = pm
-		PayModels.PayModels = append(PayModels.PayModels, *pm)
-		return &PayModels, nil
 	}
-
-	payModelMap, err := payModelsFromDatabase(userName, false)
+	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
 	}
 
-	// temporary fallback to the config to get data for users that are not
-	// in DynamoDB
-	// TODO: remove this block once we only rely on DynamoDB
-	payModel, err := payModelFromConfig(userName)
-	if err == nil {
-		*payModelMap = append(*payModelMap, *payModel)
+	// If `getCurrentPayModel` returns nil,
+	// then there are no other paymodels to fallback to
+	if payModel == nil {
+		return nil, nil
 	}
 
-	if len(*payModelMap) == 0 {
-		payModel, _ := getDefaultPayModel()
+	if payModelMap == nil {
+		payModelMap = &[]PayModel{*payModel}
+	} else if len(*payModelMap) == 0 {
 		*payModelMap = append(*payModelMap, *payModel)
 	}
 
 	PayModels.PayModels = *payModelMap
-
-	payModel, err = getCurrentPayModel(userName)
-	if err != nil {
-		return nil, err
-	}
 
 	PayModels.CurrentPayModel = payModel
 

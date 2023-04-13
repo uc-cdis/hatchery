@@ -12,6 +12,7 @@ import (
 )
 
 func setupVPC(userName string) (*string, error) {
+	Config.Logger.Printf("Setting up VPC for user %s", userName)
 	pm, err := getCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
@@ -32,13 +33,15 @@ func setupVPC(userName string) (*string, error) {
 
 	// Subnets
 	// TODO: make base CIDR configurable?
-	cidrstring := "192.165.0.0/12"
+	cidrstring := "192.160.0.0/12"
 	_, IPNet, _ := net.ParseCIDR(cidrstring)
 	subnet, err := cidr.Subnet(IPNet, 14, pm.Subnet)
 	if err != nil {
 		return nil, err
 	}
 	subnetString := subnet.String()
+
+	Config.Logger.Printf("Using subnet: %s for user %s. Make sure this does not overlap with other users", subnetString, userName)
 
 	// VPC stuff
 	vpcname := userToResourceName(userName, "service") + "-" + strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-vpc"
@@ -171,6 +174,7 @@ func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
 }
 
 func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) {
+	Config.Logger.Printf("Setting up internet Gateway for VPC: %s", vpcid)
 	describeInternetGWInput := &ec2.DescribeInternetGatewaysInput{
 		Filters: []*ec2.Filter{
 			{
@@ -184,6 +188,7 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		return nil, err
 	}
 	if len(exIgw.InternetGateways) == 0 {
+		Config.Logger.Printf("No existing gateways found. Creating internet gateway for VPC: %s", vpcid)
 		createInternetGWInput := &ec2.CreateInternetGatewayInput{
 			TagSpecifications: []*ec2.TagSpecification{
 				{
@@ -235,6 +240,7 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		return igw.InternetGateway.InternetGatewayId, nil
 	} else {
 		if len(exIgw.InternetGateways[0].Attachments) == 0 {
+			Config.Logger.Printf("Existing gateway found but not attached to IGW. Attaching internet gateway for VPC: %s", vpcid)
 			_, err = svc.AttachInternetGateway(&ec2.AttachInternetGatewayInput{
 				InternetGatewayId: exIgw.InternetGateways[0].InternetGatewayId,
 				VpcId:             &vpcid,
@@ -256,9 +262,7 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 			return nil, err
 		}
 
-		Config.Logger.Printf("Routes: %s", routeTable.RouteTables[0].Routes)
-
-		route, err := svc.CreateRoute(&ec2.CreateRouteInput{
+		_, err = svc.CreateRoute(&ec2.CreateRouteInput{
 			DestinationCidrBlock: aws.String("0.0.0.0/0"),
 			GatewayId:            exIgw.InternetGateways[0].InternetGatewayId,
 			RouteTableId:         routeTable.RouteTables[0].RouteTableId,
@@ -266,7 +270,6 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		if err != nil {
 			return nil, err
 		}
-		Config.Logger.Printf("Route: %s", route)
 		return exIgw.InternetGateways[0].InternetGatewayId, nil
 	}
 
