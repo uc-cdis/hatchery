@@ -353,7 +353,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
-func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel) {
+func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel) error {
 	// Set up background context, as this runs in a goroutine
 	ctx := context.Background()
 
@@ -368,7 +368,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	if err != nil {
 		// Log error and return without launching workspace
 		Config.Logger.Printf("Failed to launch ECS workspace for user %v, Error: %v", userName, err)
-		return
+		return err
 	}
 	cpu, err := cpu(hatchApp.CPULimit)
 	if err != nil {
@@ -380,7 +380,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	_, err = svc.launchEcsCluster(userName)
 	if err != nil {
 		Config.Logger.Printf("Failed to launch ECS cluster for user %v, Error: %v", userName, err)
-		return
+		return err
 	}
 
 	// Get Gen3 API key to be used in workspace
@@ -422,7 +422,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	volumes, err := svc.EFSFileSystem(userName)
 	if err != nil {
 		Config.Logger.Printf("Failed to set up EFS for user %v, Error: %v", userName, err)
-		return
+		return err
 	}
 
 	Config.Logger.Printf("Setting up task role for user %s", userName)
@@ -430,7 +430,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	if err != nil {
 		// Log the error
 		Config.Logger.Printf("Failed to set up task role for user %v, Error: %v", userName, err)
-		return
+		return err
 	}
 
 	Config.Logger.Printf("Setting up execution role for user %s", userName)
@@ -438,7 +438,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	if err != nil {
 		// Log the error
 		Config.Logger.Printf("Failed to set up execution role for user %v, Error: %v", userName, err)
-		return
+		return err
 	}
 
 	Config.Logger.Printf("Setting up ECS task definition for user %s", userName)
@@ -518,7 +518,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		if aerr != nil {
 			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
 		}
-		return
+		return err
 	}
 
 	Config.Logger.Printf("Launching ECS workspace service for user %s", userName)
@@ -530,7 +530,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		if aerr != nil {
 			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
 		}
-		return
+		return err
 	}
 
 	Config.Logger.Printf("Setting up Transit Gateway for user %s", userName)
@@ -538,10 +538,11 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	if err != nil {
 		// Log the error
 		Config.Logger.Printf("Failed to set up Transit Gateway for user %v, Error: %v", userName, err)
-		return
+		return err
 	}
 
 	Config.Logger.Printf("Launched ECS workspace service at %s for user %s\n", launchTask, userName)
+	return nil
 }
 
 // Launch ECS service for task definition + LB for routing
@@ -591,21 +592,17 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 				if aerr.Error() == "InvalidParameterException: Creation of service was not idempotent." {
 					Config.Logger.Print("Service already exists.. ")
 					return "", nil
-				} else {
-					Config.Logger.Println(ecs.ErrCodeInvalidParameterException, aerr.Error())
 				}
 			}
-		} else {
-
-			Config.Logger.Println(err.Error())
-			return "", err
 		}
-	}
-	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
-	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, payModel)
-	if err != nil {
+		Config.Logger.Println(err.Error())
 		return "", err
 	}
+	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
+	// err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, payModel)
+	// if err != nil {
+	// 	return "", err
+	// }
 	return *loadBalancer.LoadBalancers[0].DNSName, nil
 }
 

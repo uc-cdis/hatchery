@@ -242,7 +242,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		// Sending a 200 response straight away, but starting the launch in a goroutine
 		// TODO: Do more sanity checks before returning 200.
 		w.WriteHeader(http.StatusOK)
-		go launchEcsWorkspace(userName, hash, accessToken, *payModel)
+		go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel)
 		fmt.Fprintf(w, "Launch accepted")
 		return
 	} else {
@@ -350,4 +350,19 @@ func statusEcs(ctx context.Context, userName string, accessToken string, awsAcct
 		return nil, err
 	}
 	return result, nil
+}
+
+// Wrapper function to launch ECS workspace in a goroutine.
+// Terminates workspace if launch fails for whatever reason
+func launchEcsWorkspaceWrapper(userName string, hash string, accessToken string, payModel PayModel) {
+
+	err := launchEcsWorkspace(userName, hash, accessToken, payModel)
+	if err != nil {
+		Config.Logger.Printf("Error: %s", err)
+		// Terminate ECS workspace if launch fails.
+		_, err = terminateEcsWorkspace(context.Background(), userName, accessToken, payModel.AWSAccountId)
+		if err != nil {
+			Config.Logger.Printf("Error: %s", err)
+		}
+	}
 }
