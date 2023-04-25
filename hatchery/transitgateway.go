@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
+// This function sets up the transit gateway between the account hatchery is running in, and the account workspaces will run.
 func setupTransitGateway(userName string) error {
 	// Create new AWS session to be used by this function
 	sess := session.Must(session.NewSession(&aws.Config{
@@ -19,7 +20,6 @@ func setupTransitGateway(userName string) error {
 		Region: aws.String("us-east-1"),
 	}))
 
-	// Paymodel
 	pm, err := getCurrentPayModel(userName)
 	if err != nil {
 		return err
@@ -31,7 +31,8 @@ func setupTransitGateway(userName string) error {
 		return fmt.Errorf("error creating transit gateway: %s", err.Error())
 	}
 
-	// Create Local TGW Attachment
+	// This transit gateway attachment connects the main account to the remote account
+	// This is needed once per environment, instead of once per user.
 	err = createLocalTransitGatewayAttachment(userName, *tgwid, tgwRouteTableId)
 	if err != nil {
 		return fmt.Errorf("error creating local transit gateway attachment: %s", err.Error())
@@ -54,27 +55,12 @@ func setupTransitGateway(userName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to setup remote account: %s", err.Error())
 	}
-	Config.Logger.Printf("Remote account setup complete")
 	return nil
 }
 
-// func setupTransitGatewayRoutes(sess *session.Session, tgwid *string, tgwRoutetableId *string, userName string) error {
-// 	// Get VPC ID
-// 	vpcid := os.Getenv("GEN3_VPCID")
-
-// 	_, err := TGWRoutes()
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
-
 func createLocalTransitGatewayAttachment(userName string, tgwid string, tgwRouteTableId *string) error {
 	vpcid := os.Getenv("GEN3_VPCID")
-	// pm, err := getCurrentPayModel(userName)
-	// if err != nil {
-	// 	return err
-	// }
+
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
 		Region: aws.String("us-east-1"),
@@ -112,7 +98,6 @@ func teardownTransitGateway(userName string) error {
 
 }
 
-// TODO: Change the name of this function to match HUB/SPOKE model
 func describeMainNetwork(vpcid string, svc *ec2.EC2) (*NetworkInfo, error) {
 	networkInfo := NetworkInfo{}
 	vpcInput := &ec2.DescribeVpcsInput{
