@@ -33,7 +33,7 @@ func getPrismaToken(username string, password string) (*string, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		b, _ := ioutil.ReadAll(resp.Body)
-		Config.Logger.Error("Error authenticating with Prisma Cloud",
+		Config.Logger.Errorw("Error authenticating with Prisma Cloud",
 			"error", string(b),
 		)
 		return nil, errors.New("Error authenticating with Prisma Cloud: " + string(b))
@@ -47,7 +47,7 @@ func getPrismaToken(username string, password string) (*string, error) {
 	var result Token
 	if err := json.Unmarshal(body, &result); err != nil {
 		// fmt.Println("Invalid response from prisma auth endpoint: " + authEndpoint)
-		Config.Logger.Error("Invalid response from prisma auth endpoint",
+		Config.Logger.Errorw("Invalid response from prisma auth endpoint",
 			"error", err,
 			"endpoint", authEndpoint,
 		)
@@ -84,7 +84,7 @@ func getInstallBundle() (*InstallBundle, error) {
 	if resp.StatusCode != 200 {
 		b, _ := ioutil.ReadAll(resp.Body)
 		// Config.Logger.Print(string(b))
-		Config.Logger.Error("Error getting prismacloud install bundle",
+		Config.Logger.Errorw("Error getting prismacloud install bundle",
 			"error", string(b),
 		)
 		return nil, errors.New("Error getting install bundle: " + string(b))
@@ -97,7 +97,7 @@ func getInstallBundle() (*InstallBundle, error) {
 	var result InstallBundle
 	if err := json.Unmarshal(body, &result); err != nil {
 		// fmt.Println("Invalid response from prisma install_bundle endpoint: " + installBundleEndpoint)
-		Config.Logger.Error("Invalid response from prisma install_bundle endpoint",
+		Config.Logger.Errorw("Invalid response from prisma install_bundle endpoint",
 			"error", err,
 			"endpoint", installBundleEndpoint,
 		)
@@ -132,7 +132,7 @@ func getPrismaImage() (*string, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		b, _ := ioutil.ReadAll(resp.Body)
-		Config.Logger.Error("Error getting prismacloud image name",
+		Config.Logger.Errorw("Error getting prismacloud image name",
 			"error", string(b),
 		)
 		return nil, errors.New("Error getting prismacloud image name: " + string(b))

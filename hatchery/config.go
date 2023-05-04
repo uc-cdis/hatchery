@@ -122,7 +122,7 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 	if nil != err {
 		cwd, _ := os.Getwd()
 		// data.Logger.Printf("failed to load %v from cwd %v got - %v", configFilePath, cwd, err)
-		data.Logger.Error("Failed to load config file.",
+		data.Logger.Errorw("Failed to load config file.",
 			"configFilePath", configFilePath,
 			"cwd", cwd,
 			"error", err,
@@ -149,7 +149,7 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 				composeModel, err := DockstoreComposeFromFile(info.Path)
 				if nil != err {
 					// data.Logger.Printf("failed to load config from %v, got: %v", info.Path, err)
-					data.Logger.Error("Failed to load config.",
+					data.Logger.Errorw("Failed to load config.",
 						"path", info.Path,
 						"error", err,
 					)
@@ -163,7 +163,7 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 				hatchApp.Name = info.Name
 				if nil != err {
 					// data.Logger.Printf("failed to translate app, got: %v", err)
-					data.Logger.Error("Failed to translate app.",
+					data.Logger.Errorw("Failed to translate app.",
 						"error", err,
 					)
 					return nil, err
@@ -171,7 +171,7 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 				data.Config.Containers = append(data.Config.Containers, *hatchApp)
 			} else {
 				// data.Logger.Printf("ignoring config of unsupported type: %v", info.AppType)
-				data.Logger.Warn("Ignoring config of unsupported type.",
+				data.Logger.Warnw("Ignoring config of unsupported type.",
 					"appType", info.AppType,
 				)
 			}
@@ -185,7 +185,7 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 
 	if data.Config.PayModelsDynamodbTable == "" {
 		// data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
-		data.Logger.Warn("No 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
+		data.Logger.Warnw("No 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
 	}
 
 	for _, payModel := range data.Config.PayModels {

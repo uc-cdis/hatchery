@@ -108,7 +108,7 @@ func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, err
 		if err != nil {
 			return nil, err
 		}
-		Config.Logger.Info("Creating security group",
+		Config.Logger.Infow("Creating security group",
 			"security_group_id", *newSecurityGroup.GroupId,
 			"security_group_name", createSecurityGroupInput.GroupName,
 			"vpc_id", createSecurityGroupInput.VpcId,

@@ -15,13 +15,13 @@ func setupVPC(userName string) (*string, error) {
 
 	pm, err := getCurrentPayModel(userName)
 	if err != nil {
-		Config.Logger.Error("Failed to get current paymodel",
+		Config.Logger.Errorw("Failed to get current paymodel",
 			"error", err,
 			"username", userName,
 		)
 		return nil, err
 	}
-	Config.Logger.Info("Setting up remote VPC",
+	Config.Logger.Infow("Setting up remote VPC",
 		"username", userName,
 		"paymodel", pm.Name,
 		"awsAccount", pm.AWSAccountId,
@@ -80,7 +80,7 @@ func setupVPC(userName string) (*string, error) {
 			return nil, err
 		}
 
-		Config.Logger.Info("VPC created in remote account",
+		Config.Logger.Infow("VPC created in remote account",
 			"username", userName,
 			"vpcid", *vpc.Vpc.VpcId,
 		)
@@ -174,7 +174,7 @@ func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
 	}
 	_, err = svc.CreateSubnet(createSubnet1Input)
 	if err != nil {
-		Config.Logger.Error("Error creating subnet 1",
+		Config.Logger.Errorw("Error creating subnet 1",
 			"error", err,
 			"subnet", subnet1Cidr.String(),
 			"vpcid", vpcid,
@@ -183,7 +183,7 @@ func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
 	}
 	_, err = svc.CreateSubnet(createSubnet2Input)
 	if err != nil {
-		Config.Logger.Error("Error creating subnet 2",
+		Config.Logger.Errorw("Error creating subnet 2",
 			"error", err,
 			"subnet", subnet2Cidr.String(),
 			"vpcid", vpcid,
@@ -196,7 +196,7 @@ func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
 
 func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) {
 
-	Config.Logger.Info("Setting up internet Gateway for VPC",
+	Config.Logger.Infow("Setting up internet Gateway for VPC",
 		"vpcid", vpcid,
 		"name", name,
 	)
@@ -215,7 +215,7 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 	}
 	if len(exIgw.InternetGateways) == 0 {
 
-		Config.Logger.Info("No existing internet gateways found. Creating internet gateway for VPC",
+		Config.Logger.Infow("No existing internet gateways found. Creating internet gateway for VPC",
 			"vpcid", vpcid,
 		)
 		createInternetGWInput := &ec2.CreateInternetGatewayInput{
@@ -265,14 +265,14 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		if err != nil {
 			return nil, err
 		}
-		Config.Logger.Info("Route to internet created",
+		Config.Logger.Infow("Route to internet created",
 			"route", route,
 		)
 		return igw.InternetGateway.InternetGatewayId, nil
 	} else {
 		if len(exIgw.InternetGateways[0].Attachments) == 0 {
 
-			Config.Logger.Info("Existing gateway found but not attached to IGW. Attaching internet gateway for VPC",
+			Config.Logger.Infow("Existing gateway found but not attached to IGW. Attaching internet gateway for VPC",
 				"vpcid", vpcid,
 			)
 			_, err = svc.AttachInternetGateway(&ec2.AttachInternetGatewayInput{

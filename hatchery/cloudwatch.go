@@ -20,7 +20,7 @@ func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Creden
 
 	logGroup, err := c.DescribeLogGroups(describeLogGroupIn)
 	if err != nil {
-		Config.Logger.Error("Error in DescribeLogGroup",
+		Config.Logger.Errorw("Error in DescribeLogGroup",
 			"error", err,
 			"logGroupNamePrefix", LogGroupName,
 		)
@@ -32,7 +32,7 @@ func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Creden
 		}
 		newLogGroup, err := c.CreateLogGroup(createLogGroupIn)
 		if err != nil {
-			Config.Logger.Error("Error in CreateLogGroup",
+			Config.Logger.Errorw("Error in CreateLogGroup",
 				"error", err,
 				"newLogGroup", newLogGroup,
 			)

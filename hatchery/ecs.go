@@ -129,7 +129,7 @@ func (sess *CREDS) findEcsCluster() (*ecs.Cluster, error) {
 			// Print the error, cast err to awserr.Error to get the Code and
 			// Message from an error.
 			// Config.Logger.Println(err.Error())
-			Config.Logger.Error("Error describing ECS cluster",
+			Config.Logger.Errorw("Error describing ECS cluster",
 				"clusterName", clusterName,
 				"error", err.Error(),
 			)
@@ -172,7 +172,7 @@ func (sess *CREDS) findEcsCluster() (*ecs.Cluster, error) {
 				return describeClusterResult.Clusters[0], nil
 			}
 		}
-		Config.Logger.Error("Failed to describe ECS cluster.",
+		Config.Logger.Errorw("Failed to describe ECS cluster.",
 			"clusterName", clusterName,
 		)
 
@@ -217,7 +217,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 		if statusMessage == "ACTIVE" && (*service.Services[0].RunningCount == *service.Services[0].DesiredCount) {
 			taskDefName = *service.Services[0].TaskDefinition
 			if taskDefName == "" {
-				Config.Logger.Error("No task definition found for user.",
+				Config.Logger.Errorw("No task definition found for user.",
 					"userName", userName,
 				)
 			} else {
@@ -254,19 +254,19 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 									break
 								}
 								if i == len(args)-1 {
-									Config.Logger.Error("Unable to find kernel idle shutdown time in args.",
+									Config.Logger.Errorw("Unable to find kernel idle shutdown time in args.",
 										"userName", userName,
 									)
 								}
 							}
 						} else {
-							Config.Logger.Error("No env vars found for task definition.",
+							Config.Logger.Errorw("No env vars found for task definition.",
 								"taskDefName", taskDefName,
 								"userName", userName,
 							)
 						}
 					} else {
-						Config.Logger.Error("No container definition found for task definition.",
+						Config.Logger.Errorw("No container definition found for task definition.",
 							"taskDefName", taskDefName,
 							"userName", userName,
 						)
@@ -288,7 +288,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 // Terminate workspace running in ECS
 // TODO: Make this terminate ALB as well.
 func terminateEcsWorkspace(ctx context.Context, userName string, accessToken string, awsAcctID string) (string, error) {
-	Config.Logger.Info("Terminating ECS workspace.",
+	Config.Logger.Infow("Terminating ECS workspace.",
 		"username", userName,
 	)
 	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
@@ -318,7 +318,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 		return "", errors.New("No service found for " + userName)
 	}
 	if taskDefName == "" {
-		Config.Logger.Info("No task definition found for user, skipping API key deletion.",
+		Config.Logger.Infow("No task definition found for user, skipping API key deletion.",
 			"userName", userName,
 		)
 	} else {
@@ -339,7 +339,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 						)
 						err := deleteAPIKeyWithContext(ctx, accessToken, *ev.Value)
 						if err != nil {
-							Config.Logger.Error("Error occurred when deleting API Key.",
+							Config.Logger.Errorw("Error occurred when deleting API Key.",
 								"username", userName,
 								"error", err.Error(),
 							)
@@ -347,24 +347,24 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 						break
 					}
 					if i == len(envVars)-1 {
-						Config.Logger.Error("Unable to find API Key ID in env vars.",
+						Config.Logger.Errorw("Unable to find API Key ID in env vars.",
 							"username", userName,
 						)
 					}
 				}
 			} else {
-				Config.Logger.Info("Skipping API key deletion as no environment variables were found.",
+				Config.Logger.Infow("Skipping API key deletion as no environment variables were found.",
 					"taskDefName", taskDefName,
 					"username", userName)
 			}
 		} else {
-			Config.Logger.Info("Skipping API key deletion as no environment variables were found.",
+			Config.Logger.Infow("Skipping API key deletion as no environment variables were found.",
 				"taskDefName", taskDefName,
 				"username", userName)
 		}
 	}
 	// Terminate ECS service
-	Config.Logger.Info("Terminating ECS service.",
+	Config.Logger.Infow("Terminating ECS service.",
 		"svcName", svcName,
 		"username", userName,
 	)
@@ -378,12 +378,12 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	}
 
 	// Terminate load balancer
-	Config.Logger.Info("Terminating load balancer.",
+	Config.Logger.Infow("Terminating load balancer.",
 		"username", userName,
 	)
 	err = svc.terminateLoadBalancer(userName)
 	if err != nil {
-		Config.Logger.Error("Failed to terminate load balancer.",
+		Config.Logger.Errorw("Failed to terminate load balancer.",
 			"username", userName,
 			"error", err.Error(),
 		)
@@ -392,7 +392,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	// Terminate target group
 	err = svc.terminateLoadBalancerTargetGroup(userName)
 	if err != nil {
-		Config.Logger.Error("Failed to terminate load balancer target group.",
+		Config.Logger.Errorw("Failed to terminate load balancer target group.",
 			"username", userName,
 			"error", err.Error(),
 		)
@@ -401,7 +401,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	// Terminate transit gateway
 	err = teardownTransitGateway(userName)
 	if err != nil {
-		Config.Logger.Error("Failed to terminate transit gateway resources.",
+		Config.Logger.Errorw("Failed to terminate transit gateway resources.",
 			"username", userName,
 			"error", err.Error(),
 		)
@@ -423,7 +423,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	mem, err := mem(hatchApp.MemoryLimit)
 	if err != nil {
 		// Log error and return without launching workspace
-		Config.Logger.Error("Failed to launch ECS workspace.",
+		Config.Logger.Errorw("Failed to launch ECS workspace.",
 			"username", userName,
 			"error", err.Error(),
 		)
@@ -432,7 +432,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	cpu, err := cpu(hatchApp.CPULimit)
 	if err != nil {
 		// Log error and return without launching workspace
-		Config.Logger.Error("Failed to launch ECS workspace.",
+		Config.Logger.Errorw("Failed to launch ECS workspace.",
 			"username", userName,
 			"error", err.Error(),
 		)
@@ -441,7 +441,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	// Make sure ECS cluster exists
 	_, err = svc.launchEcsCluster(userName)
 	if err != nil {
-		Config.Logger.Error("Failed to launch ECS cluster.",
+		Config.Logger.Errorw("Failed to launch ECS cluster.",
 			"username", userName,
 			"error", err.Error(),
 		)
@@ -449,22 +449,22 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	}
 
 	// Get Gen3 API key to be used in workspace
-	Config.Logger.Info("Creating API key.",
+	Config.Logger.Infow("Creating API key.",
 		"username", userName,
 	)
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
-		Config.Logger.Error("Failed to create API key.",
+		Config.Logger.Errorw("Failed to create API key.",
 			"username", userName,
 			"error", err.Error(),
 		)
-		Config.Logger.Info(
+		Config.Logger.Infow(
 			"Moving on but workspace won't have API key.",
 			"username", userName,
 		)
 		apiKey = &APIKeyStruct{}
 	} else {
-		Config.Logger.Info("Created API key.",
+		Config.Logger.Infow("Created API key.",
 			"username", userName,
 			"keyID", apiKey.KeyID,
 		)
@@ -495,45 +495,45 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		Value: os.Getenv("GEN3_ENDPOINT"),
 	})
 
-	Config.Logger.Info("Setting up EFS.",
+	Config.Logger.Infow("Setting up EFS.",
 		"username", userName,
 	)
 	volumes, err := svc.EFSFileSystem(userName)
 	if err != nil {
-		Config.Logger.Error("Failed to set up EFS.",
+		Config.Logger.Errorw("Failed to set up EFS.",
 			"username", userName,
 			"error", err.Error(),
 		)
 		return err
 	}
 
-	Config.Logger.Info("Setting up task role.",
+	Config.Logger.Infow("Setting up task role.",
 		"username", userName,
 	)
 	taskRole, err := svc.taskRole(userName)
 	if err != nil {
 		// Log the error
-		Config.Logger.Error("Failed to set up task role.",
+		Config.Logger.Errorw("Failed to set up task role.",
 			"username", userName,
 			"error", err.Error(),
 		)
 		return err
 	}
 
-	Config.Logger.Info("Setting up task execution role.",
+	Config.Logger.Infow("Setting up task execution role.",
 		"username", userName,
 	)
 	_, err = svc.CreateEcsTaskExecutionRole()
 	if err != nil {
 		// Log the error
-		Config.Logger.Error("Failed to set up task execution role.",
+		Config.Logger.Errorw("Failed to set up task execution role.",
 			"username", userName,
 			"error", err.Error(),
 		)
 		return err
 	}
 
-	Config.Logger.Info("Setting up ECS task definition.",
+	Config.Logger.Infow("Setting up ECS task definition.",
 		"username", userName,
 	)
 	taskDef := CreateTaskDefinitionInput{
@@ -607,13 +607,13 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash, payModel.AWSAccountId)
 	if err != nil {
 		// Log the error
-		Config.Logger.Error("Failed to set up task definition.",
+		Config.Logger.Errorw("Failed to set up task definition.",
 			"username", userName,
 			"error", err.Error(),
 		)
 		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		if aerr != nil {
-			Config.Logger.Error("Error occurred when deleting API Key.",
+			Config.Logger.Errorw("Error occurred when deleting API Key.",
 				"username", userName,
 				"error", err.Error(),
 			)
@@ -621,19 +621,19 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		return err
 	}
 
-	Config.Logger.Info("Launching ECS workspace service.",
+	Config.Logger.Infow("Launching ECS workspace service.",
 		"username", userName,
 	)
 	launchTask, err := svc.launchService(ctx, taskDefResult, userName, hash, payModel)
 	if err != nil {
 		// Log the error
-		Config.Logger.Error("Failed to launch ECS workspace service.",
+		Config.Logger.Errorw("Failed to launch ECS workspace service.",
 			"username", userName,
 			"error", err.Error(),
 		)
 		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		if aerr != nil {
-			Config.Logger.Error("Error occurred when deleting API Key.",
+			Config.Logger.Errorw("Error occurred when deleting API Key.",
 				"username", userName,
 				"error", err.Error(),
 			)
@@ -641,20 +641,20 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		return err
 	}
 
-	Config.Logger.Info("Setting up Transit Gateway.",
+	Config.Logger.Infow("Setting up Transit Gateway.",
 		"username", userName,
 	)
 	err = setupTransitGateway(userName)
 	if err != nil {
 		// Log the error
-		Config.Logger.Error("Failed to set up Transit Gateway.",
+		Config.Logger.Errorw("Failed to set up Transit Gateway.",
 			"username", userName,
 			"error", err.Error(),
 		)
 		return err
 	}
 
-	Config.Logger.Info("Launched ECS workspace service.",
+	Config.Logger.Infow("Launched ECS workspace service.",
 		"username", userName,
 		"launchTask", launchTask,
 	)
@@ -707,7 +707,7 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 			case ecs.ErrCodeInvalidParameterException:
 				if aerr.Error() == "InvalidParameterException: Creation of service was not idempotent." {
 					// Config.Logger.Print("Service already exists.. ")
-					Config.Logger.Info("ECS Service already exists. Moving on.",
+					Config.Logger.Infow("ECS Service already exists. Moving on.",
 						"username", userName,
 					)
 					return "", nil
@@ -715,19 +715,19 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 			}
 		}
 		// Config.Logger.Println(err.Error())
-		Config.Logger.Error("Error occurred when creating ECS service.",
+		Config.Logger.Errorw("Error occurred when creating ECS service.",
 			"username", userName,
 			"error", err.Error(),
 		)
 		return "", err
 	}
-	Config.Logger.Info("Service launched.",
+	Config.Logger.Infow("Service launched.",
 		"username", userName,
 		"service", *result.Service.ServiceName,
 	)
 	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, payModel)
 	if err != nil {
-		Config.Logger.Error("Error occurred when creating local kubernetes service (used by ambassador).",
+		Config.Logger.Errorw("Error occurred when creating local kubernetes service (used by ambassador).",
 			"username", userName,
 			"loadbalancer", *loadBalancer.LoadBalancers[0].DNSName,
 			"paymodel", payModel.Name,
@@ -743,7 +743,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 	creds := sess.creds
 	LogGroup, err := sess.CreateLogGroup(fmt.Sprintf("/hatchery/%s/", awsAcctID), creds)
 	if err != nil {
-		Config.Logger.Error("Failed to create/get LogGroup.",
+		Config.Logger.Errorw("Failed to create/get LogGroup.",
 			"username", userName,
 			"loggroup", "/hatchery/"+awsAcctID+"/",
 			"error", err.Error(),
@@ -755,7 +755,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 		Region:      aws.String("us-east-1"),
 	})))
 
-	Config.Logger.Info("Creating ECS task definition.",
+	Config.Logger.Infow("Creating ECS task definition.",
 		"username", userName,
 	)
 
@@ -803,7 +803,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 		installBundle, err := getInstallBundle()
 		if err != nil {
 			// Config.Logger.Print(err, " error getting prisma install bundle")
-			Config.Logger.Error("Error occurred when getting prisma install bundle.",
+			Config.Logger.Errorw("Error occurred when getting prisma install bundle.",
 				"username", userName,
 				"error", err.Error(),
 			)
@@ -813,7 +813,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 		image, err := getPrismaImage()
 		if err != nil {
 			// Config.Logger.Print(err, " error getting prisma image")
-			Config.Logger.Error("Error occurred when getting prisma image.",
+			Config.Logger.Errorw("Error occurred when getting prisma image.",
 				"username", userName,
 				"error", err.Error(),
 			)
@@ -885,7 +885,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 
 	if err != nil {
 		// Config.Logger.Print(err, " Couldn't register ECS task definition")
-		Config.Logger.Error("Couldn't register ECS task definition.",
+		Config.Logger.Errorw("Couldn't register ECS task definition.",
 			"username", userName,
 			"error", err.Error(),
 		)
@@ -894,7 +894,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 
 	td := resp.TaskDefinition
 
-	Config.Logger.Info("Created ECS task definition.",
+	Config.Logger.Infow("Created ECS task definition.",
 		"username", userName,
 		"taskdefinition", fmt.Sprintf("%s:%d", aws.StringValue(td.Family), aws.Int64Value(td.Revision)),
 	)

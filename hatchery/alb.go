@@ -38,13 +38,19 @@ func (creds *CREDS) createTargetGroup(userName string, vpcId string, svc *elbv2.
 			case elbv2.ErrCodeTooManyTagsException:
 				fmt.Println(elbv2.ErrCodeTooManyTagsException, aerr.Error())
 			default:
-				fmt.Println(aerr.Error())
+				Config.Logger.Errorw("Error creating target group",
+					"error", aerr.Error(),
+					"code", aerr.Code(),
+					"message", aerr.Message(),
+					"user", userName,
+				)
 				return nil, err
 			}
 		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
-			fmt.Println(err.Error())
+			Config.Logger.Errorw("Error creating target group",
+				"error", err.Error(),
+				"user", userName,
+			)
 			return nil, err
 		}
 		return nil, err
@@ -238,7 +244,7 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 				return nil
 			}
 		} else {
-			Config.Logger.Error("Error describing target group",
+			Config.Logger.Errorw("Error describing target group",
 				"error", err.Error(),
 				"username", userName,
 			)
@@ -258,7 +264,7 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 				return nil
 			}
 		} else {
-			Config.Logger.Error("Error deleting target group",
+			Config.Logger.Errorw("Error deleting target group",
 				"error", err.Error(),
 				"username", userName,
 			)

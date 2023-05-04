@@ -56,7 +56,7 @@ func main() {
 	ddEnabled := os.Getenv("DD_ENABLED")
 	if strings.ToLower(ddEnabled) == "true" {
 		// config.Logger.Printf("Setting up datadog")
-		config.Logger.Info("Setting up datadog")
+		config.Logger.Infow("Setting up datadog")
 		tracer.Start()
 		defer tracer.Stop()
 		if err := profiler.Start(
@@ -71,23 +71,23 @@ func main() {
 			),
 		); err != nil {
 			// config.Logger.Printf("DD profiler setup failed with error: %s", err)
-			logger.Error("Failed to setup DD profiler",
+			logger.Errorw("Failed to setup DD profiler",
 				"error", err,
 			)
 		}
 		defer profiler.Stop()
 	} else {
 		// config.Logger.Printf("Datadog not enabled in manifest, skipping...")
-		config.Logger.Info("Datadog not enabled in manifest, skipping...")
+		config.Logger.Infow("Datadog not enabled in manifest, skipping...")
 	}
 
 	// config.Logger.Printf("Setting up routes")
-	config.Logger.Info("Setting up routes for hatchery api")
+	config.Logger.Infow("Setting up routes for hatchery api")
 	mux := httptrace.NewServeMux()
 	hatchery.RegisterSystem(mux)
 	hatchery.RegisterHatchery(mux)
 
 	// config.Logger.Printf("Running main")
-	config.Logger.Info("Running main")
+	config.Logger.Infow("Running main")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8000", mux))
 }

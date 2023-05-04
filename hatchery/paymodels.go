@@ -31,7 +31,7 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	}
 	expr, err := expression.NewBuilder().WithFilter(filt).Build()
 	if err != nil {
-		Config.Logger.Error("Got error building dyamoDB expression",
+		Config.Logger.Errorw("Got error building dyamoDB expression",
 			"error", err,
 		)
 		return nil, err
@@ -45,7 +45,7 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	}
 	res, err := dynamodbSvc.Scan(params)
 	if err != nil {
-		Config.Logger.Error("Failed to query dynamoDB",
+		Config.Logger.Errorw("Failed to query dynamoDB",
 			"error", err,
 		)
 		return nil, err
@@ -55,7 +55,7 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	var payModelMap []PayModel
 	err = dynamodbattribute.UnmarshalListOfMaps(res.Items, &payModelMap)
 	if err != nil {
-		Config.Logger.Error("Failed to unmarshal dynamoDB paymodels",
+		Config.Logger.Errorw("Failed to unmarshal dynamoDB paymodels",
 			"error", err,
 		)
 		return nil, err

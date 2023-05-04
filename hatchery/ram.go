@@ -17,7 +17,7 @@ func acceptTransitGatewayShare(pm *PayModel, userName string, sess *session.Sess
 	if err != nil {
 		// Log error
 
-		Config.Logger.Error("Failed to accept transitgateway share",
+		Config.Logger.Errorw("Failed to accept transitgateway share",
 			"error", err,
 			"username", userName,
 			"paymodel", pm,
@@ -42,7 +42,7 @@ func (creds *CREDS) acceptTGWShare(ramArn *string) error {
 	}
 	resourceShareInvitation, err := svc.GetResourceShareInvitations(ramInvitationInput)
 	if err != nil {
-		Config.Logger.Error("Failed to get resource share invitation",
+		Config.Logger.Errorw("Failed to get resource share invitation",
 			"error", err,
 			"ram-share-arn", ramArn,
 		)
@@ -50,7 +50,7 @@ func (creds *CREDS) acceptTGWShare(ramArn *string) error {
 	}
 
 	if len(resourceShareInvitation.ResourceShareInvitations) == 0 {
-		Config.Logger.Warn("No invitations found for RAM share",
+		Config.Logger.Warnw("No invitations found for RAM share",
 			"ram-share-arn", ramArn,
 		)
 		return nil
@@ -94,7 +94,7 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 		return nil, err
 	}
 	if len(exRs.ResourceShares) == 0 {
-		Config.Logger.Info("Resource share not found, creating new resource share",
+		Config.Logger.Infow("Resource share not found, creating new resource share",
 			"ramName", ramName,
 			"tgwArn", tgwArn,
 			"accountId", accountid)
@@ -123,7 +123,7 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 		}
 		return resourceShare.ResourceShare.ResourceShareArn, nil
 	} else {
-		Config.Logger.Info("Existing resource share found. Associating resource share with account.",
+		Config.Logger.Infow("Existing resource share found. Associating resource share with account.",
 			"ramName", ramName,
 			"tgwArn", tgwArn,
 			"accountId", accountid)
@@ -145,7 +145,7 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 		listPrincipals, err := svc.ListPrincipals(listPrincipalsInput)
 		if err != nil {
 
-			Config.Logger.Error("failed to ListPrincipals",
+			Config.Logger.Errorw("failed to ListPrincipals",
 				"listPrincipalsInput", listPrincipalsInput,
 				"error", err,
 			)
