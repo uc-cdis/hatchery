@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -34,7 +33,9 @@ func getPrismaToken(username string, password string) (*string, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		b, _ := ioutil.ReadAll(resp.Body)
-		Config.Logger.Print(string(b))
+		Config.Logger.Error("Error authenticating with Prisma Cloud",
+			"error", string(b),
+		)
 		return nil, errors.New("Error authenticating with Prisma Cloud: " + string(b))
 	}
 	//We Read the response body on the line below.
@@ -45,7 +46,11 @@ func getPrismaToken(username string, password string) (*string, error) {
 
 	var result Token
 	if err := json.Unmarshal(body, &result); err != nil {
-		fmt.Println("Invalid response from prisma auth endpoint: " + authEndpoint)
+		// fmt.Println("Invalid response from prisma auth endpoint: " + authEndpoint)
+		Config.Logger.Error("Invalid response from prisma auth endpoint",
+			"error", err,
+			"endpoint", authEndpoint,
+		)
 	}
 
 	return &result.Token, nil
@@ -78,7 +83,10 @@ func getInstallBundle() (*InstallBundle, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		b, _ := ioutil.ReadAll(resp.Body)
-		Config.Logger.Print(string(b))
+		// Config.Logger.Print(string(b))
+		Config.Logger.Error("Error getting prismacloud install bundle",
+			"error", string(b),
+		)
 		return nil, errors.New("Error getting install bundle: " + string(b))
 	}
 	//We Read the response body on the line below.
@@ -88,7 +96,11 @@ func getInstallBundle() (*InstallBundle, error) {
 	}
 	var result InstallBundle
 	if err := json.Unmarshal(body, &result); err != nil {
-		fmt.Println("Invalid response from prisma install_bundle endpoint: " + installBundleEndpoint)
+		// fmt.Println("Invalid response from prisma install_bundle endpoint: " + installBundleEndpoint)
+		Config.Logger.Error("Invalid response from prisma install_bundle endpoint",
+			"error", err,
+			"endpoint", installBundleEndpoint,
+		)
 	}
 	return &result, nil
 }
@@ -120,8 +132,10 @@ func getPrismaImage() (*string, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		b, _ := ioutil.ReadAll(resp.Body)
-		Config.Logger.Print(string(b))
-		return nil, errors.New("Error getting install bundle: " + string(b))
+		Config.Logger.Error("Error getting prismacloud image name",
+			"error", string(b),
+		)
+		return nil, errors.New("Error getting prismacloud image name: " + string(b))
 	}
 	//We Read the response body on the line below.
 	body, err := ioutil.ReadAll(resp.Body)

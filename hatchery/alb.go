@@ -223,7 +223,10 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 		Region:      aws.String("us-east-1"),
 	})))
 	tgName := truncateString(strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")+userToResourceName(userName, "service")+"tg", 32)
-	Config.Logger.Printf("Deleting target group: %s", tgName)
+	Config.Logger.Debug("Deleting target group",
+		"target-group", tgName,
+		"username", userName,
+	)
 	tgArn, err := svc.DescribeTargetGroups(&elbv2.DescribeTargetGroupsInput{
 		Names: []*string{aws.String(tgName)},
 	})
@@ -235,7 +238,10 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 				return nil
 			}
 		} else {
-			Config.Logger.Printf("Error describing target group: %s", err.Error())
+			Config.Logger.Error("Error describing target group",
+				"error", err.Error(),
+				"username", userName,
+			)
 			return err
 		}
 	}
@@ -252,7 +258,10 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 				return nil
 			}
 		} else {
-			Config.Logger.Printf("Error deleting target group: %s", err.Error())
+			Config.Logger.Error("Error deleting target group",
+				"error", err.Error(),
+				"username", userName,
+			)
 		}
 	}
 	return nil

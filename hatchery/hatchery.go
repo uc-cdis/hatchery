@@ -224,7 +224,10 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Error("Failed to get current paymodel",
+			"error", err.Error(),
+			"username", userName,
+		)
 	}
 	if payModel == nil || payModel.Local {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
@@ -233,12 +236,19 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		if payModel.Status != "active" {
 			// send 500 response.
 			// TODO: 403 is the correct code, but it triggers a 302 to the default 403 page in revproxy instead of showing error message.
-			Config.Logger.Printf("Paymodel is not active. Launch forbidden for user %s", userName)
+			Config.Logger.Error("Launch forbidden: pay model is not active",
+				"username", userName,
+				"paymodelstatus", payModel.Status,
+				"paymodel", payModel,
+			)
 			http.Error(w, "Paymodel is not active. Launch forbidden", http.StatusInternalServerError)
 			return
 		}
 
-		Config.Logger.Printf("Launching ECS workspace for user %s", userName)
+		Config.Logger.Info("Launching ECS workspace",
+			"username", userName,
+			"paymodel", payModel.Name,
+		)
 		// Sending a 200 response straight away, but starting the launch in a goroutine
 		// TODO: Do more sanity checks before returning 200.
 		w.WriteHeader(http.StatusOK)
@@ -249,7 +259,11 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
 	}
 	if err != nil {
-		Config.Logger.Printf("error during launch: %-v", err)
+		Config.Logger.Error("Error during launch",
+			"error", err.Error(),
+			"username", userName,
+			"paymodel", payModel,
+		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -263,18 +277,26 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
-	Config.Logger.Printf("Terminating workspace for user %s", userName)
+
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Error("Failed to get current paymodel",
+			"error", err.Error(),
+			"username", userName,
+		)
 	}
+	Config.Logger.Info("Terminating workspace",
+		"username", userName,
+	)
 	if payModel != nil && payModel.Ecs {
 		_, err := terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		} else {
-			Config.Logger.Printf("Succesfully terminated all resources related to ECS workspace for user %s", userName)
+			Config.Logger.Info("Succesfully terminated all resources related to ECS workspace",
+				"username", userName,
+			)
 			fmt.Fprintf(w, "Terminated ECS workspace")
 		}
 	} else {
@@ -283,7 +305,10 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		Config.Logger.Printf("Terminated workspace for user %s", userName)
+		Config.Logger.Info("Terminated workspace",
+			"username", userName,
+			"paymodel", payModel,
+		)
 		fmt.Fprintf(w, "Terminated workspace")
 	}
 }
@@ -326,13 +351,22 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 	var reader *strings.Reader
 	if err != nil {
 		reader = strings.NewReader(err.Error())
-		Config.Logger.Printf("Error: %s", err)
+		Config.Logger.Error("Error creating ECS cluster",
+			"error", err.Error(),
+			"username", userName,
+			"paymodel", payModel,
+		)
 	} else {
 		reader = strings.NewReader(result.String())
 	}
+	// TODO: What's happening here?
 	_, err = io.Copy(w, reader)
 	if err != nil {
-		Config.Logger.Printf("Error: %s", err)
+		Config.Logger.Error("Error copying response",
+			"error", err.Error(),
+			"username", userName,
+			"paymodel", payModel,
+		)
 	}
 }
 
@@ -346,7 +380,11 @@ func statusEcs(ctx context.Context, userName string, accessToken string, awsAcct
 	svc := NewSVC(sess, roleARN)
 	result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
 	if err != nil {
-		Config.Logger.Printf("Error: %s", err)
+		Config.Logger.Error("Error getting status of ECS workspace",
+			"error", err.Error(),
+			"username", userName,
+			"awsAcctID", awsAcctID,
+		)
 		return nil, err
 	}
 	return result, nil
@@ -358,11 +396,19 @@ func launchEcsWorkspaceWrapper(userName string, hash string, accessToken string,
 
 	err := launchEcsWorkspace(userName, hash, accessToken, payModel)
 	if err != nil {
-		Config.Logger.Printf("Error: %s", err)
+		Config.Logger.Error("Error launching ECS workspace",
+			"error", err.Error(),
+			"username", userName,
+			"paymodel", payModel,
+		)
 		// Terminate ECS workspace if launch fails.
 		_, err = terminateEcsWorkspace(context.Background(), userName, accessToken, payModel.AWSAccountId)
 		if err != nil {
-			Config.Logger.Printf("Error: %s", err)
+			Config.Logger.Error("Error terminating ECS workspace",
+				"error", err.Error(),
+				"username", userName,
+				"paymodel", payModel,
+			)
 		}
 	}
 }

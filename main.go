@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/uc-cdis/hatchery/hatchery"
+	"go.uber.org/zap"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
@@ -36,21 +36,27 @@ func main() {
 `)
 		return
 	}
-	logger := log.New(os.Stdout, "", log.LstdFlags)
+	// logger := log.New(os.Stdout, "", log.LstdFlags)
+	zapLogger, _ := zap.NewProduction()
+	defer zapLogger.Sync()
+	logger := zapLogger.Sugar()
+
 	cleanPath, err := verifyPath(configPath)
 	if err != nil {
-		logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
+		// logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
+		logger.Errorf("Failed to load config - got %v", err)
 		return
 	}
 	config, err := hatchery.LoadConfig(cleanPath, logger)
 	if err != nil {
-		config.Logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
+		logger.Errorf("Failed to load config - got %v", err)
 		return
 	}
 	hatchery.Config = config
 	ddEnabled := os.Getenv("DD_ENABLED")
 	if strings.ToLower(ddEnabled) == "true" {
-		config.Logger.Printf("Setting up datadog")
+		// config.Logger.Printf("Setting up datadog")
+		config.Logger.Info("Setting up datadog")
 		tracer.Start()
 		defer tracer.Stop()
 		if err := profiler.Start(
@@ -64,18 +70,24 @@ func main() {
 				// profiler.GoroutineProfile,
 			),
 		); err != nil {
-			config.Logger.Printf("DD profiler setup failed with error: %s", err)
+			// config.Logger.Printf("DD profiler setup failed with error: %s", err)
+			logger.Error("Failed to setup DD profiler",
+				"error", err,
+			)
 		}
 		defer profiler.Stop()
 	} else {
-		config.Logger.Printf("Datadog not enabled in manifest, skipping...")
+		// config.Logger.Printf("Datadog not enabled in manifest, skipping...")
+		config.Logger.Info("Datadog not enabled in manifest, skipping...")
 	}
 
-	config.Logger.Printf("Setting up routes")
+	// config.Logger.Printf("Setting up routes")
+	config.Logger.Info("Setting up routes for hatchery api")
 	mux := httptrace.NewServeMux()
 	hatchery.RegisterSystem(mux)
 	hatchery.RegisterHatchery(mux)
 
-	config.Logger.Printf("Running main")
+	// config.Logger.Printf("Running main")
+	config.Logger.Info("Running main")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8000", mux))
 }

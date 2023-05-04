@@ -16,7 +16,13 @@ func acceptTransitGatewayShare(pm *PayModel, userName string, sess *session.Sess
 	err := svc.acceptTGWShare(ramArn)
 	if err != nil {
 		// Log error
-		Config.Logger.Printf(err.Error())
+
+		Config.Logger.Error("Failed to accept transitgateway share",
+			"error", err,
+			"username", userName,
+			"paymodel", pm,
+			"ram-share-arn", ramArn,
+		)
 		return err
 	}
 	return nil
@@ -36,14 +42,17 @@ func (creds *CREDS) acceptTGWShare(ramArn *string) error {
 	}
 	resourceShareInvitation, err := svc.GetResourceShareInvitations(ramInvitationInput)
 	if err != nil {
-		// Log error
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Error("Failed to get resource share invitation",
+			"error", err,
+			"ram-share-arn", ramArn,
+		)
 		return err
 	}
 
 	if len(resourceShareInvitation.ResourceShareInvitations) == 0 {
-		// Log that there are no invitations
-		Config.Logger.Printf("No invitations found something fishy is going on")
+		Config.Logger.Warn("No invitations found for RAM share",
+			"ram-share-arn", ramArn,
+		)
 		return nil
 	} else {
 		if *resourceShareInvitation.ResourceShareInvitations[0].Status != "ACCEPTED" {
@@ -53,12 +62,17 @@ func (creds *CREDS) acceptTGWShare(ramArn *string) error {
 			if err != nil {
 				return err
 			}
-			// Log that invitation was accepted
-			Config.Logger.Printf("Resource share invitation accepted")
+
+			Config.Logger.Debug("Resource share invitation accepted",
+				"ram-share-arn", ramArn,
+			)
 			return nil
 		}
 		// Log that invitation was already accepted
-		Config.Logger.Printf("Resource share invitation already accepted")
+
+		Config.Logger.Debug("Resource share invitation already accepted",
+			"ram-share-arn", ramArn,
+		)
 		return nil
 	}
 }
@@ -80,7 +94,11 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 		return nil, err
 	}
 	if len(exRs.ResourceShares) == 0 {
-		Config.Logger.Printf("Did not find existing resource share, creating a resource share")
+		Config.Logger.Info("Resource share not found, creating new resource share",
+			"ramName", ramName,
+			"tgwArn", tgwArn,
+			"accountId", accountid)
+
 		resourceShareInput := &ram.CreateResourceShareInput{
 			// Indicates whether principals outside your organization in Organizations can
 			// be associated with a resource share.
@@ -105,7 +123,11 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 		}
 		return resourceShare.ResourceShare.ResourceShareArn, nil
 	} else {
-		Config.Logger.Printf("Found existing resource share, associating resource share with account")
+		Config.Logger.Info("Existing resource share found. Associating resource share with account.",
+			"ramName", ramName,
+			"tgwArn", tgwArn,
+			"accountId", accountid)
+
 		listResourcesInput := &ram.ListResourcesInput{
 			ResourceOwner: aws.String("SELF"),
 			ResourceArns:  []*string{&tgwArn},
@@ -122,7 +144,11 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 		}
 		listPrincipals, err := svc.ListPrincipals(listPrincipalsInput)
 		if err != nil {
-			Config.Logger.Printf("failed to ListPrincipals: %s", listPrincipalsInput)
+
+			Config.Logger.Error("failed to ListPrincipals",
+				"listPrincipalsInput", listPrincipalsInput,
+				"error", err,
+			)
 			return nil, fmt.Errorf("failed to ListPrincipals: %s", err)
 		}
 		if len(listPrincipals.Principals) == 0 || len(listResources.Resources) == 0 {
@@ -136,7 +162,10 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 				return nil, err
 			}
 		} else {
-			Config.Logger.Printf("TransitGateway is already shared with AWS account %s ", *listPrincipals.Principals[0].Id)
+
+			Config.Logger.Debug("TransitGateway is already shared with AWS account",
+				"accountId", *listPrincipals.Principals[0].Id,
+			)
 		}
 		return exRs.ResourceShares[len(exRs.ResourceShares)-1].ResourceShareArn, nil
 	}

@@ -1,13 +1,13 @@
 package hatchery
 
 import (
+	"go.uber.org/zap"
 	k8sv1 "k8s.io/api/core/v1"
 
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 )
 
@@ -102,14 +102,16 @@ type FullHatcheryConfig struct {
 	Config        HatcheryConfig
 	ContainersMap map[string]Container
 	PayModelMap   map[string]PayModel
-	Logger        *log.Logger
+	Logger        *zap.SugaredLogger
 }
 
 // LoadConfig from a json file
-func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatcheryConfig, err error) {
+func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *FullHatcheryConfig, err error) {
 	logger := loggerIn
 	if nil == loggerIn {
-		logger = log.New(os.Stdout, "", log.LstdFlags)
+		zapLogger, _ := zap.NewProduction()
+		defer zapLogger.Sync()
+		logger = zapLogger.Sugar()
 	}
 	plan, err := ioutil.ReadFile(configFilePath)
 
@@ -119,10 +121,18 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 
 	if nil != err {
 		cwd, _ := os.Getwd()
-		data.Logger.Printf("failed to load %v from cwd %v got - %v", configFilePath, cwd, err)
+		// data.Logger.Printf("failed to load %v from cwd %v got - %v", configFilePath, cwd, err)
+		data.Logger.Error("Failed to load config file.",
+			"configFilePath", configFilePath,
+			"cwd", cwd,
+			"error", err,
+		)
 		return data, err
 	}
-	data.Logger.Printf("loaded config: %v", string(plan))
+	// data.Logger.Printf("loaded config: %v", string(plan))
+	data.Logger.Debug("Loaded config.",
+		"config", string(plan),
+	)
 	data.ContainersMap = make(map[string]Container)
 	data.PayModelMap = make(map[string]PayModel)
 	_ = json.Unmarshal(plan, &data.Config)
@@ -132,22 +142,38 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 				if info.Name == "" {
 					return nil, fmt.Errorf("Empty name for more-configs app at: %v", info.Path)
 				}
-				data.Logger.Printf("loading config from %v", info.Path)
+				// data.Logger.Printf("loading config from %v", info.Path)
+				data.Logger.Debug("Loading config.",
+					"path", info.Path,
+				)
 				composeModel, err := DockstoreComposeFromFile(info.Path)
 				if nil != err {
-					data.Logger.Printf("failed to load config from %v, got: %v", info.Path, err)
+					// data.Logger.Printf("failed to load config from %v, got: %v", info.Path, err)
+					data.Logger.Error("Failed to load config.",
+						"path", info.Path,
+						"error", err,
+					)
 					return nil, err
 				}
-				data.Logger.Printf("%v", composeModel)
+				// data.Logger.Printf("%v", composeModel)
+				data.Logger.Debug("Loaded config.",
+					"composeModel", composeModel,
+				)
 				hatchApp, err := composeModel.BuildHatchApp()
 				hatchApp.Name = info.Name
 				if nil != err {
-					data.Logger.Printf("failed to translate app, got: %v", err)
+					// data.Logger.Printf("failed to translate app, got: %v", err)
+					data.Logger.Error("Failed to translate app.",
+						"error", err,
+					)
 					return nil, err
 				}
 				data.Config.Containers = append(data.Config.Containers, *hatchApp)
 			} else {
-				data.Logger.Printf("ignoring config of unsupported type: %v", info.AppType)
+				// data.Logger.Printf("ignoring config of unsupported type: %v", info.AppType)
+				data.Logger.Warn("Ignoring config of unsupported type.",
+					"appType", info.AppType,
+				)
 			}
 		}
 	}
@@ -158,7 +184,8 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	}
 
 	if data.Config.PayModelsDynamodbTable == "" {
-		data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
+		// data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
+		data.Logger.Warn("No 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
 	}
 
 	for _, payModel := range data.Config.PayModels {

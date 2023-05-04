@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
 )
 
-//Create CloudWatch LogGroup for hatchery containers
+// Create CloudWatch LogGroup for hatchery containers
 func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Credentials) (string, error) {
 	c := cloudwatchlogs.New(session.Must(session.NewSession(&aws.Config{
 		Credentials: creds,
@@ -20,7 +20,10 @@ func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Creden
 
 	logGroup, err := c.DescribeLogGroups(describeLogGroupIn)
 	if err != nil {
-		Config.Logger.Printf("Error in DescribeLogGroup: %s", err)
+		Config.Logger.Error("Error in DescribeLogGroup",
+			"error", err,
+			"logGroupNamePrefix", LogGroupName,
+		)
 		return "", err
 	}
 	if len(logGroup.LogGroups) == 0 {
@@ -29,7 +32,10 @@ func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Creden
 		}
 		newLogGroup, err := c.CreateLogGroup(createLogGroupIn)
 		if err != nil {
-			Config.Logger.Printf("Error in  CreateLogGroup: %s, %s", err, newLogGroup)
+			Config.Logger.Error("Error in CreateLogGroup",
+				"error", err,
+				"newLogGroup", newLogGroup,
+			)
 			return "", err
 		}
 		return newLogGroup.String(), nil

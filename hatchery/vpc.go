@@ -12,12 +12,20 @@ import (
 )
 
 func setupVPC(userName string) (*string, error) {
-	Config.Logger.Printf("Setting up VPC for user %s", userName)
+
 	pm, err := getCurrentPayModel(userName)
 	if err != nil {
+		Config.Logger.Error("Failed to get current paymodel",
+			"error", err,
+			"username", userName,
+		)
 		return nil, err
 	}
-
+	Config.Logger.Info("Setting up remote VPC",
+		"username", userName,
+		"paymodel", pm.Name,
+		"awsAccount", pm.AWSAccountId,
+	)
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
@@ -41,7 +49,7 @@ func setupVPC(userName string) (*string, error) {
 	}
 	subnetString := subnet.String()
 
-	Config.Logger.Printf("Using subnet: %s for user %s. Make sure this does not overlap with other users", subnetString, userName)
+	Config.Logger.Warnf("Using subnet: %s for user %s. Make sure this does not overlap with other users in dynamodb, as that will cause routing issues.", subnetString, userName)
 
 	// VPC stuff
 	vpcname := userToResourceName(userName, "service") + "-" + strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-vpc"
@@ -71,7 +79,11 @@ func setupVPC(userName string) (*string, error) {
 		if err != nil {
 			return nil, err
 		}
-		Config.Logger.Printf("VPC created in remote account")
+
+		Config.Logger.Info("VPC created in remote account",
+			"username", userName,
+			"vpcid", *vpc.Vpc.VpcId,
+		)
 		_, err = createInternetGW(vpcname, *vpc.Vpc.VpcId, ec2Remote)
 		if err != nil {
 			return nil, err
@@ -148,7 +160,6 @@ func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
 		panic(err)
 	}
 
-	Config.Logger.Print(cidrs)
 	createSubnet1Input := &ec2.CreateSubnetInput{
 		CidrBlock: aws.String(subnet1Cidr.String()),
 		//TODO: Make this configurable ?
@@ -163,10 +174,20 @@ func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
 	}
 	_, err = svc.CreateSubnet(createSubnet1Input)
 	if err != nil {
+		Config.Logger.Error("Error creating subnet 1",
+			"error", err,
+			"subnet", subnet1Cidr.String(),
+			"vpcid", vpcid,
+		)
 		return err
 	}
 	_, err = svc.CreateSubnet(createSubnet2Input)
 	if err != nil {
+		Config.Logger.Error("Error creating subnet 2",
+			"error", err,
+			"subnet", subnet2Cidr.String(),
+			"vpcid", vpcid,
+		)
 		return err
 	}
 	return nil
@@ -174,7 +195,12 @@ func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
 }
 
 func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) {
-	Config.Logger.Printf("Setting up internet Gateway for VPC: %s", vpcid)
+
+	Config.Logger.Info("Setting up internet Gateway for VPC",
+		"vpcid", vpcid,
+		"name", name,
+	)
+
 	describeInternetGWInput := &ec2.DescribeInternetGatewaysInput{
 		Filters: []*ec2.Filter{
 			{
@@ -188,7 +214,10 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		return nil, err
 	}
 	if len(exIgw.InternetGateways) == 0 {
-		Config.Logger.Printf("No existing gateways found. Creating internet gateway for VPC: %s", vpcid)
+
+		Config.Logger.Info("No existing internet gateways found. Creating internet gateway for VPC",
+			"vpcid", vpcid,
+		)
 		createInternetGWInput := &ec2.CreateInternetGatewayInput{
 			TagSpecifications: []*ec2.TagSpecification{
 				{
@@ -236,11 +265,16 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		if err != nil {
 			return nil, err
 		}
-		Config.Logger.Printf("Route: %s", route)
+		Config.Logger.Info("Route to internet created",
+			"route", route,
+		)
 		return igw.InternetGateway.InternetGatewayId, nil
 	} else {
 		if len(exIgw.InternetGateways[0].Attachments) == 0 {
-			Config.Logger.Printf("Existing gateway found but not attached to IGW. Attaching internet gateway for VPC: %s", vpcid)
+
+			Config.Logger.Info("Existing gateway found but not attached to IGW. Attaching internet gateway for VPC",
+				"vpcid", vpcid,
+			)
 			_, err = svc.AttachInternetGateway(&ec2.AttachInternetGatewayInput{
 				InternetGatewayId: exIgw.InternetGateways[0].InternetGatewayId,
 				VpcId:             &vpcid,
