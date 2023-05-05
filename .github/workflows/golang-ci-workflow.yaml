@@ -7,12 +7,12 @@ jobs:
     name: golang-ci
     runs-on: ubuntu-latest
     env:
-      GO_VERSION: "1.20"
       COVERAGE_PROFILE_OUTPUT_LOCATION: "./profile.cov"
     steps:
       - name: Checkout code / lint code / install dependencies for goveralls / run tests
         uses: uc-cdis/.github/.github/actions/golang-ci@master
         with:
+          GO_VERSION: "1.20"
           COVERAGE_PROFILE_OUTPUT_LOCATION: ${{ env.COVERAGE_PROFILE_OUTPUT_LOCATION }}
       - name: Send coverage to coveralls using goveralls
         env:
