@@ -3,10 +3,15 @@ package hatchery
 import (
 	"encoding/json"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 func TestLoadConfig(t *testing.T) {
-	config, err := LoadConfig("../testData/testConfig.json", nil)
+	zapLogger, _ := zap.NewProduction()
+	defer zapLogger.Sync()
+	logger := zapLogger.Sugar()
+	config, err := LoadConfig("../testData/testConfig.json", logger)
 	if nil != err {
 		t.Errorf("failed to load config, got: %v", err)
 		return
@@ -29,5 +34,5 @@ func TestLoadConfig(t *testing.T) {
 	if config.Config.Containers[numContainers-1].Name != "DockstoreTest" {
 		t.Errorf("unexpected more-info app name - expected DockstoreTest, got: %v", config.Config.Containers[numContainers-1].Name)
 	}
-	config.Logger.Printf("config_test marshalled config: %v", string(jsBytes))
+	config.Logger.Infow("config_test marshalled config", "config", string(jsBytes))
 }

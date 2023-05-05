@@ -3,10 +3,15 @@ package hatchery
 import (
 	"encoding/json"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 func TestBuildPodFromJSON(t *testing.T) {
-	config, err := LoadConfig("../testData/testConfig.json", nil)
+	zapLogger, _ := zap.NewProduction()
+	defer zapLogger.Sync()
+	logger := zapLogger.Sugar()
+	config, err := LoadConfig("../testData/testConfig.json", logger)
 	if nil != err {
 		t.Errorf("failed to load config, got: %v", err)
 		return
@@ -32,11 +37,14 @@ func TestBuildPodFromJSON(t *testing.T) {
 		t.Errorf("failed to marshal JSON - %v", err)
 	}
 
-	config.Logger.Printf("pod_test marshalled pod: %v", string(jsBytes))
+	config.Logger.Debugw("pod_test marshalled pod", "pod", string(jsBytes))
 }
 
 func TestBuildPodFromDockstore(t *testing.T) {
-	config, err := LoadConfig("../testData/testConfig.json", nil)
+	zapLogger, _ := zap.NewProduction()
+	defer zapLogger.Sync()
+	logger := zapLogger.Sugar()
+	config, err := LoadConfig("../testData/testConfig.json", logger)
 	if nil != err {
 		t.Errorf("failed to load config, got: %v", err)
 		return
@@ -48,8 +56,11 @@ func TestBuildPodFromDockstore(t *testing.T) {
 	}
 	app := &config.Config.Containers[numApps-2]
 	pod, err := buildPod(config, app, "frickjack", nil)
-
 	if nil != err {
+		// Log error using suggared loggared from config
+		config.Logger.Errorw("failed to build a pod",
+			"error", err,
+		)
 		t.Errorf("failed to build a pod - %v", err)
 	}
 
@@ -62,5 +73,5 @@ func TestBuildPodFromDockstore(t *testing.T) {
 		t.Errorf("failed to marshal JSON - %v", err)
 	}
 
-	config.Logger.Printf("pod_test marshalled pod: %v", string(jsBytes))
+	config.Logger.Debugw("pod_test marshalled pod", "pod", string(jsBytes))
 }

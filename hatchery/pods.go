@@ -388,8 +388,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	var envVars []k8sv1.EnvVar
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
-
-	Config.Logger.Infow("building pod",
+	hatchConfig.Logger.Infow("building pod",
 		"podName", podName,
 		"userName", userName,
 		"appName", hatchApp.Name,

@@ -36,7 +36,6 @@ func main() {
 `)
 		return
 	}
-	// logger := log.New(os.Stdout, "", log.LstdFlags)
 	zapLogger, _ := zap.NewProduction()
 	defer zapLogger.Sync()
 	logger := zapLogger.Sugar()
