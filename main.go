@@ -37,7 +37,12 @@ func main() {
 		return
 	}
 	zapLogger, _ := zap.NewProduction()
-	defer zapLogger.Sync()
+	defer func() {
+		if err := zapLogger.Sync(); err != nil {
+			// Handle the error appropriately
+			log.Println("Error syncing logger:", err)
+		}
+	}()
 	logger := zapLogger.Sugar()
 
 	cleanPath, err := verifyPath(configPath)

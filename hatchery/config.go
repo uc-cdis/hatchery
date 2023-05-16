@@ -7,7 +7,6 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 )
 
@@ -110,10 +109,9 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 	logger := loggerIn
 	if nil == loggerIn {
 		zapLogger, _ := zap.NewProduction()
-		defer zapLogger.Sync()
 		logger = zapLogger.Sugar()
 	}
-	plan, err := ioutil.ReadFile(configFilePath)
+	plan, err := os.ReadFile(configFilePath)
 
 	data := &FullHatcheryConfig{
 		Logger: logger,

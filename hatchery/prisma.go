@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -32,14 +32,14 @@ func getPrismaToken(username string, password string) (*string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
+		b, _ := io.ReadAll(resp.Body)
 		Config.Logger.Errorw("Error authenticating with Prisma Cloud",
 			"error", string(b),
 		)
 		return nil, errors.New("Error authenticating with Prisma Cloud: " + string(b))
 	}
 	//We Read the response body on the line below.
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func getInstallBundle() (*InstallBundle, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
+		b, _ := io.ReadAll(resp.Body)
 		// Config.Logger.Print(string(b))
 		Config.Logger.Errorw("Error getting prismacloud install bundle",
 			"error", string(b),
@@ -90,7 +90,7 @@ func getInstallBundle() (*InstallBundle, error) {
 		return nil, errors.New("Error getting install bundle: " + string(b))
 	}
 	//We Read the response body on the line below.
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -131,14 +131,14 @@ func getPrismaImage() (*string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
+		b, _ := io.ReadAll(resp.Body)
 		Config.Logger.Errorw("Error getting prismacloud image name",
 			"error", string(b),
 		)
 		return nil, errors.New("Error getting prismacloud image name: " + string(b))
 	}
 	//We Read the response body on the line below.
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}

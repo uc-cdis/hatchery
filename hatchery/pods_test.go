@@ -9,7 +9,6 @@ import (
 
 func TestBuildPodFromJSON(t *testing.T) {
 	zapLogger, _ := zap.NewProduction()
-	defer zapLogger.Sync()
 	logger := zapLogger.Sugar()
 	config, err := LoadConfig("../testData/testConfig.json", logger)
 	if nil != err {
@@ -42,7 +41,6 @@ func TestBuildPodFromJSON(t *testing.T) {
 
 func TestBuildPodFromDockstore(t *testing.T) {
 	zapLogger, _ := zap.NewProduction()
-	defer zapLogger.Sync()
 	logger := zapLogger.Sugar()
 	config, err := LoadConfig("../testData/testConfig.json", logger)
 	if nil != err {

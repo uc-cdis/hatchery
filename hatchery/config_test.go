@@ -9,7 +9,6 @@ import (
 
 func TestLoadConfig(t *testing.T) {
 	zapLogger, _ := zap.NewProduction()
-	defer zapLogger.Sync()
 	logger := zapLogger.Sugar()
 	config, err := LoadConfig("../testData/testConfig.json", logger)
 	if nil != err {
