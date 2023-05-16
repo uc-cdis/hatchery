@@ -84,6 +84,12 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 	if Config.Config.PayModelsDynamodbTable != "" {
 		// Fetch pay models from DynamoDB with current_pay_model as `true`
 		pm, err = payModelsFromDatabase(userName, true)
+		if err != nil {
+			Config.Logger.Errorw("Failed to get current pay model from dynamoDB",
+				"error", err,
+			)
+			return nil, err
+		}
 	}
 
 	payModel := PayModel{}
