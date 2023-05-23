@@ -126,9 +126,6 @@ func (sess *CREDS) findEcsCluster() (*ecs.Cluster, error) {
 				return nil, aerr
 			}
 		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
-			// Config.Logger.Println(err.Error())
 			Config.Logger.Errorw("Error describing ECS cluster",
 				"clusterName", clusterName,
 				"error", err.Error(),
@@ -238,14 +235,12 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 										lastActivityTime, err := getKernelIdleTimeWithContext(ctx, accessToken)
 										status.LastActivityTime = lastActivityTime
 										if err != nil {
-											// Config.Logger.Println(err.Error())
 											Config.Logger.Debug("Cannot get kernel idle time.",
 												"error", err.Error(),
 												"userName", userName,
 											)
 										}
 									} else {
-										// Config.Logger.Println(err.Error())
 										Config.Logger.Debug("Cannot convert idle time limit to int.",
 											"error", err.Error(),
 											"userName", userName,
@@ -494,7 +489,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		Key:   "GEN3_ENDPOINT",
 		Value: os.Getenv("GEN3_ENDPOINT"),
 	})
-
 	Config.Logger.Infow("Setting up EFS.",
 		"username", userName,
 	)
@@ -506,7 +500,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		)
 		return err
 	}
-
 	Config.Logger.Infow("Setting up task role.",
 		"username", userName,
 	)
@@ -519,7 +512,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		)
 		return err
 	}
-
 	Config.Logger.Infow("Setting up task execution role.",
 		"username", userName,
 	)
@@ -532,7 +524,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		)
 		return err
 	}
-
 	Config.Logger.Infow("Setting up ECS task definition.",
 		"username", userName,
 	)
@@ -620,7 +611,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		}
 		return err
 	}
-
 	Config.Logger.Infow("Launching ECS workspace service.",
 		"username", userName,
 	)
@@ -640,7 +630,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		}
 		return err
 	}
-
 	Config.Logger.Infow("Setting up Transit Gateway.",
 		"username", userName,
 	)
@@ -653,7 +642,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		)
 		return err
 	}
-
 	Config.Logger.Infow("Launched ECS workspace service.",
 		"username", userName,
 		"launchTask", launchTask,
@@ -706,7 +694,6 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 			switch aerr.Code() {
 			case ecs.ErrCodeInvalidParameterException:
 				if aerr.Error() == "InvalidParameterException: Creation of service was not idempotent." {
-					// Config.Logger.Print("Service already exists.. ")
 					Config.Logger.Infow("ECS Service already exists. Moving on.",
 						"username", userName,
 					)
@@ -714,7 +701,6 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 				}
 			}
 		}
-		// Config.Logger.Println(err.Error())
 		Config.Logger.Errorw("Error occurred when creating ECS service.",
 			"username", userName,
 			"error", err.Error(),
@@ -754,7 +740,6 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 		Credentials: creds,
 		Region:      aws.String("us-east-1"),
 	})))
-
 	Config.Logger.Infow("Creating ECS task definition.",
 		"username", userName,
 	)
@@ -802,7 +787,6 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 	if Config.Config.PrismaConfig.Enable {
 		installBundle, err := getInstallBundle()
 		if err != nil {
-			// Config.Logger.Print(err, " error getting prisma install bundle")
 			Config.Logger.Errorw("Error occurred when getting prisma install bundle.",
 				"username", userName,
 				"error", err.Error(),
@@ -812,7 +796,6 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 
 		image, err := getPrismaImage()
 		if err != nil {
-			// Config.Logger.Print(err, " error getting prisma image")
 			Config.Logger.Errorw("Error occurred when getting prisma image.",
 				"username", userName,
 				"error", err.Error(),
@@ -884,7 +867,6 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 	)
 
 	if err != nil {
-		// Config.Logger.Print(err, " Couldn't register ECS task definition")
 		Config.Logger.Errorw("Couldn't register ECS task definition.",
 			"username", userName,
 			"error", err.Error(),
@@ -893,7 +875,6 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 	}
 
 	td := resp.TaskDefinition
-
 	Config.Logger.Infow("Created ECS task definition.",
 		"username", userName,
 		"taskdefinition", fmt.Sprintf("%s:%d", aws.StringValue(td.Family), aws.Int64Value(td.Revision)),

@@ -119,7 +119,6 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 
 	if nil != err {
 		cwd, _ := os.Getwd()
-		// data.Logger.Printf("failed to load %v from cwd %v got - %v", configFilePath, cwd, err)
 		data.Logger.Errorw("Failed to load config file.",
 			"configFilePath", configFilePath,
 			"cwd", cwd,
@@ -127,7 +126,6 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 		)
 		return data, err
 	}
-	// data.Logger.Printf("loaded config: %v", string(plan))
 	data.Logger.Debug("Loaded config.",
 		"config", string(plan),
 	)
@@ -140,27 +138,23 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 				if info.Name == "" {
 					return nil, fmt.Errorf("Empty name for more-configs app at: %v", info.Path)
 				}
-				// data.Logger.Printf("loading config from %v", info.Path)
 				data.Logger.Debug("Loading config.",
 					"path", info.Path,
 				)
 				composeModel, err := DockstoreComposeFromFile(info.Path)
 				if nil != err {
-					// data.Logger.Printf("failed to load config from %v, got: %v", info.Path, err)
 					data.Logger.Errorw("Failed to load config.",
 						"path", info.Path,
 						"error", err,
 					)
 					return nil, err
 				}
-				// data.Logger.Printf("%v", composeModel)
 				data.Logger.Debug("Loaded config.",
 					"composeModel", composeModel,
 				)
 				hatchApp, err := composeModel.BuildHatchApp()
 				hatchApp.Name = info.Name
 				if nil != err {
-					// data.Logger.Printf("failed to translate app, got: %v", err)
 					data.Logger.Errorw("Failed to translate app.",
 						"error", err,
 					)
@@ -168,7 +162,6 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 				}
 				data.Config.Containers = append(data.Config.Containers, *hatchApp)
 			} else {
-				// data.Logger.Printf("ignoring config of unsupported type: %v", info.AppType)
 				data.Logger.Warnw("Ignoring config of unsupported type.",
 					"appType", info.AppType,
 				)
@@ -182,7 +175,6 @@ func LoadConfig(configFilePath string, loggerIn *zap.SugaredLogger) (config *Ful
 	}
 
 	if data.Config.PayModelsDynamodbTable == "" {
-		// data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
 		data.Logger.Warnw("No 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
 	}
 

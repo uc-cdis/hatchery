@@ -42,14 +42,14 @@ func (creds *CREDS) createTargetGroup(userName string, vpcId string, svc *elbv2.
 					"error", aerr.Error(),
 					"code", aerr.Code(),
 					"message", aerr.Message(),
-					"user", userName,
+					"username", userName,
 				)
 				return nil, err
 			}
 		} else {
 			Config.Logger.Errorw("Error creating target group",
 				"error", err.Error(),
-				"user", userName,
+				"username", userName,
 			)
 			return nil, err
 		}

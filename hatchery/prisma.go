@@ -46,7 +46,6 @@ func getPrismaToken(username string, password string) (*string, error) {
 
 	var result Token
 	if err := json.Unmarshal(body, &result); err != nil {
-		// fmt.Println("Invalid response from prisma auth endpoint: " + authEndpoint)
 		Config.Logger.Errorw("Invalid response from prisma auth endpoint",
 			"error", err,
 			"endpoint", authEndpoint,
@@ -83,7 +82,6 @@ func getInstallBundle() (*InstallBundle, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)
-		// Config.Logger.Print(string(b))
 		Config.Logger.Errorw("Error getting prismacloud install bundle",
 			"error", string(b),
 		)
@@ -96,7 +94,6 @@ func getInstallBundle() (*InstallBundle, error) {
 	}
 	var result InstallBundle
 	if err := json.Unmarshal(body, &result); err != nil {
-		// fmt.Println("Invalid response from prisma install_bundle endpoint: " + installBundleEndpoint)
 		Config.Logger.Errorw("Invalid response from prisma install_bundle endpoint",
 			"error", err,
 			"endpoint", installBundleEndpoint,

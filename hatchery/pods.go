@@ -183,7 +183,6 @@ func podStatus(ctx context.Context, userName string, accessToken string, payMode
 	status := WorkspaceStatus{}
 	podClient, isExternalClient, err := getPodClient(ctx, userName, payModelPtr)
 	if err != nil {
-		// Config.Logger.Panic("Error trying to fetch kubeConfig: %v", err)
 		status.Status = fmt.Sprintf("%v", err)
 		return &status, err
 	}

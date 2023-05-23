@@ -237,7 +237,6 @@ func createTransitGateway(sess *session.Session, userName string) (tgwid *string
 
 		return tg.TransitGateway.TransitGatewayId, tg.TransitGateway.TransitGatewayArn, tg.TransitGateway.Options.AssociationDefaultRouteTableId, nil
 	} else {
-		// Config.Logger.Print("Existing transit gateway found. Skipping creation...")
 		Config.Logger.Infow("Existing transit gateway found. Skipping creation...",
 			"transit_gateway_id", *exTg.TransitGateways[len(exTg.TransitGateways)-1].TransitGatewayId,
 			"username", userName,
