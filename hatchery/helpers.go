@@ -6,12 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials" // TODO remove
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/batch"
 )
 
 type APIKeyStruct struct {
@@ -151,6 +157,8 @@ func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIK
 	}
 
 	if resp != nil && resp.StatusCode != 200 {
+		b, _ := ioutil.ReadAll(resp.Body)
+		Config.Logger.Print(string(b))
 		return nil, errors.New("Error occurred when creating API key with error code " + strconv.Itoa(resp.StatusCode))
 	}
 	defer resp.Body.Close()
@@ -204,4 +212,51 @@ func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (last
 		return -1, errors.New("Unable to parse last activity time: " + err.Error())
 	}
 	return lastAct.Unix() * 1000, nil
+}
+
+func createNextflowResources() (error) { // TODO move to a different file
+	// roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
+	// sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
+	// 	Region: aws.String(payModel.Region),
+	// })))
+	// creds := stscreds.NewCredentials(sess, roleARN)
+
+	// create AWS batch job queue
+	batchSvc := batch.New(session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("us-east-1"),
+		// TODO update:
+		Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
+	})))
+	// batchSvc := batch.New(sess, &aws.Config{Credentials: creds})
+	input := &batch.CreateJobQueueInput{
+		ComputeEnvironmentOrder: []*batch.ComputeEnvironmentOrder{
+			{
+				ComputeEnvironment: aws.String("arn:aws:batch:us-east-1:707767160287:compute-environment/nextflow-pauline-compute-env"),
+				Order: aws.Int64(int64(0)),
+			},
+		},
+		JobQueueName: aws.String("hatcheryCreatedJobQueue"),
+		Priority: aws.Int64(int64(0)),
+		Tags: map[string]*string{
+			"name": aws.String("hatchery-nextflow-userName"), // TODO
+		},
+	}
+	result, err := batchSvc.CreateJobQueue(input)
+	if err != nil {
+		if strings.Contains(err.Error(), "Object already exists") {
+			Config.Logger.Printf("Debug: AWS Batch job queue <TODO name here> already exists")
+		} else {
+			Config.Logger.Printf("Error creating AWS Batch job queue: %v", err)
+			return err
+		}
+	}
+	Config.Logger.Printf("Created AWS Batch job queue: %v", result)
+
+	// create IAM policy and role for nextflow-created jobs
+
+	// create IAM policy and user for nextflow client
+
+	// create access key for the nextflow user
+
+	return nil
 }

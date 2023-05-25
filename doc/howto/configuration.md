@@ -35,7 +35,7 @@ An example manifest entry may look like
       "user-uid": 1000,
       "fs-gid": 100,
       "user-volume-location": "/home/jovyan/pd",
-      "gen3-volume-location": "/home/jovyan/.gen3"
+      "gen3-volume-location": "/home/jovyan/.gen3",
       "friends": []
     }]
   }
