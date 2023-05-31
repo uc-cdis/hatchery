@@ -228,12 +228,12 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 	// set the tags we will use on all created resources
 	tag := fmt.Sprintf("hatchery-nextflow-%s", userName)
 	tagsMap := map[string]*string{
-		"name": aws.String(tag),
+		"name": &tag,
 	}
 	tags := []*iam.Tag{
 		&iam.Tag{
 			Key: aws.String("name"),
-			Value: aws.String(tag),
+			Value: &tag,
 		},
 	}
 
@@ -248,11 +248,11 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 	input := &batch.CreateJobQueueInput{
 		ComputeEnvironmentOrder: []*batch.ComputeEnvironmentOrder{
 			{
-				ComputeEnvironment: aws.String("arn:aws:batch:us-east-1:707767160287:compute-environment/nextflow-pauline-compute-env"),
+				ComputeEnvironment: aws.String("arn:aws:batch:us-east-1:707767160287:compute-environment/nextflow-pauline-compute-env"), // TODO update
 				Order: aws.Int64(int64(0)),
 			},
 		},
-		JobQueueName: aws.String(batchJobQueueName),
+		JobQueueName: &batchJobQueueName,
 		Priority: aws.Int64(int64(0)),
 		Tags: tagsMap,
 	}
@@ -300,7 +300,7 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 				}
 			]
 		}`, userName)),
-		PolicyName: aws.String(policyName),
+		PolicyName: &policyName,
 		Path: aws.String(fmt.Sprintf("/%s/", tag)), // so we can use the path later to get the policy ARN
 		Tags: tags,
 	})
@@ -309,14 +309,14 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
 				Config.Logger.Printf("Debug: IAM policy '%s' already exists", policyName)
-				policyResult2, err := IamSvc.ListPolicies(&iam.ListPoliciesInput{
+				listPoliciesResult, err := IamSvc.ListPolicies(&iam.ListPoliciesInput{
 					PathPrefix: aws.String(fmt.Sprintf("/%s/", tag)),
 				})
 				if err != nil {
 					Config.Logger.Printf("Error getting existing IAM policy '%s': %v", policyName, err)
 					return err
 				}
-				policyArn = *policyResult2.Policies[0].Arn
+				policyArn = *listPoliciesResult.Policies[0].Arn
 			} else {
 				Config.Logger.Printf("Error creating IAM policy '%s': %v", policyName, aerr)
 				return err
@@ -329,7 +329,6 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 		Config.Logger.Printf("Created IAM policy '%s'", policyName)
 		policyArn = *policyResult.Policy.Arn
 	}
-	Config.Logger.Printf("policyArn: '%s'", policyArn)
 
 	// create IAM policy and user for nextflow client
 
@@ -349,12 +348,28 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 		Config.Logger.Printf("Created user '%s'", nextflowUserName)
 	}
 
-	// userPolicyResult, err := IamSvc.AttachUserPolicy(&iam.AttachUserPolicyInput{
-	// 	UserName: nextflowUserName,
-	// 	PolicyArn: TODO,
-	// })
+	_, err = IamSvc.AttachUserPolicy(&iam.AttachUserPolicyInput{
+		UserName: &nextflowUserName,
+		PolicyArn: &policyArn, // TODO change this to the other policy
+	})
+	if err != nil {
+		Config.Logger.Printf("Error attaching policy '%s' to user '%s': %v", policyName, nextflowUserName, err)
+		return err
+	} else {
+		Config.Logger.Printf("Attached policy '%s' to user '%s'", policyName, nextflowUserName)
+	}
 
 	// create access key for the nextflow user
+	accessKeyResult, err := IamSvc.CreateAccessKey(&iam.CreateAccessKeyInput{
+		UserName: &nextflowUserName,
+	})
+	if err != nil {
+		Config.Logger.Printf("Error creating access key for user '%s': %v", nextflowUserName, err)
+		return err
+	}
+	keyId := accessKeyResult.AccessKey.AccessKeyId
+	keySecret := accessKeyResult.AccessKey.SecretAccessKey
+	Config.Logger.Printf("Created access key for user '%s': key ID '%v'", nextflowUserName, keyId)
 
 	return nil
 }
