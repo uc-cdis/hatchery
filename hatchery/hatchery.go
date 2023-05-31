@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	k8sv1 "k8s.io/api/core/v1"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
@@ -222,12 +223,38 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := getCurrentUserName(r)
+
+	var envVars []k8sv1.EnvVar
+	var envVarsEcs []EnvVar
+	// TODO if nextflow:
+	nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName)
+	if err != nil {
+		http.Error(w, "Unable to create AWS resources for Nextflow", http.StatusInternalServerError)
+		return
+	}
+	envVars = append(envVars, k8sv1.EnvVar{
+		Name:  "AWS_ACCESS_KEY_ID",
+		Value: nextflowKeyId,
+	})
+	envVars = append(envVars, k8sv1.EnvVar{
+		Name:  "AWS_SECRET_ACCESS_KEY",
+		Value: nextflowKeySecret,
+	})
+	envVarsEcs = append(envVarsEcs, EnvVar{
+		Key:   "AWS_ACCESS_KEY_ID",
+		Value: nextflowKeyId,
+	})
+	envVarsEcs = append(envVarsEcs, EnvVar{
+		Key:   "AWS_SECRET_ACCESS_KEY",
+		Value: nextflowKeySecret,
+	})
+
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
 	if payModel == nil || payModel.Local {
-		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
+		err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
 	} else if payModel.Ecs {
 
 		if payModel.Status != "active" {
@@ -242,17 +269,18 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		// Sending a 200 response straight away, but starting the launch in a goroutine
 		// TODO: Do more sanity checks before returning 200.
 		w.WriteHeader(http.StatusOK)
-		go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel)
+		go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel, envVarsEcs)
 		fmt.Fprintf(w, "Launch accepted")
 		return
 	} else {
-		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
+		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel, envVars)
 	}
 	if err != nil {
 		Config.Logger.Printf("error during launch: %-v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	fmt.Fprintf(w, "Success")
 }
 
@@ -354,9 +382,9 @@ func statusEcs(ctx context.Context, userName string, accessToken string, awsAcct
 
 // Wrapper function to launch ECS workspace in a goroutine.
 // Terminates workspace if launch fails for whatever reason
-func launchEcsWorkspaceWrapper(userName string, hash string, accessToken string, payModel PayModel) {
+func launchEcsWorkspaceWrapper(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar) {
 
-	err := launchEcsWorkspace(userName, hash, accessToken, payModel)
+	err := launchEcsWorkspace(userName, hash, accessToken, payModel, envVars)
 	if err != nil {
 		Config.Logger.Printf("Error: %s", err)
 		// Terminate ECS workspace if launch fails.

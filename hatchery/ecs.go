@@ -353,7 +353,7 @@ func terminateEcsWorkspace(ctx context.Context, userName string, accessToken str
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
-func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel) error {
+func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar) error {
 	// Set up background context, as this runs in a goroutine
 	ctx := context.Background()
 
@@ -393,7 +393,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
 	}
 
-	envVars := []EnvVar{}
 	for k, v := range hatchApp.Env {
 		envVars = append(envVars, EnvVar{
 			Key:   k,

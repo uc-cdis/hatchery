@@ -622,16 +622,21 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	return pod, nil
 }
 
-func createLocalK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
+func createLocalK8sPod(ctx context.Context, hash string, userName string, accessToken string, envVars []k8sv1.EnvVar) error {
 	hatchApp := Config.ContainersMap[hash]
 	Config.Logger.Printf("Creating a Local K8s Pod")
-	var extraVars []k8sv1.EnvVar
+
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
 		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
 		return err
 	}
 	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
+
+	var extraVars []k8sv1.EnvVar
+	for _, envVar := range envVars {
+		extraVars = append(extraVars, envVar)
+	}
 
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "API_KEY",
@@ -745,7 +750,7 @@ func createLocalK8sPod(ctx context.Context, hash string, userName string, access
 	return nil
 }
 
-func createExternalK8sPod(ctx context.Context, hash string, userName string, accessToken string, payModel PayModel) error {
+func createExternalK8sPod(ctx context.Context, hash string, userName string, accessToken string, payModel PayModel, envVars []k8sv1.EnvVar) error {
 	hatchApp := Config.ContainersMap[hash]
 	Config.Logger.Printf("Creating a External K8s Pod")
 	podClient, err := NewEKSClientset(ctx, userName, payModel)
@@ -778,6 +783,9 @@ func createExternalK8sPod(ctx context.Context, hash string, userName string, acc
 	}
 
 	var extraVars []k8sv1.EnvVar
+	for _, envVar := range envVars {
+		extraVars = append(extraVars, envVar)
+	}
 
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "WTS_OVERRIDE_URL",

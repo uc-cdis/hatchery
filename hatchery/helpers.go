@@ -216,7 +216,7 @@ func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (last
 	return lastAct.Unix() * 1000, nil
 }
 
-func createNextflowResources(userName string) (error) { // TODO move to a different file
+func createNextflowResources(userName string) (string, string, error) { // TODO move to a different file
 	// roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	// sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
 	// 	Region: aws.String(payModel.Region),
@@ -226,6 +226,7 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 	userName = escapism(userName)
 
 	// set the tags we will use on all created resources
+	// batch and iam accept different formats
 	tag := fmt.Sprintf("hatchery-nextflow-%s", userName)
 	tagsMap := map[string]*string{
 		"name": &tag,
@@ -262,7 +263,7 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 			Config.Logger.Printf("Debug: AWS Batch job queue '%s' already exists", batchJobQueueName)
 		} else {
 			Config.Logger.Printf("Error creating AWS Batch job queue '%s': %v", batchJobQueueName, err)
-			return err
+			return "", "", err
 		}
 	} else {
 		Config.Logger.Printf("Created AWS Batch job queue '%s'", batchJobQueueName)
@@ -314,16 +315,16 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 				})
 				if err != nil {
 					Config.Logger.Printf("Error getting existing IAM policy '%s': %v", policyName, err)
-					return err
+					return "", "", err
 				}
 				policyArn = *listPoliciesResult.Policies[0].Arn
 			} else {
 				Config.Logger.Printf("Error creating IAM policy '%s': %v", policyName, aerr)
-				return err
+				return "", "", err
 			}
 		} else {
 			Config.Logger.Printf("Error creating IAM policy '%s': %v", policyName, err)
-			return err
+			return "", "", err
 		}
 	} else {
 		Config.Logger.Printf("Created IAM policy '%s'", policyName)
@@ -342,7 +343,7 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 			Config.Logger.Printf("Debug: user '%s' already exists", nextflowUserName)
 		} else {
 			Config.Logger.Printf("Error creating user '%s': %v", nextflowUserName, err)
-			return err
+			return "", "", err
 		}
 	} else {
 		Config.Logger.Printf("Created user '%s'", nextflowUserName)
@@ -354,7 +355,7 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 	})
 	if err != nil {
 		Config.Logger.Printf("Error attaching policy '%s' to user '%s': %v", policyName, nextflowUserName, err)
-		return err
+		return "", "", err
 	} else {
 		Config.Logger.Printf("Attached policy '%s' to user '%s'", policyName, nextflowUserName)
 	}
@@ -365,11 +366,11 @@ func createNextflowResources(userName string) (error) { // TODO move to a differ
 	})
 	if err != nil {
 		Config.Logger.Printf("Error creating access key for user '%s': %v", nextflowUserName, err)
-		return err
+		return "", "", err
 	}
-	keyId := accessKeyResult.AccessKey.AccessKeyId
-	keySecret := accessKeyResult.AccessKey.SecretAccessKey
+	keyId := *accessKeyResult.AccessKey.AccessKeyId
+	keySecret := *accessKeyResult.AccessKey.SecretAccessKey
 	Config.Logger.Printf("Created access key for user '%s': key ID '%v'", nextflowUserName, keyId)
 
-	return nil
+	return keyId, keySecret, nil
 }
