@@ -15,9 +15,11 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials" // TODO remove
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/batch"
+	"github.com/aws/aws-sdk-go/service/iam"
 )
 
 type APIKeyStruct struct {
@@ -214,12 +216,26 @@ func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (last
 	return lastAct.Unix() * 1000, nil
 }
 
-func createNextflowResources() (error) { // TODO move to a different file
+func createNextflowResources(userName string) (error) { // TODO move to a different file
 	// roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	// sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
 	// 	Region: aws.String(payModel.Region),
 	// })))
 	// creds := stscreds.NewCredentials(sess, roleARN)
+
+	userName = escapism(userName)
+
+	// set the tags we will use on all created resources
+	tag := fmt.Sprintf("hatchery-nextflow-%s", userName)
+	tagsMap := map[string]*string{
+		"name": aws.String(tag),
+	}
+	tags := []*iam.Tag{
+		&iam.Tag{
+			Key: aws.String("name"),
+			Value: aws.String(tag),
+		},
+	}
 
 	// create AWS batch job queue
 	batchSvc := batch.New(session.Must(session.NewSession(&aws.Config{
@@ -228,6 +244,7 @@ func createNextflowResources() (error) { // TODO move to a different file
 		Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
 	})))
 	// batchSvc := batch.New(sess, &aws.Config{Credentials: creds})
+	batchJobQueueName := fmt.Sprintf("nextflow-job-queue-%s", userName)
 	input := &batch.CreateJobQueueInput{
 		ComputeEnvironmentOrder: []*batch.ComputeEnvironmentOrder{
 			{
@@ -235,26 +252,107 @@ func createNextflowResources() (error) { // TODO move to a different file
 				Order: aws.Int64(int64(0)),
 			},
 		},
-		JobQueueName: aws.String("hatcheryCreatedJobQueue"),
+		JobQueueName: aws.String(batchJobQueueName),
 		Priority: aws.Int64(int64(0)),
-		Tags: map[string]*string{
-			"name": aws.String("hatchery-nextflow-userName"), // TODO
-		},
+		Tags: tagsMap,
 	}
-	result, err := batchSvc.CreateJobQueue(input)
+	_, err := batchSvc.CreateJobQueue(input)
 	if err != nil {
 		if strings.Contains(err.Error(), "Object already exists") {
-			Config.Logger.Printf("Debug: AWS Batch job queue <TODO name here> already exists")
+			Config.Logger.Printf("Debug: AWS Batch job queue '%s' already exists", batchJobQueueName)
 		} else {
-			Config.Logger.Printf("Error creating AWS Batch job queue: %v", err)
+			Config.Logger.Printf("Error creating AWS Batch job queue '%s': %v", batchJobQueueName, err)
 			return err
 		}
+	} else {
+		Config.Logger.Printf("Created AWS Batch job queue '%s'", batchJobQueueName)
 	}
-	Config.Logger.Printf("Created AWS Batch job queue: %v", result)
 
 	// create IAM policy and role for nextflow-created jobs
+	IamSvc := iam.New(session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("us-east-1"),
+		// TODO update:
+		Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
+	})))
+	policyName := fmt.Sprintf("nextflow-jobs-%s", userName)
+	policyResult, err := IamSvc.CreatePolicy(&iam.CreatePolicyInput{
+		PolicyDocument: aws.String(fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"s3:*"
+					],
+					"Resource": [
+						"arn:aws:s3:::nextflow-ctds",
+						"arn:aws:s3:::nextflow-ctds/%s/*"
+					]
+				},
+				{
+					"Effect": "Allow",
+					"Action": [
+						"s3:GetObject"
+					],
+					"Resource": [
+						"*"
+					]
+				}
+			]
+		}`, userName)),
+		PolicyName: aws.String(policyName),
+		Path: aws.String(fmt.Sprintf("/%s/", tag)), // so we can use the path later to get the policy ARN
+		Tags: tags,
+	})
+	policyArn := ""
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
+				Config.Logger.Printf("Debug: IAM policy '%s' already exists", policyName)
+				policyResult2, err := IamSvc.ListPolicies(&iam.ListPoliciesInput{
+					PathPrefix: aws.String(fmt.Sprintf("/%s/", tag)),
+				})
+				if err != nil {
+					Config.Logger.Printf("Error getting existing IAM policy '%s': %v", policyName, err)
+					return err
+				}
+				policyArn = *policyResult2.Policies[0].Arn
+			} else {
+				Config.Logger.Printf("Error creating IAM policy '%s': %v", policyName, aerr)
+				return err
+			}
+		} else {
+			Config.Logger.Printf("Error creating IAM policy '%s': %v", policyName, err)
+			return err
+		}
+	} else {
+		Config.Logger.Printf("Created IAM policy '%s'", policyName)
+		policyArn = *policyResult.Policy.Arn
+	}
+	Config.Logger.Printf("policyArn: '%s'", policyArn)
 
 	// create IAM policy and user for nextflow client
+
+	nextflowUserName := fmt.Sprintf("nextflow-%s", userName)
+	_, err = IamSvc.CreateUser(&iam.CreateUserInput{
+		UserName: &nextflowUserName,
+		Tags: tags,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "EntityAlreadyExists") {
+			Config.Logger.Printf("Debug: user '%s' already exists", nextflowUserName)
+		} else {
+			Config.Logger.Printf("Error creating user '%s': %v", nextflowUserName, err)
+			return err
+		}
+	} else {
+		Config.Logger.Printf("Created user '%s'", nextflowUserName)
+	}
+
+	// userPolicyResult, err := IamSvc.AttachUserPolicy(&iam.AttachUserPolicyInput{
+	// 	UserName: nextflowUserName,
+	// 	PolicyArn: TODO,
+	// })
 
 	// create access key for the nextflow user
 
