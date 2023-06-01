@@ -16,7 +16,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials" // TODO remove
+	// "github.com/aws/aws-sdk-go/aws/credentials" // TODO remove
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/batch"
 	"github.com/aws/aws-sdk-go/service/iam"
@@ -217,11 +217,21 @@ func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (last
 }
 
 func createNextflowResources(userName string) (string, string, error) { // TODO move to a different file
+	// TODO are the resources shared between all QA envs / between staging and prod if they are in
+	// the same account? Add the env to all the names?
+
 	// roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	// sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
 	// 	Region: aws.String(payModel.Region),
 	// })))
 	// creds := stscreds.NewCredentials(sess, roleARN)
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: aws.Config{
+			Region: aws.String("us-east-1"),
+		},
+	}))
+	batchSvc := batch.New(sess)
+	iamSvc := iam.New(sess)
 
 	userName = escapism(userName)
 
@@ -239,14 +249,8 @@ func createNextflowResources(userName string) (string, string, error) { // TODO 
 	}
 
 	// create AWS batch job queue
-	batchSvc := batch.New(session.Must(session.NewSession(&aws.Config{
-		Region: aws.String("us-east-1"),
-		// TODO update:
-		Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
-	})))
-	// batchSvc := batch.New(sess, &aws.Config{Credentials: creds})
 	batchJobQueueName := fmt.Sprintf("nextflow-job-queue-%s", userName)
-	input := &batch.CreateJobQueueInput{
+	_, err := batchSvc.CreateJobQueue(&batch.CreateJobQueueInput{
 		ComputeEnvironmentOrder: []*batch.ComputeEnvironmentOrder{
 			{
 				ComputeEnvironment: aws.String("arn:aws:batch:us-east-1:707767160287:compute-environment/nextflow-pauline-compute-env"), // TODO update
@@ -256,8 +260,7 @@ func createNextflowResources(userName string) (string, string, error) { // TODO 
 		JobQueueName: &batchJobQueueName,
 		Priority: aws.Int64(int64(0)),
 		Tags: tagsMap,
-	}
-	_, err := batchSvc.CreateJobQueue(input)
+	})
 	if err != nil {
 		if strings.Contains(err.Error(), "Object already exists") {
 			Config.Logger.Printf("Debug: AWS Batch job queue '%s' already exists", batchJobQueueName)
@@ -270,13 +273,8 @@ func createNextflowResources(userName string) (string, string, error) { // TODO 
 	}
 
 	// create IAM policy and role for nextflow-created jobs
-	IamSvc := iam.New(session.Must(session.NewSession(&aws.Config{
-		Region: aws.String("us-east-1"),
-		// TODO update:
-		Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
-	})))
 	policyName := fmt.Sprintf("nextflow-jobs-%s", userName)
-	policyResult, err := IamSvc.CreatePolicy(&iam.CreatePolicyInput{
+	policyResult, err := iamSvc.CreatePolicy(&iam.CreatePolicyInput{
 		PolicyDocument: aws.String(fmt.Sprintf(`{
 			"Version": "2012-10-17",
 			"Statement": [
@@ -310,7 +308,7 @@ func createNextflowResources(userName string) (string, string, error) { // TODO 
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
 				Config.Logger.Printf("Debug: IAM policy '%s' already exists", policyName)
-				listPoliciesResult, err := IamSvc.ListPolicies(&iam.ListPoliciesInput{
+				listPoliciesResult, err := iamSvc.ListPolicies(&iam.ListPoliciesInput{
 					PathPrefix: aws.String(fmt.Sprintf("/%s/", tag)),
 				})
 				if err != nil {
@@ -334,7 +332,7 @@ func createNextflowResources(userName string) (string, string, error) { // TODO 
 	// create IAM policy and user for nextflow client
 
 	nextflowUserName := fmt.Sprintf("nextflow-%s", userName)
-	_, err = IamSvc.CreateUser(&iam.CreateUserInput{
+	_, err = iamSvc.CreateUser(&iam.CreateUserInput{
 		UserName: &nextflowUserName,
 		Tags: tags,
 	})
@@ -349,7 +347,7 @@ func createNextflowResources(userName string) (string, string, error) { // TODO 
 		Config.Logger.Printf("Created user '%s'", nextflowUserName)
 	}
 
-	_, err = IamSvc.AttachUserPolicy(&iam.AttachUserPolicyInput{
+	_, err = iamSvc.AttachUserPolicy(&iam.AttachUserPolicyInput{
 		UserName: &nextflowUserName,
 		PolicyArn: &policyArn, // TODO change this to the other policy
 	})
@@ -361,7 +359,7 @@ func createNextflowResources(userName string) (string, string, error) { // TODO 
 	}
 
 	// create access key for the nextflow user
-	accessKeyResult, err := IamSvc.CreateAccessKey(&iam.CreateAccessKeyInput{
+	accessKeyResult, err := iamSvc.CreateAccessKey(&iam.CreateAccessKeyInput{
 		UserName: &nextflowUserName,
 	})
 	if err != nil {

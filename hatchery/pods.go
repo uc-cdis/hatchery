@@ -634,9 +634,7 @@ func createLocalK8sPod(ctx context.Context, hash string, userName string, access
 	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
 
 	var extraVars []k8sv1.EnvVar
-	for _, envVar := range envVars {
-		extraVars = append(extraVars, envVar)
-	}
+	extraVars = append(extraVars, envVars...)
 
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "API_KEY",
@@ -783,9 +781,7 @@ func createExternalK8sPod(ctx context.Context, hash string, userName string, acc
 	}
 
 	var extraVars []k8sv1.EnvVar
-	for _, envVar := range envVars {
-		extraVars = append(extraVars, envVar)
-	}
+	extraVars = append(extraVars, envVars...)
 
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "WTS_OVERRIDE_URL",
