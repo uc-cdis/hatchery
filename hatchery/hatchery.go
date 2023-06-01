@@ -227,27 +227,28 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar
 	// TODO if nextflow:
-	nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName)
+	// nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName)
+	_, _, err := createNextflowResources(userName)
 	if err != nil {
 		http.Error(w, "Unable to create AWS resources for Nextflow", http.StatusInternalServerError)
 		return
 	}
-	envVars = append(envVars, k8sv1.EnvVar{
-		Name:  "AWS_ACCESS_KEY_ID",
-		Value: nextflowKeyId,
-	})
-	envVars = append(envVars, k8sv1.EnvVar{
-		Name:  "AWS_SECRET_ACCESS_KEY",
-		Value: nextflowKeySecret,
-	})
-	envVarsEcs = append(envVarsEcs, EnvVar{
-		Key:   "AWS_ACCESS_KEY_ID",
-		Value: nextflowKeyId,
-	})
-	envVarsEcs = append(envVarsEcs, EnvVar{
-		Key:   "AWS_SECRET_ACCESS_KEY",
-		Value: nextflowKeySecret,
-	})
+	// envVars = append(envVars, k8sv1.EnvVar{
+	// 	Name:  "AWS_ACCESS_KEY_ID",
+	// 	Value: nextflowKeyId,
+	// })
+	// envVars = append(envVars, k8sv1.EnvVar{
+	// 	Name:  "AWS_SECRET_ACCESS_KEY",
+	// 	Value: nextflowKeySecret,
+	// })
+	// envVarsEcs = append(envVarsEcs, EnvVar{
+	// 	Key:   "AWS_ACCESS_KEY_ID",
+	// 	Value: nextflowKeyId,
+	// })
+	// envVarsEcs = append(envVarsEcs, EnvVar{
+	// 	Key:   "AWS_SECRET_ACCESS_KEY",
+	// 	Value: nextflowKeySecret,
+	// })
 
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
@@ -280,7 +281,6 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
 	fmt.Fprintf(w, "Success")
 }
 
