@@ -235,6 +235,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName)
 		if err != nil {
 			http.Error(w, "Unable to create AWS resources for Nextflow", http.StatusInternalServerError)
+			return
 		}
 		envVars = append(envVars, k8sv1.EnvVar{
 			Name:  "AWS_ACCESS_KEY_ID",
