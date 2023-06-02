@@ -232,7 +232,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 	if Config.ContainersMap[hash].EnableNextflow {
 		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
-		nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName)
+		nextflowKeyId, nextflowKeySecret, err := createNextflowUserResources(userName)
 		if err != nil {
 			http.Error(w, "Unable to create AWS resources for Nextflow", http.StatusInternalServerError)
 			return
@@ -253,6 +253,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			Key:   "AWS_SECRET_ACCESS_KEY",
 			Value: nextflowKeySecret,
 		})
+		// TODO do we need to set AWS_DEFAULT_REGION too?
 	} else {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}

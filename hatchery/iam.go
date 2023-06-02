@@ -161,3 +161,38 @@ func (creds *CREDS) CreateEcsTaskExecutionRole() (*string, error) {
 
 	return ecsTaskExecutionRoleArn, nil
 }
+
+func createPolicyIfNotExist(iamSvc *iam.IAM, policyName string, pathPrefix *string, tags []*iam.Tag, policyDocument *string) (string, error) {
+	policyResult, err := iamSvc.CreatePolicy(&iam.CreatePolicyInput{
+		PolicyName: &policyName,
+		PolicyDocument: policyDocument,
+		Path: pathPrefix, // so we can use the path later to get the policy ARN
+		Tags: tags,
+	})
+	policyArn := ""
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
+				Config.Logger.Printf("Debug: policy '%s' already exists", policyName)
+				listPoliciesResult, err := iamSvc.ListPolicies(&iam.ListPoliciesInput{
+					PathPrefix: pathPrefix,
+				})
+				if err != nil {
+					Config.Logger.Printf("Error getting existing policy '%s': %v", policyName, err)
+					return "", err
+				}
+				policyArn = *listPoliciesResult.Policies[0].Arn
+			} else {
+				Config.Logger.Printf("Error creating policy '%s': %v", policyName, aerr)
+				return "", err
+			}
+		} else {
+			Config.Logger.Printf("Error creating policy '%s': %v", policyName, err)
+			return "", err
+		}
+	} else {
+		Config.Logger.Printf("Created policy '%s'", policyName)
+		policyArn = *policyResult.Policy.Arn
+	}
+	return policyArn, nil
+}
