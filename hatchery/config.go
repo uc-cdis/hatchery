@@ -34,6 +34,7 @@ type Container struct {
 	Gen3VolumeLocation string            `json:"gen3-volume-location"`
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
+	EnableNextflow     bool				 `json:"enable-nextflow"`
 }
 
 // SidecarContainer holds fuse sidecar configuration

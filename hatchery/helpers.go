@@ -516,7 +516,7 @@ func createNextflowResources(userName string) (string, string, error) { // TODO 
 			AccessKeyId: key.AccessKeyId,
 		})
 		if err != nil {
-			Config.Logger.Printf("Warning: Unable to delete access key '%s' for user '%s' - continuing: %v", key.AccessKeyId, nextflowUserName, err)
+			Config.Logger.Printf("Warning: Unable to delete access key '%s' for user '%s' - continuing: %v", *key.AccessKeyId, nextflowUserName, err)
 		}
 	}
 
