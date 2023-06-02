@@ -231,29 +231,27 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	var envVarsEcs []EnvVar
 
 	if Config.ContainersMap[hash].EnableNextflow {
-		Config.Logger.Printf("Nextflow is enabled: creating Nextflow resources in AWS...")
-		// nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName)
-		_, _, err := createNextflowResources(userName)
+		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
+		nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName)
 		if err != nil {
 			http.Error(w, "Unable to create AWS resources for Nextflow", http.StatusInternalServerError)
-			return
 		}
-		// envVars = append(envVars, k8sv1.EnvVar{
-		// 	Name:  "AWS_ACCESS_KEY_ID",
-		// 	Value: nextflowKeyId,
-		// })
-		// envVars = append(envVars, k8sv1.EnvVar{
-		// 	Name:  "AWS_SECRET_ACCESS_KEY",
-		// 	Value: nextflowKeySecret,
-		// })
-		// envVarsEcs = append(envVarsEcs, EnvVar{
-		// 	Key:   "AWS_ACCESS_KEY_ID",
-		// 	Value: nextflowKeyId,
-		// })
-		// envVarsEcs = append(envVarsEcs, EnvVar{
-		// 	Key:   "AWS_SECRET_ACCESS_KEY",
-		// 	Value: nextflowKeySecret,
-		// })
+		envVars = append(envVars, k8sv1.EnvVar{
+			Name:  "AWS_ACCESS_KEY_ID",
+			Value: nextflowKeyId,
+		})
+		envVars = append(envVars, k8sv1.EnvVar{
+			Name:  "AWS_SECRET_ACCESS_KEY",
+			Value: nextflowKeySecret,
+		})
+		envVarsEcs = append(envVarsEcs, EnvVar{
+			Key:   "AWS_ACCESS_KEY_ID",
+			Value: nextflowKeyId,
+		})
+		envVarsEcs = append(envVarsEcs, EnvVar{
+			Key:   "AWS_SECRET_ACCESS_KEY",
+			Value: nextflowKeySecret,
+		})
 	} else {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
