@@ -6,7 +6,7 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
-	config, err := LoadConfig("../testData/testConfig.json", nil)
+	config, enableNextflow, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
 		t.Errorf("failed to load config, got: %v", err)
 		return
@@ -30,4 +30,8 @@ func TestLoadConfig(t *testing.T) {
 		t.Errorf("unexpected more-info app name - expected DockstoreTest, got: %v", config.Config.Containers[numContainers-1].Name)
 	}
 	config.Logger.Printf("config_test marshalled config: %v", string(jsBytes))
+
+	if !enableNextflow {
+		t.Errorf("enableNextflow should be true when at least 1 container has `enable-nextflow: true`")
+	}
 }

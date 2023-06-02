@@ -379,10 +379,10 @@ func createNextflowResources(userName string) (string, string, error) { // TODO 
 		RoleName: &roleName,
 	})
 	if err != nil {
-		Config.Logger.Printf("Error attaching role '%s' to policy '%s': %v", roleName, policyName, err)
+		Config.Logger.Printf("Error attaching policy '%s' to role '%s': %v", policyName, roleName, err)
 		return "", "", err
 	} else {
-		Config.Logger.Printf("Attached role '%s' to policy '%s'", roleName, policyName)
+		Config.Logger.Printf("Attached policy '%s' to role '%s'", policyName, roleName)
 	}
 
 	// create IAM policy and user for nextflow client

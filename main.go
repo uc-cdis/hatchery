@@ -42,7 +42,7 @@ func main() {
 		logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
 		return
 	}
-	config, err := hatchery.LoadConfig(cleanPath, logger)
+	config, enableNextflow, err := hatchery.LoadConfig(cleanPath, logger)
 	if err != nil {
 		config.Logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
 		return
@@ -69,6 +69,12 @@ func main() {
 		defer profiler.Stop()
 	} else {
 		config.Logger.Printf("Datadog not enabled in manifest, skipping...")
+	}
+
+	if enableNextflow {
+		config.Logger.Printf("Info: Nextflow is enabled: creating global Nextflow resources in AWS...")
+	} else {
+		config.Logger.Printf("Debug: Nextflow is not enabled: skipping global Nextflow resources creation")
 	}
 
 	config.Logger.Printf("Setting up routes")
