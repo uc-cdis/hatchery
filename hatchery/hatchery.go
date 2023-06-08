@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"net/http"
 	"strconv"
 	"strings"
@@ -227,14 +228,16 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := getCurrentUserName(r)
+	nextflowBucketName := os.Getenv("NEXTFLOW_BUCKET_NAME")
+	nextflowBatchComputeEnvArn := os.Getenv("NEXTFLOW_BATCH_COMPUTE_ENV_ARN")
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar
 
 	if Config.ContainersMap[hash].EnableNextflow {
 		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
-		nextflowKeyId, nextflowKeySecret, err := createNextflowUserResources(userName)
+		nextflowKeyId, nextflowKeySecret, err := createNextflowUserResources(userName, nextflowBucketName, nextflowBatchComputeEnvArn)
 		if err != nil {
-			http.Error(w, "Unable to create AWS resources for Nextflow", http.StatusInternalServerError)
+			http.Error(w, "Unable to create user's AWS resources for Nextflow", http.StatusInternalServerError)
 			return
 		}
 		envVars = append(envVars, k8sv1.EnvVar{
