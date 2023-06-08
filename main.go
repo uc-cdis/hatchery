@@ -53,7 +53,7 @@ func main() {
 	}
 	config, err := hatchery.LoadConfig(cleanPath, logger)
 	if err != nil {
-		logger.Errorf("Failed to load config - got %v", err)
+		config.Logger.Errorf("Failed to load config - got %v", err)
 		return
 	}
 	hatchery.Config = config
