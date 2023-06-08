@@ -47,7 +47,6 @@ func main() {
 
 	cleanPath, err := verifyPath(configPath)
 	if err != nil {
-		// logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
 		logger.Errorf("Failed to load config - got %v", err)
 		return
 	}
