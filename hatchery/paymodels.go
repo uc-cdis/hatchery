@@ -31,7 +31,7 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	}
 	expr, err := expression.NewBuilder().WithFilter(filt).Build()
 	if err != nil {
-		Config.Logger.Errorw("Got error building dyamoDB expression",
+		Config.Logger.Errorw("Got error building dynamoDB expression",
 			"error", err,
 		)
 		return nil, err
