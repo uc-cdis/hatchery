@@ -13,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go/aws/session"
 )
 
 type APIKeyStruct struct {
@@ -211,4 +214,13 @@ func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (last
 		return -1, errors.New("Unable to parse last activity time: " + err.Error())
 	}
 	return lastAct.Unix() * 1000, nil
+}
+
+func getAwsAccountId(sess *session.Session) (string, error) {
+	stsSvc := sts.New(sess)
+	req, err := stsSvc.GetCallerIdentity(&sts.GetCallerIdentityInput{})
+	if err != nil {
+		return "", err
+	}
+	return *req.Account, nil
 }

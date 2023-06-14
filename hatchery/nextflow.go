@@ -44,6 +44,14 @@ func CreateNextflowGlobalResources() (string, string, error) {
 		"name": &tag,
 	}
 
+	Config.Logger.Printf("Getting AWS account ID...")
+	awsAccountId, err := getAwsAccountId(sess)
+	if err != nil {
+		Config.Logger.Printf("Error getting AWS account ID: %v", err)
+		return "", "", err
+	}
+	Config.Logger.Printf("AWS account ID: %v", awsAccountId)
+
 	Config.Logger.Printf("Getting default subnets...")
 	subnetsResult, err := ec2Svc.DescribeSubnets(&ec2.DescribeSubnetsInput{
 		Filters: []*ec2.Filter{
@@ -81,7 +89,7 @@ func CreateNextflowGlobalResources() (string, string, error) {
 					ImageType: aws.String("ECS_AL2"),
 				},
 			},
-			InstanceRole: aws.String("arn:aws:iam::707767160287:instance-profile/ecsInstanceRole"), // TODO
+			InstanceRole: aws.String(fmt.Sprintf("arn:aws:iam::%s:instance-profile/ecsInstanceRole", awsAccountId)),
 			AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
 			MinvCpus: aws.Int64(int64(0)),
 			MaxvCpus: aws.Int64(int64(batchComputeEnvMaxvCpus)),
@@ -175,7 +183,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 		JobQueueName: &batchJobQueueName,
 		ComputeEnvironmentOrder: []*batch.ComputeEnvironmentOrder{
 			{
-				ComputeEnvironment: aws.String("arn:aws:batch:us-east-1:707767160287:compute-environment/nextflow-pauline-compute-env"), // TODO update
+				ComputeEnvironment: &batchComputeEnvArn,
 				Order: aws.Int64(int64(0)),
 			},
 		},
@@ -195,7 +203,6 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 
 	// create IAM policy for nextflow-created jobs
 	policyName := fmt.Sprintf("%s--nextflow-jobs--%s", hostname, userName)
-	// TODO change bucket name below
 	nextflowJobsPolicyArn, err := createPolicyIfNotExist(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
 		"Version": "2012-10-17",
 		"Statement": [
@@ -205,8 +212,8 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 					"s3:*"
 				],
 				"Resource": [
-					"arn:aws:s3:::nextflow-ctds",
-					"arn:aws:s3:::nextflow-ctds/%s/*"
+					"arn:aws:s3:::%s",
+					"arn:aws:s3:::%s/%s/*"
 				]
 			},
 			{
@@ -219,7 +226,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				]
 			}
 		]
-	}`, userName)))
+	}`, bucketName, bucketName, userName)))
 	if err != nil {
 		return "", "", err
 	}
