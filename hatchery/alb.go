@@ -38,13 +38,19 @@ func (creds *CREDS) createTargetGroup(userName string, vpcId string, svc *elbv2.
 			case elbv2.ErrCodeTooManyTagsException:
 				fmt.Println(elbv2.ErrCodeTooManyTagsException, aerr.Error())
 			default:
-				fmt.Println(aerr.Error())
+				Config.Logger.Errorw("Error creating target group",
+					"error", aerr.Error(),
+					"code", aerr.Code(),
+					"message", aerr.Message(),
+					"username", userName,
+				)
 				return nil, err
 			}
 		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
-			fmt.Println(err.Error())
+			Config.Logger.Errorw("Error creating target group",
+				"error", err.Error(),
+				"username", userName,
+			)
 			return nil, err
 		}
 		return nil, err
@@ -223,7 +229,10 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 		Region:      aws.String("us-east-1"),
 	})))
 	tgName := truncateString(strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")+userToResourceName(userName, "service")+"tg", 32)
-	Config.Logger.Printf("Deleting target group: %s", tgName)
+	Config.Logger.Debug("Deleting target group",
+		"target-group", tgName,
+		"username", userName,
+	)
 	tgArn, err := svc.DescribeTargetGroups(&elbv2.DescribeTargetGroupsInput{
 		Names: []*string{aws.String(tgName)},
 	})
@@ -235,7 +244,10 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 				return nil
 			}
 		} else {
-			Config.Logger.Printf("Error describing target group: %s", err.Error())
+			Config.Logger.Errorw("Error describing target group",
+				"error", err.Error(),
+				"username", userName,
+			)
 			return err
 		}
 	}
@@ -252,7 +264,10 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 				return nil
 			}
 		} else {
-			Config.Logger.Printf("Error deleting target group: %s", err.Error())
+			Config.Logger.Errorw("Error deleting target group",
+				"error", err.Error(),
+				"username", userName,
+			)
 		}
 	}
 	return nil

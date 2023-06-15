@@ -42,7 +42,7 @@ func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, err
 	if err != nil {
 		return nil, err
 	}
-	// TODO: BETTER ERROR HANDLING HERE!!
+
 	if len(vpcs.Vpcs) == 0 {
 		return nil, fmt.Errorf("No existing vpcs found.")
 	}
@@ -108,7 +108,13 @@ func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, err
 		if err != nil {
 			return nil, err
 		}
-		Config.Logger.Printf("Create Security Group: %s", *newSecurityGroup.GroupId)
+		Config.Logger.Infow("Creating security group",
+			"security_group_id", *newSecurityGroup.GroupId,
+			"security_group_name", createSecurityGroupInput.GroupName,
+			"vpc_id", createSecurityGroupInput.VpcId,
+			"description", createSecurityGroupInput.Description,
+			"username", userName,
+		)
 
 		ingressRules := ec2.AuthorizeSecurityGroupIngressInput{
 			GroupId: newSecurityGroup.GroupId,

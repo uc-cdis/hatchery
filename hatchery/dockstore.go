@@ -2,7 +2,6 @@ package hatchery
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -78,7 +77,7 @@ const magicPort = "${SERVICE_PORT}" // make it easy to test locally
 // DockstoreComposeFromFile loads a hatchery application (container)
 // config from a compose.yaml file
 func DockstoreComposeFromFile(filePath string) (model *ComposeFull, err error) {
-	fileBytes, err := ioutil.ReadFile(filePath)
+	fileBytes, err := os.ReadFile(filePath)
 
 	if nil != err {
 		return nil, err

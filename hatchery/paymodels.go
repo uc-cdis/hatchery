@@ -31,7 +31,9 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	}
 	expr, err := expression.NewBuilder().WithFilter(filt).Build()
 	if err != nil {
-		Config.Logger.Printf("Got error building expression: %s", err)
+		Config.Logger.Errorw("Got error building dynamoDB expression",
+			"error", err,
+		)
 		return nil, err
 	}
 
@@ -43,7 +45,9 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	}
 	res, err := dynamodbSvc.Scan(params)
 	if err != nil {
-		Config.Logger.Printf("Query API call failed: %s", err)
+		Config.Logger.Errorw("Failed to query dynamoDB",
+			"error", err,
+		)
 		return nil, err
 	}
 
@@ -51,7 +55,9 @@ func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel
 	var payModelMap []PayModel
 	err = dynamodbattribute.UnmarshalListOfMaps(res.Items, &payModelMap)
 	if err != nil {
-		Config.Logger.Printf("Got error unmarshalling paymodels: %s", err)
+		Config.Logger.Errorw("Failed to unmarshal dynamoDB paymodels",
+			"error", err,
+		)
 		return nil, err
 	}
 
@@ -78,6 +84,12 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 	if Config.Config.PayModelsDynamodbTable != "" {
 		// Fetch pay models from DynamoDB with current_pay_model as `true`
 		pm, err = payModelsFromDatabase(userName, true)
+		if err != nil {
+			Config.Logger.Errorw("Failed to get current pay model from dynamoDB",
+				"error", err,
+			)
+			return nil, err
+		}
 	}
 
 	payModel := PayModel{}
@@ -101,10 +113,6 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 
 	// If exactly one current pay model is found in the database
 	payModel = (*pm)[0]
-	if err != nil {
-		Config.Logger.Printf("Got error unmarshalling: %s", err)
-		return nil, err
-	}
 	return &payModel, nil
 }
 
