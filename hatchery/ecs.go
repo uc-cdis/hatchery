@@ -281,7 +281,6 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 }
 
 // Terminate workspace running in ECS
-// TODO: Make this terminate ALB as well.
 func terminateEcsWorkspace(ctx context.Context, userName string, accessToken string, awsAcctID string) (string, error) {
 	Config.Logger.Infow("Terminating ECS workspace.",
 		"username", userName,

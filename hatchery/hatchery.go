@@ -235,7 +235,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 		if payModel.Status != "active" {
 			// send 500 response.
-			// TODO: 403 is the correct code, but it triggers a 302 to the default 403 page in revproxy instead of showing error message.
+			// 403 is the correct code, but it triggers a 302 to the default 403 page in revproxy instead of showing error message.
 			Config.Logger.Errorw("Launch forbidden: pay model is not active",
 				"username", userName,
 				"paymodelstatus", payModel.Status,
@@ -328,7 +328,6 @@ func getBearerToken(r *http.Request) string {
 // ECS functions
 
 // Function to create ECS cluster.
-// TODO: NEED TO CALL THIS FUNCTION IF IT DOESN'T EXIST!!!
 func createECSCluster(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	payModel, err := getCurrentPayModel(userName)
@@ -359,7 +358,6 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 	} else {
 		reader = strings.NewReader(result.String())
 	}
-	// TODO: What's happening here?
 	_, err = io.Copy(w, reader)
 	if err != nil {
 		Config.Logger.Errorw("Error copying response",

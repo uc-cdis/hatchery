@@ -42,7 +42,7 @@ func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, err
 	if err != nil {
 		return nil, err
 	}
-	// TODO: BETTER ERROR HANDLING HERE!!
+
 	if len(vpcs.Vpcs) == 0 {
 		return nil, fmt.Errorf("No existing vpcs found.")
 	}
