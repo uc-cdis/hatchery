@@ -36,7 +36,8 @@ An example manifest entry may look like
       "fs-gid": 100,
       "user-volume-location": "/home/jovyan/pd",
       "gen3-volume-location": "/home/jovyan/.gen3",
-      "friends": []
+      "friends": [],
+      "enable-nextflow": false,
     }]
   }
 ```
@@ -72,3 +73,4 @@ An example manifest entry may look like
     * `lifecycle-pre-stop` a string array as the container prestop command.
     * `lifecycle-post-start` a string array as the container poststart command.
     * `friends` is a list of kubernetes containers to deploy alongside the main container and the sidecar in the kubernetes pod
+    * `enable-nextflow` is false by default; if true, automatically create AWS resources required to run Nextflow workflows in AWS Batch - see the [Nextflow workspaces](/doc/explanation/nextflow.md) documentation for more details
