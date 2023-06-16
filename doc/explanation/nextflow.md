@@ -22,8 +22,6 @@ When a user **terminates** a Nextflow workspace, Hatchery automatically deletes 
 - The contents of `s3://<nextflow bucket>/<username>`
 - The user’s access key
 
-TODO finish this ^
-
 ## Hatchery access
 
 To do the above, the service account used by Hatchery needs various permissions in Batch, IAM and S3. In cloud-automation deployments, these permissions are set in the `kube-setup-hatchery` script.

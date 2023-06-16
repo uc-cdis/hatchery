@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
 
@@ -377,25 +379,6 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 		Config.Logger.Printf("Attached policy '%s' to user '%s'", policyName, nextflowUserName)
 	}
 
-	// TODO do this at pod termination instead
-	listAccessKeysResult, err := iamSvc.ListAccessKeys(&iam.ListAccessKeysInput{
-		UserName: &nextflowUserName,
-	})
-	if err != nil {
-		Config.Logger.Printf("Unable to list access keys for user '%s': %v", nextflowUserName, err)
-		return "", "", err
-	}
-	for _, key := range listAccessKeysResult.AccessKeyMetadata {
-		Config.Logger.Printf("Deleting access key '%s' for user '%s'", *key.AccessKeyId, nextflowUserName)
-		_, err := iamSvc.DeleteAccessKey(&iam.DeleteAccessKeyInput{
-			UserName: &nextflowUserName,
-			AccessKeyId: key.AccessKeyId,
-		})
-		if err != nil {
-			Config.Logger.Printf("Warning: Unable to delete access key '%s' for user '%s' - continuing: %v", *key.AccessKeyId, nextflowUserName, err)
-		}
-	}
-
 	// create access key for the nextflow user
 	accessKeyResult, err := iamSvc.CreateAccessKey(&iam.CreateAccessKeyInput{
 		UserName: &nextflowUserName,
@@ -409,4 +392,55 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 	Config.Logger.Printf("Created access key '%v' for user '%s'", keyId, nextflowUserName)
 
 	return keyId, keySecret, nil
+}
+
+
+// delete the per-user AWS resources created to launch nextflow workflows
+func cleanUpNextflowUserResources(userName string, bucketName string) (error) {
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: aws.Config{
+			Region: aws.String("us-east-1"),
+			// Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
+		},
+	}))
+	iamSvc := iam.New(sess)
+	s3Svc := s3.New(sess)
+
+	userName = escapism(userName)
+	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
+
+	// delete the user's access key
+	nextflowUserName := fmt.Sprintf("%s--nextflow--%s", hostname, userName)
+	listAccessKeysResult, err := iamSvc.ListAccessKeys(&iam.ListAccessKeysInput{
+		UserName: &nextflowUserName,
+	})
+	if err != nil {
+		Config.Logger.Printf("Unable to list access keys for user '%s': %v", nextflowUserName, err)
+		return err
+	}
+	for _, key := range listAccessKeysResult.AccessKeyMetadata {
+		Config.Logger.Printf("Deleting access key '%s' for user '%s'", *key.AccessKeyId, nextflowUserName)
+		_, err := iamSvc.DeleteAccessKey(&iam.DeleteAccessKeyInput{
+			UserName: &nextflowUserName,
+			AccessKeyId: key.AccessKeyId,
+		})
+		if err != nil {
+			Config.Logger.Printf("Warning: Unable to delete access key '%s' for user '%s' - continuing: %v", *key.AccessKeyId, nextflowUserName, err)
+		}
+	}
+	Config.Logger.Printf("Debug: Deleted access keys for Nextflow AWS user '%s'", nextflowUserName)
+
+	// delete the user's folder and its contents in the nextflow bucket
+	objectsKey := fmt.Sprintf("%s/", userName)
+	objectsIter := s3manager.NewDeleteListIterator(s3Svc, &s3.ListObjectsInput{
+		Bucket: &bucketName,
+		Prefix: &objectsKey,
+	})
+	if err := s3manager.NewBatchDeleteWithClient(s3Svc).Delete(context.Background(), objectsIter); err != nil {
+		Config.Logger.Printf("Unable to delete objects in bucket '%s' at '%s': %v", bucketName, objectsKey, err)
+		return err
+	}
+	Config.Logger.Printf("Debug: Deleted objects in bucket '%s' at '%s'", bucketName, objectsKey)
+
+	return nil
 }

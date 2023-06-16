@@ -228,13 +228,13 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := getCurrentUserName(r)
-	nextflowBucketName := os.Getenv("NEXTFLOW_BUCKET_NAME")
-	nextflowBatchComputeEnvArn := os.Getenv("NEXTFLOW_BATCH_COMPUTE_ENV_ARN")
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar
 
 	if Config.ContainersMap[hash].EnableNextflow {
 		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
+		nextflowBucketName := os.Getenv("NEXTFLOW_BUCKET_NAME")
+		nextflowBatchComputeEnvArn := os.Getenv("NEXTFLOW_BATCH_COMPUTE_ENV_ARN")
 		nextflowKeyId, nextflowKeySecret, err := createNextflowUserResources(userName, nextflowBucketName, nextflowBatchComputeEnvArn)
 		if err != nil {
 			http.Error(w, "Unable to create user's AWS resources for Nextflow", http.StatusInternalServerError)
@@ -302,7 +302,23 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
+
 	Config.Logger.Printf("Terminating workspace for user %s", userName)
+
+	// delete nextflow resources if any configured container has nextflow enabled (there is no way
+	// to know if the actual workspace we are terminating is a nextflow workspace or not)
+	nextflowBucketName := os.Getenv("NEXTFLOW_BUCKET_NAME")
+	if nextflowBucketName != "" {
+		Config.Logger.Printf("Info: Nextflow is enabled: deleting Nextflow resources in AWS...")
+		err := cleanUpNextflowUserResources(userName, nextflowBucketName)
+		if err != nil {
+			http.Error(w, "Unable to delete user's AWS resources for Nextflow", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources deletion")
+	}
+
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
