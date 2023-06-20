@@ -13,6 +13,7 @@ import (
 
 type NetworkInfo struct {
 	vpc            *ec2.DescribeVpcsOutput
+	vpcCidrBlocks  []*string
 	subnets        *ec2.DescribeSubnetsOutput
 	securityGroups *ec2.DescribeSecurityGroupsOutput
 	routeTable     *ec2.DescribeRouteTablesOutput
