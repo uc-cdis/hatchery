@@ -302,7 +302,6 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
-
 	Config.Logger.Printf("Terminating workspace for user %s", userName)
 
 	// delete nextflow resources if any configured container has nextflow enabled (there is no way

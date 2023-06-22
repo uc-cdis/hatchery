@@ -278,7 +278,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 		nextflowJobsRoleArn = *roleResult.Role.Arn
 	}
 
-	// create policy to role for nextflow-created jobs
+	// attach policy to role for nextflow-created jobs
 	_, err = iamSvc.AttachRolePolicy(&iam.AttachRolePolicyInput{
 		PolicyArn: &nextflowJobsPolicyArn,
 		RoleName: &roleName,
@@ -311,8 +311,8 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				"Resource": [
 					"arn:aws:batch:*:*:job-definition/*",
 					"arn:aws:batch:*:*:job-queue/%s",
-					"arn:aws:s3:::nextflow-ctds",
-					"arn:aws:s3:::nextflow-ctds/%s/*"
+					"arn:aws:s3:::%s",
+					"arn:aws:s3:::%s/%s/*"
 				]
 			},
 			{
@@ -345,7 +345,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				]
 			}
 		]
-	}`, batchJobQueueName, userName, nextflowJobsRoleArn)))
+	}`, batchJobQueueName, bucketName, bucketName, userName, nextflowJobsRoleArn)))
 	if err != nil {
 		return "", "", err
 	}
@@ -367,7 +367,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 		Config.Logger.Printf("Created user '%s'", nextflowUserName)
 	}
 
-	// create policy to user for nextflow client
+	// attach policy to user for nextflow client
 	_, err = iamSvc.AttachUserPolicy(&iam.AttachUserPolicyInput{
 		UserName: &nextflowUserName,
 		PolicyArn: &nextflowPolicyArn,
@@ -390,6 +390,9 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 	keyId := *accessKeyResult.AccessKey.AccessKeyId
 	keySecret := *accessKeyResult.AccessKey.SecretAccessKey
 	Config.Logger.Printf("Created access key '%v' for user '%s'", keyId, nextflowUserName)
+
+	// once we mount the configuration automatically, we can remove this log
+	Config.Logger.Printf("CONFIGURATION: Batch queue: '%s'. Job role: '%s'. Workdir: '%s'.", batchJobQueueName, nextflowJobsRoleArn, fmt.Sprintf("s3://%s/%s", bucketName, userName))
 
 	return keyId, keySecret, nil
 }
