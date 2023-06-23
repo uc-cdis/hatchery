@@ -440,8 +440,7 @@ func cleanUpNextflowUserResources(userName string, bucketName string) (error) {
 		Prefix: &objectsKey,
 	})
 	if err := s3manager.NewBatchDeleteWithClient(s3Svc).Delete(context.Background(), objectsIter); err != nil {
-		Config.Logger.Printf("Unable to delete objects in bucket '%s' at '%s': %v", bucketName, objectsKey, err)
-		return err
+		Config.Logger.Printf("Unable to delete objects in bucket '%s' at '%s' - continuing: %v", bucketName, objectsKey, err)
 	}
 	Config.Logger.Printf("Debug: Deleted objects in bucket '%s' at '%s'", bucketName, objectsKey)
 
