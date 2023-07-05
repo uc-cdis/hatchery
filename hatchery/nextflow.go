@@ -1,7 +1,7 @@
 package hatchery
 
 import (
-	"context"
+	// "context"
 	"fmt"
 	"os"
 	"strings"
@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	// "github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
 
@@ -407,7 +407,7 @@ func cleanUpNextflowUserResources(userName string, bucketName string) (error) {
 		},
 	}))
 	iamSvc := iam.New(sess)
-	s3Svc := s3.New(sess)
+	// s3Svc := s3.New(sess)
 
 	userName = escapism(userName)
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
@@ -433,16 +433,25 @@ func cleanUpNextflowUserResources(userName string, bucketName string) (error) {
 	}
 	Config.Logger.Printf("Debug: Deleted access keys for Nextflow AWS user '%s'", nextflowUserName)
 
-	// delete the user's folder and its contents in the nextflow bucket
-	objectsKey := fmt.Sprintf("%s/", userName)
-	objectsIter := s3manager.NewDeleteListIterator(s3Svc, &s3.ListObjectsInput{
-		Bucket: &bucketName,
-		Prefix: &objectsKey,
-	})
-	if err := s3manager.NewBatchDeleteWithClient(s3Svc).Delete(context.Background(), objectsIter); err != nil {
-		Config.Logger.Printf("Unable to delete objects in bucket '%s' at '%s' - continuing: %v", bucketName, objectsKey, err)
-	}
-	Config.Logger.Printf("Debug: Deleted objects in bucket '%s' at '%s'", bucketName, objectsKey)
+	// NOTE: This was disabled because researchers may need to keep the intermediary files. Instead of
+	// deleting, we could set bucket lifecycle rules to delete after X days.
+	// NOTE: The code below works locally but not once deployed
+
+	// // delete the user's folder and its contents in the nextflow bucket
+	// objectsKey := fmt.Sprintf("%s/", userName)
+	// // objectsIter := s3manager.NewDeleteListIterator(s3Svc, &s3.ListObjectsInput{
+	// // 	Bucket: &bucketName,
+	// // 	Prefix: &objectsKey,
+	// // })
+	// objectsIter := s3manager.NewDeleteListIterator(s3Svc, &s3.ListObjectsInput{
+	// 	Bucket: aws.String("qa-ibd-planx-pla-net--nextflow"),
+	// 	Prefix: aws.String("ribeyre-40uchicago-2eedu/"),
+	// })
+	// if err := s3manager.NewBatchDeleteWithClient(s3Svc).Delete(context.Background(), objectsIter); err != nil {
+	// 	Config.Logger.Printf("Unable to delete objects in bucket '%s' at '%s' - continuing: %v", bucketName, objectsKey, err)
+	// } else {
+	// 	Config.Logger.Printf("Debug: Deleted objects in bucket '%s' at '%s'", bucketName, objectsKey)
+	// }
 
 	return nil
 }
