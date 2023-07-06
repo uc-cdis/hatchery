@@ -355,7 +355,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
             			"Condition": {
                 			"StringEquals": {
                     				"batch:User": [
-                        				"nobody"
+                        				"%s"
                     				],
                     			"batch:Image": [
 						"nextflow/tcoffee"
@@ -367,7 +367,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
             			}
         	    },
 		]
-	}`, batchJobQueueName, bucketName, bucketName, userName, nextflowJobsRoleArn)))
+	}`, batchJobQueueName, bucketName, bucketName, userName, nextflowJobsRoleArn, userName)))
 	if err != nil {
 		return "", "", err
 	}
