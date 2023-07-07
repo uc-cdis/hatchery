@@ -506,6 +506,7 @@ func TGWRoutes(userName string, tgwRoutetableId *string, tgwAttachmentId *string
 	if teardown {
 		//  delete routes to all VPC CIDR blocks
 		for _, cidr := range networkInfo.vpcCidrBlocks {
+			Config.Logger.Printf("Deleting route to %s in transit gateway route table %s", *cidr, *tgwRoutetableId)
 			err := deleteTGWRoute(tgwRoutetableId, cidr, svc)
 			if err != nil {
 				return err

@@ -188,6 +188,7 @@ func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, err
 		securityGroups: securityGroup,
 		routeTable:     routeTable,
 	}
+	networkInfo.vpcCidrBlocks = append(networkInfo.vpcCidrBlocks, vpcs.Vpcs[0].CidrBlock)
 	return &networkInfo, nil
 }
 
