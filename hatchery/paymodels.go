@@ -129,26 +129,33 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 			return nil, err
 		}
 	}
-	payModel, err := getCurrentPayModel(userName)
+	currentPayModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
 	}
 
 	// If `getCurrentPayModel` returns nil,
 	// then there are no other paymodels to fallback to
-	if payModel == nil {
+	if currentPayModel == nil {
 		return nil, nil
 	}
 
 	if payModelMap == nil {
-		payModelMap = &[]PayModel{*payModel}
+		payModelMap = &[]PayModel{*currentPayModel}
 	} else if len(*payModelMap) == 0 {
-		*payModelMap = append(*payModelMap, *payModel)
+		*payModelMap = append(*payModelMap, *currentPayModel)
+	} else if currentPayModel.Local {
+		// If the user hasn't finalized a pay model, then instead of
+		// automatically feeding the local pay model as current, we
+		// append this to the rest of the pay models and empty the current pay model
+
+		*payModelMap = append(*payModelMap, *currentPayModel)
+		currentPayModel = nil
 	}
 
 	PayModels.PayModels = *payModelMap
 
-	PayModels.CurrentPayModel = payModel
+	PayModels.CurrentPayModel = currentPayModel
 
 	return &PayModels, nil
 }
