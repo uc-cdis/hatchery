@@ -66,6 +66,7 @@ type WorkspaceStatus struct {
 	ContainerStates  []ContainerStates `json:"containerStates"`
 	IdleTimeLimit    int               `json:"idleTimeLimit"`
 	LastActivityTime int64             `json:"lastActivityTime"`
+	WorkspaceType    string            `json:"workspaceType"`
 }
 
 func getPodClient(ctx context.Context, userName string, payModelPtr *PayModel) (corev1.CoreV1Interface, bool, error) {
@@ -166,6 +167,7 @@ func checkPodReadiness(pod *k8sv1.Pod) bool {
 
 func podStatus(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
+	status.WorkspaceType = "Kubernetes"
 	podClient, isExternalClient, err := getPodClient(ctx, userName, payModelPtr)
 	if err != nil {
 		// Config.Logger.Panic("Error trying to fetch kubeConfig: %v", err)

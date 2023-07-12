@@ -176,6 +176,7 @@ func (sess *CREDS) findEcsCluster() (*ecs.Cluster, error) {
 // Status of workspace running in ECS
 func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
+	status.WorkspaceType = "ECS"
 	statusMap := map[string]string{
 		"ACTIVE":    "Running",
 		"DRAINING":  "Terminating",
