@@ -365,7 +365,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 						"batch:Privileged": "false"
                 			}
             			}
-        	    },
+        	    }
 		]
 	}`, batchJobQueueName, bucketName, bucketName, userName, nextflowJobsRoleArn, userName)))
 	if err != nil {
