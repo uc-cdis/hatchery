@@ -13,6 +13,7 @@ import (
 
 type NetworkInfo struct {
 	vpc            *ec2.DescribeVpcsOutput
+	vpcCidrBlocks  []*string
 	subnets        *ec2.DescribeSubnetsOutput
 	securityGroups *ec2.DescribeSecurityGroupsOutput
 	routeTable     *ec2.DescribeRouteTablesOutput
@@ -187,6 +188,7 @@ func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, err
 		securityGroups: securityGroup,
 		routeTable:     routeTable,
 	}
+	networkInfo.vpcCidrBlocks = append(networkInfo.vpcCidrBlocks, vpcs.Vpcs[0].CidrBlock)
 	return &networkInfo, nil
 }
 

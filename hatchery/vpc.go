@@ -7,6 +7,7 @@ import (
 
 	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
@@ -273,4 +274,111 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		return exIgw.InternetGateways[0].InternetGatewayId, nil
 	}
 
+}
+
+func VPCRoutes(remote_network_info *NetworkInfo, main_network_info *NetworkInfo, tgwId *string, ec2_remote *ec2.EC2, ec2_local *ec2.EC2, teardown bool) error {
+	if !teardown {
+		for _, cidr := range main_network_info.vpcCidrBlocks {
+			Config.Logger.Printf("Creating route to %s in remote VPC route table %s", *cidr, *main_network_info.routeTable.RouteTables[0].RouteTableId)
+			err := createVPCRoute(remote_network_info.routeTable.RouteTables[0].RouteTableId, cidr, tgwId, ec2_remote)
+			if err != nil {
+				return err
+			}
+		}
+
+		err := createVPCRoute(main_network_info.routeTable.RouteTables[0].RouteTableId, remote_network_info.vpc.Vpcs[0].CidrBlock, tgwId, ec2_local)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	} else {
+		// Delete Routes for all VPC CIDR's
+		for _, cidr := range main_network_info.vpcCidrBlocks {
+			Config.Logger.Printf("Deleting route %s from remote VPC %s", *cidr, *remote_network_info.vpc.Vpcs[0].VpcId)
+			err := deleteVPCRoute(remote_network_info.routeTable.RouteTables[0].RouteTableId, cidr, ec2_remote)
+			if err != nil {
+				return err
+			}
+		}
+
+		Config.Logger.Printf("Deleting route %s from main VPC %s", *remote_network_info.vpc.Vpcs[0].CidrBlock, *main_network_info.vpc.Vpcs[0].VpcId)
+		localDeleteRouteInput := &ec2.DeleteRouteInput{
+			DestinationCidrBlock: remote_network_info.vpc.Vpcs[0].CidrBlock,
+			RouteTableId:         main_network_info.routeTable.RouteTables[0].RouteTableId,
+		}
+
+		_, err := ec2_local.DeleteRoute(localDeleteRouteInput)
+		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				switch aerr.Code() {
+				case "InvalidRoute.NotFound":
+					// Route already deleted, we are happy :)
+					Config.Logger.Printf("Route %s to remote vpc was already deleted from main VPC %s", *remote_network_info.vpc.Vpcs[0].CidrBlock, *main_network_info.vpc.Vpcs[0].VpcId)
+					return nil
+				}
+			}
+			return err
+		}
+		return nil
+	}
+}
+
+func createVPCRoute(routeTableId *string, cidrBlock *string, tgwId *string, svc *ec2.EC2) error {
+	exRemoteRouteInput := &ec2.DescribeRouteTablesInput{
+		RouteTableIds: []*string{routeTableId},
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("route.destination-cidr-block"),
+				Values: []*string{cidrBlock},
+			},
+		},
+	}
+	exRemoteRoute, err := svc.DescribeRouteTables(exRemoteRouteInput)
+	if err != nil {
+		return err
+	}
+
+	if len(exRemoteRoute.RouteTables) != 0 {
+		remoteDeleteRouteInput := &ec2.DeleteRouteInput{
+			DestinationCidrBlock: cidrBlock,
+			RouteTableId:         routeTableId,
+		}
+		_, err := svc.DeleteRoute(remoteDeleteRouteInput)
+		if err != nil {
+			return err
+		}
+	}
+
+	remoteCreateRouteInput := &ec2.CreateRouteInput{
+		DestinationCidrBlock: cidrBlock,
+		RouteTableId:         routeTableId,
+		TransitGatewayId:     tgwId,
+	}
+
+	_, err = svc.CreateRoute(remoteCreateRouteInput)
+	if err != nil {
+		return err
+	}
+	Config.Logger.Printf("Route to %s added.", *cidrBlock)
+	return nil
+}
+
+func deleteVPCRoute(routeTableId *string, cidrBlock *string, svc *ec2.EC2) error {
+	delRouteInput := &ec2.DeleteRouteInput{
+		DestinationCidrBlock: cidrBlock,
+		RouteTableId:         routeTableId,
+	}
+	_, err := svc.DeleteRoute(delRouteInput)
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case "InvalidRoute.NotFound":
+				// Route already deleted, we are happy :)
+				return nil
+			}
+		}
+		return err
+	}
+	return nil
 }
