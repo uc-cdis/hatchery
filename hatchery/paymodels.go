@@ -147,7 +147,7 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 	} else if currentPayModel.Local {
 		// If the user hasn't finalized a pay model, then instead of
 		// automatically feeding the local pay model as current, we
-		// append this to the rest of the pay models and empty the current pay model
+		// empty the current pay model
 		currentPayModel = nil
 	}
 
