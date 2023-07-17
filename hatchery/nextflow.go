@@ -342,16 +342,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				],
 				"Resource": [
 					"%s"
-				]
-			},
-			{
-				"Effect": "Allow",
-            			"Action": [
-                			"batch:RegisterJobDefinition"
-            			],
-            			"Resource": [
-					"arn:aws:batch:*:*:job-definition/*",
-            			],
+				],
             			"Condition": {
                 			"StringEquals": {
                     				"batch:Image": [
@@ -362,7 +353,9 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 						"batch:Privileged": "false"
                 			}
             			}
-        	    }
+
+			},
+			{
 		]
 	}`, batchJobQueueName, bucketName, bucketName, userName, nextflowJobsRoleArn)))
 	if err != nil {
