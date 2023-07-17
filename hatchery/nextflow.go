@@ -345,6 +345,9 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				],
             			"Condition": {
                 			"StringEquals": {
+						"batch:User": [
+                        				"nobody"
+                    				],
                     				"batch:Image": [
 							"nextflow/tcoffee"
                     				]
