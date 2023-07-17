@@ -313,7 +313,20 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 					"arn:aws:batch:*:*:job-queue/%s",
 					"arn:aws:s3:::%s",
 					"arn:aws:s3:::%s/%s/*"
-				]
+				],
+            			"Condition": {
+                			"StringEquals": {
+						"batch:User": [
+                        				"nobody"
+                    				],
+                    				"batch:Image": [
+							"nextflow/tcoffee"
+                    				]
+                			},
+                			"Bool": {
+						"batch:Privileged": "false"
+                			}
+            			}
 			},
 			{
 				"Effect": "Allow",
@@ -343,20 +356,6 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				"Resource": [
 					"%s"
 				],
-            			"Condition": {
-                			"StringEquals": {
-						"batch:User": [
-                        				"nobody"
-                    				],
-                    				"batch:Image": [
-							"nextflow/tcoffee"
-                    				]
-                			},
-                			"Bool": {
-						"batch:Privileged": "false"
-                			}
-            			}
-
 			}
 		]
 	}`, batchJobQueueName, bucketName, bucketName, userName, nextflowJobsRoleArn)))
