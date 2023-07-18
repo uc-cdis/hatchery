@@ -355,7 +355,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				],
 				"Resource": [
 					"%s"
-				],
+				]
 			}
 		]
 	}`, batchJobQueueName, bucketName, bucketName, userName, nextflowJobsRoleArn)))
