@@ -150,16 +150,14 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 		return nil, err
 	}
 
-	// If `getCurrentPayModel` returns nil,
-	// then there are no other paymodels to fallback to
-	if currentPayModel == nil {
-		return nil, nil
-	}
-
-	if payModelMap == nil {
-		payModelMap = &[]PayModel{*currentPayModel}
-	} else if len(*payModelMap) == 0 {
-		*payModelMap = append(*payModelMap, *currentPayModel)
+	// If payModelMap is empty and `getCurrentPayModel` returns a paymodel,
+	// Update payModelMap with it
+	if currentPayModel != nil {
+		if payModelMap == nil {
+			payModelMap = &[]PayModel{*currentPayModel}
+		} else if len(*payModelMap) == 0 {
+			*payModelMap = append(*payModelMap, *currentPayModel)
+		}
 	}
 
 	PayModels.PayModels = *payModelMap
