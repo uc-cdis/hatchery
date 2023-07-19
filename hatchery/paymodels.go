@@ -75,22 +75,38 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 
 	var pm *[]PayModel
 
-	if Config.Config.PayModelsDynamodbTable != "" {
-		// Fetch pay models from DynamoDB with current_pay_model as `true`
-		pm, err = payModelsFromDatabase(userName, true)
-	}
-
-	payModel := PayModel{}
-
-	// If no dynamoDB or no current pay models in the DB,
-	// fallback to defaultPayModel from config
-	if pm == nil || len(*pm) == 0 {
+	if Config.Config.PayModelsDynamodbTable == "" {
 		pm, err := getDefaultPayModel()
 		if err != nil {
 			return nil, nil
 		}
 		return pm, nil
 	}
+
+	// Fetch pay models from DynamoDB with current_pay_model as `true`
+	pm, err = payModelsFromDatabase(userName, true)
+
+	// If no current pay models in the DB,
+	// see if there are any active paymodels for the user
+	if pm == nil || len(*pm) == 0 {
+		var activePayModels *[]PayModel
+		activePayModels, _ = payModelsFromDatabase(userName, false)
+
+		// If any active pay models found in the DB,
+		// return nil since there is no current paymodel set by the user
+		if activePayModels != nil && len(*activePayModels) > 0 {
+			return nil, nil
+		}
+
+		// Else fallback to default paymodel
+		pm, err := getDefaultPayModel()
+		if err != nil {
+			return nil, nil
+		}
+		return pm, nil
+	}
+
+	payModel := PayModel{}
 
 	// If more than one current pay model is found in the database
 	if len(*pm) > 1 {
@@ -144,11 +160,6 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 		payModelMap = &[]PayModel{*currentPayModel}
 	} else if len(*payModelMap) == 0 {
 		*payModelMap = append(*payModelMap, *currentPayModel)
-	} else if currentPayModel.Local {
-		// If the user hasn't finalized a pay model, then instead of
-		// automatically feeding the local pay model as current, we
-		// empty the current pay model
-		currentPayModel = nil
 	}
 
 	PayModels.PayModels = *payModelMap
