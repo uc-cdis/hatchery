@@ -308,6 +308,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 					"s3:*"
 				],
 				"Resource": [
+					"arn:aws:batch:*:*:job-definition/*",
 					"arn:aws:batch:*:*:job-queue/%s",
 					"arn:aws:s3:::%s",
 					"arn:aws:s3:::%s/%s/*"
