@@ -226,7 +226,11 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
-	if payModel == nil || payModel.Local {
+	if payModel == nil {
+		Config.Logger.Printf("Paymodel is not active. Launch forbidden for user %s", userName)
+		http.Error(w, "Paymodel is not active. Launch forbidden", http.StatusInternalServerError)
+		return
+	} else if payModel.Local {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
 	} else if payModel.Ecs {
 
