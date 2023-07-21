@@ -26,6 +26,7 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/options", options)
 	mux.HandleFunc("/paymodels", paymodels)
 	mux.HandleFunc("/setpaymodel", setpaymodel)
+	mux.HandleFunc("/resetpaymodels", resetPaymodels)
 	mux.HandleFunc("/allpaymodels", allpaymodels)
 
 	// ECS functions
@@ -140,6 +141,40 @@ func setpaymodel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Fprint(w, string(out))
+}
+
+func resetPaymodels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	userName := getCurrentUserName(r)
+
+	currentPayModel, err := getCurrentPayModel(userName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	currentStatus, err := getWorkspaceStatus(r.Context(), currentPayModel, userName, getBearerToken(r))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Do not let users update status when a workpsace session is in progress
+	if currentStatus.Status != "Not Found" {
+		http.Error(w, "Can not reset paymodels when workspace is running", http.StatusInternalServerError)
+		return
+	}
+
+	err = resetCurrentPaymodel(userName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprint(w, "Current Paymodel has been reset")
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
