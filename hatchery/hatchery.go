@@ -111,6 +111,24 @@ func setpaymodel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing ID argument", http.StatusBadRequest)
 		return
 	}
+
+	currentPayModel, err := getCurrentPayModel(userName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	currentStatus, err := getWorkspaceStatus(r.Context(), currentPayModel, userName, getBearerToken(r))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Do not let users update status when a workpsace session is in progress
+	if currentStatus.Status != "Not Found" {
+		http.Error(w, "Can not update paymodel when workspace is running", http.StatusInternalServerError)
+		return
+	}
 	pm, err := setCurrentPaymodel(userName, id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -135,28 +153,10 @@ func status(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	var result *WorkspaceStatus
-
-	if payModel == nil {
-		result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	} else {
-		if payModel.Ecs {
-			result, err = statusEcs(r.Context(), userName, accessToken, payModel.AWSAccountId)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
+	result, err := getWorkspaceStatus(r.Context(), payModel, userName, accessToken)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	out, err := json.Marshal(result)
@@ -166,6 +166,14 @@ func status(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprint(w, string(out))
+}
+
+func getWorkspaceStatus(ctx context.Context, payModel *PayModel, userName string, accessToken string) (*WorkspaceStatus, error) {
+	if payModel != nil && payModel.Ecs {
+		return statusEcs(ctx, userName, accessToken, payModel.AWSAccountId)
+	} else {
+		return statusK8sPod(ctx, userName, accessToken, payModel)
+	}
 }
 
 func options(w http.ResponseWriter, r *http.Request) {
