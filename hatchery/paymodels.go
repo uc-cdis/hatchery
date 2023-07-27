@@ -13,7 +13,7 @@ import (
 
 var NopaymodelsError = errors.New("No paymodels found")
 
-func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel, err error) {
+var payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
 	// query pay model data for this user from DynamoDB
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
@@ -71,11 +71,11 @@ func payModelFromConfig(userName string) (pm *PayModel, err error) {
 	return &payModel, nil
 }
 
-func getCurrentPayModel(userName string) (result *PayModel, err error) {
+var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 
 	var pm *[]PayModel
 
-	if Config.Config.PayModelsDynamodbTable == "" {
+	if Config != nil && Config.Config.PayModelsDynamodbTable == "" {
 		pm, err := getDefaultPayModel()
 		if err != nil {
 			return nil, nil
@@ -124,7 +124,7 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 	return &payModel, nil
 }
 
-func getDefaultPayModel() (defaultPaymodel *PayModel, err error) {
+var getDefaultPayModel = func() (defaultPaymodel *PayModel, err error) {
 	var pm PayModel
 	if Config.Config.DefaultPayModel == pm {
 		return nil, fmt.Errorf("no default paymodel set")
