@@ -156,6 +156,9 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 			*payModelMap = append(*payModelMap, *currentPayModel)
 		}
 	}
+	if currentPayModel == nil && payModelMap == nil {
+		return nil, nil
+	}
 
 	PayModels.PayModels = *payModelMap
 
