@@ -1,163 +1,275 @@
 package hatchery
 
 import (
-	"encoding/json"
 	"reflect"
 	"testing"
 )
 
-func Test_GetCurrentPayModel_Returns_DefaultPayModel_When_NoDB(t *testing.T) {
-
-	mockConfig := &FullHatcheryConfig{
-		Config: HatcheryConfig{
-			PayModelsDynamodbTable: "",
-		},
-	}
-	var mockDefaultPaymodel *PayModel
-	_ = json.Unmarshal([]byte(`{
-		"workspace_type": "Trial Workspace",
-		"local": true
-	}`), &mockDefaultPaymodel)
-
-	/***Patching***/
-	Config = mockConfig
-
-	// Patching the behavior of getDefaultPayModel with mock implementation
-	getDefaultPayModel = func() (*PayModel, error) {
-		return mockDefaultPaymodel, nil
-	}
-
-	/** Testing **/
-	payModel, err := getCurrentPayModel("testUser")
-	if nil != err {
-		t.Errorf("failed to load current pay model, got: %v", err)
-		return
-	}
-
-	if !reflect.DeepEqual(payModel, mockDefaultPaymodel) {
-		t.Errorf("assertion error: \nexpected %+v,\ngot: %+v", mockDefaultPaymodel, payModel)
-		return
-	}
-
+var configWithDbTable = &FullHatcheryConfig{
+	Config: HatcheryConfig{
+		PayModelsDynamodbTable: "random_non_empty_string",
+	},
 }
 
-func Test_GetCurrentPayModel_Returns_CurrentPayModel_When_CurrentPayModelExists(t *testing.T) {
-	mockConfig := &FullHatcheryConfig{
-		Config: HatcheryConfig{
-			PayModelsDynamodbTable: "random_non_empty_string",
-		},
-	}
-	mockPayModelsFromDBWithCurrent := []PayModel{
+var configWithNoDbTable = &FullHatcheryConfig{
+	Config: HatcheryConfig{
+		PayModelsDynamodbTable: "",
+	},
+}
+
+var defaultPayModelForTest = &PayModel{
+	Name:  "Trial Workspace",
+	Local: true,
+}
+
+func Test_GetCurrentPayModel(t *testing.T) {
+
+	testCases := []struct {
+		name                      string
+		want                      *PayModel
+		mockConfig                *FullHatcheryConfig
+		mockDefaultPaymodel       *PayModel
+		mockCurrentPayModelFromDB []PayModel
+		mockPayModelsFromDB       []PayModel
+	}{
 		{
-			Id:              "#1",
-			Name:            "Direct Pay",
-			CurrentPayModel: true,
-			Status:          "active",
+			name:                      "NoDB",
+			want:                      defaultPayModelForTest,
+			mockConfig:                configWithNoDbTable,
+			mockCurrentPayModelFromDB: nil,
+			mockPayModelsFromDB:       nil,
+			mockDefaultPaymodel:       defaultPayModelForTest,
 		},
 		{
-			Id:              "#2",
-			Name:            "Direct Pay",
-			CurrentPayModel: false,
-			Status:          "active",
+			name: "CurrentPayModelExists",
+			want: &PayModel{
+				Id:              "#1",
+				Name:            "Direct Pay",
+				CurrentPayModel: true,
+				Status:          "active",
+			},
+			mockConfig: configWithDbTable,
+			mockCurrentPayModelFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Direct Pay",
+					CurrentPayModel: true,
+					Status:          "active",
+				},
+			},
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Direct Pay",
+					CurrentPayModel: true,
+					Status:          "active",
+				},
+				{
+					Id:              "#2",
+					Name:            "Direct Pay",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+			mockDefaultPaymodel: nil,
+		},
+		{
+			name:                      "ActiveButNotCurrentPaymodelExists",
+			want:                      nil,
+			mockConfig:                configWithDbTable,
+			mockCurrentPayModelFromDB: []PayModel{},
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Direct Pay",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+				{
+					Id:              "#2",
+					Name:            "Direct Pay",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+			mockDefaultPaymodel: nil,
+		},
+		{
+			name:                      "NeitherCurrentNorActivePaymodelExists",
+			want:                      defaultPayModelForTest,
+			mockConfig:                configWithDbTable,
+			mockCurrentPayModelFromDB: []PayModel{},
+			mockPayModelsFromDB:       []PayModel{},
+			mockDefaultPaymodel:       defaultPayModelForTest,
 		},
 	}
 
-	Config = mockConfig
-	payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
-		if current {
-			return &[]PayModel{mockPayModelsFromDBWithCurrent[0]}, nil
+	for _, testcase := range testCases {
+
+		/* Setup */
+		Config = testcase.mockConfig
+		getDefaultPayModel = func() (*PayModel, error) {
+			return testcase.mockDefaultPaymodel, nil
 		}
-		return &mockPayModelsFromDBWithCurrent, nil
-	}
-
-	/** Testing **/
-	payModel, err := getCurrentPayModel("testUser")
-	if nil != err {
-		t.Errorf("failed to load current pay model, got: %v", err)
-		return
-	}
-
-	if !reflect.DeepEqual(payModel, &mockPayModelsFromDBWithCurrent[0]) {
-		t.Errorf("assertion error: \nexpected %+v,\ngot: %+v", mockPayModelsFromDBWithCurrent[0], payModel)
-		return
-	}
-}
-
-func Test_GetCurrentPayModel_Returns_Nil_When_ActiveButNotCurrentPaymodelExists(t *testing.T) {
-	mockConfig := &FullHatcheryConfig{
-		Config: HatcheryConfig{
-			PayModelsDynamodbTable: "random_non_empty_string",
-		},
-	}
-
-	mockPayModelsFromDBNoCurrentPayModel := []PayModel{
-		{
-			Id:              "#1",
-			Name:            "Direct Pay",
-			CurrentPayModel: false,
-			Status:          "active",
-		},
-		{
-			Id:              "#2",
-			Name:            "Direct Pay",
-			CurrentPayModel: false,
-			Status:          "active",
-		},
-	}
-
-	Config = mockConfig
-	payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
-		if current {
-			return &[]PayModel{}, nil
+		payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
+			if current {
+				return &testcase.mockCurrentPayModelFromDB, nil
+			}
+			return &testcase.mockPayModelsFromDB, nil
 		}
-		return &mockPayModelsFromDBNoCurrentPayModel, nil
-	}
 
-	/** Testing **/
-	payModel, err := getCurrentPayModel("testUser")
-	if nil != err {
-		t.Errorf("failed to load current pay model, got: %v", err)
-		return
-	}
+		/* Act */
+		got, err := getCurrentPayModel("testUser")
+		if nil != err {
+			t.Errorf("failed to load current pay model, got: %v", err)
+			return
+		}
 
-	if payModel != nil {
-		t.Errorf("assertion error: \nexpected %+v,\ngot: %+v", nil, payModel)
-		return
+		/* Assert */
+		if !reflect.DeepEqual(got, testcase.want) {
+			t.Errorf("\nassertion error while testing `GetCurrentPayModel` when %s : \nWant:%+v\nGot:%+v", testcase.name, testcase.want, got)
+		}
 	}
 }
+func Test_GetPayModelsForUser(t *testing.T) {
 
-func Test_GetCurrentPayModel_Returns_DefaultPayModel_When_NeitherCurrentNorActivePaymodelExists(t *testing.T) {
-	mockConfig := &FullHatcheryConfig{
-		Config: HatcheryConfig{
-			PayModelsDynamodbTable: "random_non_empty_string",
+	testCases := []struct {
+		name                string
+		want                *AllPayModels
+		mockConfig          *FullHatcheryConfig
+		mockCurrentPayModel *PayModel
+		mockPayModelsFromDB []PayModel
+	}{
+		{
+			name: "NoDB",
+			want: &AllPayModels{
+				CurrentPayModel: defaultPayModelForTest,
+				PayModels: []PayModel{
+					*defaultPayModelForTest,
+				},
+			},
+			mockConfig:          configWithNoDbTable,
+			mockCurrentPayModel: defaultPayModelForTest,
+			mockPayModelsFromDB: nil,
+		},
+		{
+			name: "CurrentPayModelExists",
+			want: &AllPayModels{
+				CurrentPayModel: &PayModel{
+					Id:              "#1",
+					Name:            "Direct Pay",
+					CurrentPayModel: true,
+					Status:          "active",
+				},
+				PayModels: []PayModel{
+					{
+						Id:              "#1",
+						Name:            "Direct Pay",
+						CurrentPayModel: true,
+						Status:          "active",
+					},
+					{
+						Id:              "#2",
+						Name:            "Direct Pay",
+						CurrentPayModel: false,
+						Status:          "active",
+					},
+				},
+			},
+			mockConfig: configWithDbTable,
+			mockCurrentPayModel: &PayModel{
+				Id:              "#1",
+				Name:            "Direct Pay",
+				CurrentPayModel: true,
+				Status:          "active",
+			},
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Direct Pay",
+					CurrentPayModel: true,
+					Status:          "active",
+				},
+				{
+					Id:              "#2",
+					Name:            "Direct Pay",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+		},
+		{
+			name: "ActiveButNotCurrentPaymodelExists",
+			want: &AllPayModels{
+				CurrentPayModel: nil,
+				PayModels: []PayModel{
+					{
+						Id:              "#1",
+						Name:            "Direct Pay",
+						CurrentPayModel: false,
+						Status:          "active",
+					},
+					{
+						Id:              "#2",
+						Name:            "Direct Pay",
+						CurrentPayModel: false,
+						Status:          "active",
+					},
+				},
+			},
+			mockConfig:          configWithDbTable,
+			mockCurrentPayModel: nil,
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Direct Pay",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+				{
+					Id:              "#2",
+					Name:            "Direct Pay",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+		},
+		{
+			name: "NoActivePaymodelsExists",
+			want: &AllPayModels{
+				CurrentPayModel: defaultPayModelForTest,
+				PayModels: []PayModel{
+					*defaultPayModelForTest,
+				},
+			},
+			mockConfig:          configWithDbTable,
+			mockCurrentPayModel: defaultPayModelForTest,
+			mockPayModelsFromDB: []PayModel{},
 		},
 	}
 
-	var mockDefaultPaymodel *PayModel
-	_ = json.Unmarshal([]byte(`{
-		"workspace_type": "Trial Workspace",
-		"local": true
-	}`), &mockDefaultPaymodel)
+	for _, testcase := range testCases {
 
-	Config = mockConfig
-	getDefaultPayModel = func() (*PayModel, error) {
-		return mockDefaultPaymodel, nil
-	}
-	payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
-		// When there are no active or above limit pay models this function returns empty array
-		// for both when current is true or false
-		return &[]PayModel{}, nil
-	}
+		/* Setup */
+		Config = testcase.mockConfig
+		getCurrentPayModel = func(username string) (*PayModel, error) {
+			return testcase.mockCurrentPayModel, nil
+		}
+		payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
+			return &testcase.mockPayModelsFromDB, nil
+		}
 
-	/** Testing **/
-	payModel, err := getCurrentPayModel("testUser")
-	if nil != err {
-		t.Errorf("failed to load current pay model, got: %v", err)
-		return
-	}
+		/* Act */
+		got, err := getPayModelsForUser("testUser")
+		if nil != err {
+			t.Errorf("failed to load pay models for user, got: %v", err)
+			return
+		}
 
-	if !reflect.DeepEqual(payModel, mockDefaultPaymodel) {
-		t.Errorf("assertion error: \nexpected %+v,\ngot: %+v", mockDefaultPaymodel, payModel)
-		return
+		/* Assert */
+		if !reflect.DeepEqual(got, testcase.want) {
+			t.Errorf("\nassertion error while testing `GetPayModelsForUser` when %s : \nWant:\n\tCurrentPayModel: %+v,\n\tPaymodels %+v\nGot:\n\tCurrentPayModel: %+v,\n\tPaymodels %+v",
+				testcase.name, testcase.want.CurrentPayModel, testcase.want.PayModels, got.CurrentPayModel, got.PayModels)
+		}
 	}
 }
