@@ -41,6 +41,14 @@ func Test_GetCurrentPayModel(t *testing.T) {
 			mockDefaultPaymodel:       defaultPayModelForTest,
 		},
 		{
+			name:                      "NoDB_NoDefaultPaymodel",
+			want:                      nil,
+			mockConfig:                configWithNoDbTable,
+			mockCurrentPayModelFromDB: nil,
+			mockPayModelsFromDB:       nil,
+			mockDefaultPaymodel:       nil,
+		},
+		{
 			name: "CurrentPayModelExists",
 			want: &PayModel{
 				Id:              "#1",
@@ -105,7 +113,7 @@ func Test_GetCurrentPayModel(t *testing.T) {
 	}
 
 	for _, testcase := range testCases {
-
+		t.Logf("Testing GetCurrentPaymodel when %s", testcase.name)
 		/* Setup */
 		Config = testcase.mockConfig
 		getDefaultPayModel = func() (*PayModel, error) {
@@ -126,7 +134,11 @@ func Test_GetCurrentPayModel(t *testing.T) {
 		}
 
 		/* Assert */
-		if !reflect.DeepEqual(got, testcase.want) {
+		if testcase.want == nil {
+			if got != nil {
+				t.Errorf("\nassertion error while testing `GetPayModelsForUser` when %s : \nWant: %+v\nGot:%+v", testcase.name, testcase.want, got)
+			}
+		} else if !reflect.DeepEqual(got, testcase.want) {
 			t.Errorf("\nassertion error while testing `GetCurrentPayModel` when %s : \nWant:%+v\nGot:%+v", testcase.name, testcase.want, got)
 		}
 	}
@@ -150,6 +162,13 @@ func Test_GetPayModelsForUser(t *testing.T) {
 			},
 			mockConfig:          configWithNoDbTable,
 			mockCurrentPayModel: defaultPayModelForTest,
+			mockPayModelsFromDB: nil,
+		},
+		{
+			name:                "NoDB_NoDefaultPaymodel",
+			want:                nil,
+			mockConfig:          configWithNoDbTable,
+			mockCurrentPayModel: nil,
 			mockPayModelsFromDB: nil,
 		},
 		{
@@ -249,6 +268,7 @@ func Test_GetPayModelsForUser(t *testing.T) {
 	}
 
 	for _, testcase := range testCases {
+		t.Logf("Testing getPayModelsForUser when %s", testcase.name)
 
 		/* Setup */
 		Config = testcase.mockConfig
@@ -267,7 +287,11 @@ func Test_GetPayModelsForUser(t *testing.T) {
 		}
 
 		/* Assert */
-		if !reflect.DeepEqual(got, testcase.want) {
+		if testcase.want == nil {
+			if got != nil {
+				t.Errorf("\nassertion error while testing `GetPayModelsForUser` when %s : \nWant: %+v\nGot:%+v", testcase.name, testcase.want, got)
+			}
+		} else if !reflect.DeepEqual(got, testcase.want) {
 			t.Errorf("\nassertion error while testing `GetPayModelsForUser` when %s : \nWant:\n\tCurrentPayModel: %+v,\n\tPaymodels %+v\nGot:\n\tCurrentPayModel: %+v,\n\tPaymodels %+v",
 				testcase.name, testcase.want.CurrentPayModel, testcase.want.PayModels, got.CurrentPayModel, got.PayModels)
 		}
