@@ -71,7 +71,7 @@ func payModelFromConfig(userName string) (pm *PayModel, err error) {
 	return &payModel, nil
 }
 
-func getCurrentPayModel(userName string) (result *PayModel, err error) {
+var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 
 	var pm *[]PayModel
 
@@ -115,7 +115,7 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 	payModel := PayModel{}
 
 	// If exactly one current pay model is found in the database
-	payModel = (*pm)[0]
+	payModel := (*pm)[0]
 	if err != nil {
 		Config.Logger.Printf("Got error unmarshalling: %s", err)
 		return nil, err
@@ -144,26 +144,27 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 			return nil, err
 		}
 	}
-	payModel, err := getCurrentPayModel(userName)
+	currentPayModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
 	}
 
-	// If `getCurrentPayModel` returns nil,
-	// then there are no other paymodels to fallback to
-	if payModel == nil {
-		return nil, nil
+	// If payModelMap is empty and `getCurrentPayModel` returns a paymodel,
+	// Update payModelMap with it
+	if currentPayModel != nil {
+		if payModelMap == nil {
+			payModelMap = &[]PayModel{*currentPayModel}
+		} else if len(*payModelMap) == 0 {
+			*payModelMap = append(*payModelMap, *currentPayModel)
+		}
 	}
-
-	if payModelMap == nil {
-		payModelMap = &[]PayModel{*payModel}
-	} else if len(*payModelMap) == 0 {
-		*payModelMap = append(*payModelMap, *payModel)
+	if currentPayModel == nil && payModelMap == nil {
+		return nil, nil
 	}
 
 	PayModels.PayModels = *payModelMap
 
-	PayModels.CurrentPayModel = payModel
+	PayModels.CurrentPayModel = currentPayModel
 
 	return &PayModels, nil
 }
