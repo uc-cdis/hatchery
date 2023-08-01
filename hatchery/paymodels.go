@@ -112,8 +112,6 @@ var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 		return nil, fmt.Errorf("multiple current pay models set")
 	}
 
-	payModel := PayModel{}
-
 	// If exactly one current pay model is found in the database
 	payModel := (*pm)[0]
 	if err != nil {
