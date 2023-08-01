@@ -11,9 +11,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 )
 
-var ErrNopaymodels = errors.New("no paymodels found")
+var NopaymodelsError = errors.New("No paymodels found")
 
-var payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
+func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel, err error) {
 	// query pay model data for this user from DynamoDB
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
@@ -66,38 +66,25 @@ func payModelFromConfig(userName string) (pm *PayModel, err error) {
 		}
 	}
 	if (PayModel{} == payModel) {
-		return nil, ErrNopaymodels
+		return nil, NopaymodelsError
 	}
 	return &payModel, nil
 }
 
-var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
+func getCurrentPayModel(userName string) (result *PayModel, err error) {
 
 	var pm *[]PayModel
 
-	if Config != nil && Config.Config.PayModelsDynamodbTable == "" {
-		pm, err := getDefaultPayModel()
-		if err != nil {
-			return nil, nil
-		}
-		return pm, nil
+	if Config.Config.PayModelsDynamodbTable != "" {
+		// Fetch pay models from DynamoDB with current_pay_model as `true`
+		pm, err = payModelsFromDatabase(userName, true)
 	}
 
-	// Fetch pay models from DynamoDB with current_pay_model as `true`
-	pm, err = payModelsFromDatabase(userName, true)
+	payModel := PayModel{}
 
-	// If no current pay models in the DB,
-	// see if there are any active paymodels for the user
+	// If no dynamoDB or no current pay models in the DB,
+	// fallback to defaultPayModel from config
 	if pm == nil || len(*pm) == 0 {
-		activePayModels, _ := payModelsFromDatabase(userName, false)
-
-		if activePayModels != nil && len(*activePayModels) > 0 {
-			// return nil since there is no current paymodel set by the user
-			return nil, nil
-		}
-
-		// Fallback to default paymodel since
-		// there is no persistent pay model for the user yet
 		pm, err := getDefaultPayModel()
 		if err != nil {
 			return nil, nil
@@ -113,7 +100,7 @@ var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 	}
 
 	// If exactly one current pay model is found in the database
-	payModel := (*pm)[0]
+	payModel = (*pm)[0]
 	if err != nil {
 		Config.Logger.Printf("Got error unmarshalling: %s", err)
 		return nil, err
@@ -121,7 +108,7 @@ var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 	return &payModel, nil
 }
 
-var getDefaultPayModel = func() (defaultPaymodel *PayModel, err error) {
+func getDefaultPayModel() (defaultPaymodel *PayModel, err error) {
 	var pm PayModel
 	if Config.Config.DefaultPayModel == pm {
 		return nil, fmt.Errorf("no default paymodel set")
@@ -142,27 +129,26 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 			return nil, err
 		}
 	}
-	currentPayModel, err := getCurrentPayModel(userName)
+	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
 	}
 
-	// If payModelMap is empty and `getCurrentPayModel` returns a paymodel,
-	// Update payModelMap with it
-	if currentPayModel != nil {
-		if payModelMap == nil {
-			payModelMap = &[]PayModel{*currentPayModel}
-		} else if len(*payModelMap) == 0 {
-			*payModelMap = append(*payModelMap, *currentPayModel)
-		}
-	}
-	if currentPayModel == nil && payModelMap == nil {
+	// If `getCurrentPayModel` returns nil,
+	// then there are no other paymodels to fallback to
+	if payModel == nil {
 		return nil, nil
+	}
+
+	if payModelMap == nil {
+		payModelMap = &[]PayModel{*payModel}
+	} else if len(*payModelMap) == 0 {
+		*payModelMap = append(*payModelMap, *payModel)
 	}
 
 	PayModels.PayModels = *payModelMap
 
-	PayModels.CurrentPayModel = currentPayModel
+	PayModels.CurrentPayModel = payModel
 
 	return &PayModels, nil
 }
@@ -180,7 +166,7 @@ func setCurrentPaymodel(userName string, workspaceid string) (paymodel *PayModel
 	}
 	pm_config, err := payModelFromConfig(userName)
 	if err != nil {
-		if err != ErrNopaymodels {
+		if err != NopaymodelsError {
 			return nil, err
 		}
 	}
