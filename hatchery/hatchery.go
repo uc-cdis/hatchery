@@ -331,11 +331,11 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Terminated workspace for user %s", userName)
 		fmt.Fprintf(w, "Terminated workspace")
 	}
-	err = resetCurrentPaymodel(userName)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	// err = resetCurrentPaymodel(userName)
+	// if err != nil {
+	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 	return
+	// }
 }
 
 func getBearerToken(r *http.Request) string {
