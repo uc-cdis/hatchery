@@ -130,7 +130,7 @@ func status(w http.ResponseWriter, r *http.Request) {
 
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
-		if err != NopaymodelsError {
+		if err != ErrNopaymodels {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

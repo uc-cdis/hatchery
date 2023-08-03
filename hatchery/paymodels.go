@@ -11,9 +11,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 )
 
-var NopaymodelsError = errors.New("No paymodels found")
+var ErrNopaymodels = errors.New("no paymodels found")
 
-func payModelsFromDatabase(userName string, current bool) (payModels *[]PayModel, err error) {
+var payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
 	// query pay model data for this user from DynamoDB
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
@@ -66,25 +66,38 @@ func payModelFromConfig(userName string) (pm *PayModel, err error) {
 		}
 	}
 	if (PayModel{} == payModel) {
-		return nil, NopaymodelsError
+		return nil, ErrNopaymodels
 	}
 	return &payModel, nil
 }
 
-func getCurrentPayModel(userName string) (result *PayModel, err error) {
+var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 
 	var pm *[]PayModel
 
-	if Config.Config.PayModelsDynamodbTable != "" {
-		// Fetch pay models from DynamoDB with current_pay_model as `true`
-		pm, err = payModelsFromDatabase(userName, true)
+	if Config != nil && Config.Config.PayModelsDynamodbTable == "" {
+		pm, err := getDefaultPayModel()
+		if err != nil {
+			return nil, nil
+		}
+		return pm, nil
 	}
 
-	payModel := PayModel{}
+	// Fetch pay models from DynamoDB with current_pay_model as `true`
+	pm, err = payModelsFromDatabase(userName, true)
 
-	// If no dynamoDB or no current pay models in the DB,
-	// fallback to defaultPayModel from config
+	// If no current pay models in the DB,
+	// see if there are any active paymodels for the user
 	if pm == nil || len(*pm) == 0 {
+		activePayModels, _ := payModelsFromDatabase(userName, false)
+
+		if activePayModels != nil && len(*activePayModels) > 0 {
+			// return nil since there is no current paymodel set by the user
+			return nil, nil
+		}
+
+		// Fallback to default paymodel since
+		// there is no persistent pay model for the user yet
 		pm, err := getDefaultPayModel()
 		if err != nil {
 			return nil, nil
@@ -100,7 +113,7 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 	}
 
 	// If exactly one current pay model is found in the database
-	payModel = (*pm)[0]
+	payModel := (*pm)[0]
 	if err != nil {
 		Config.Logger.Printf("Got error unmarshalling: %s", err)
 		return nil, err
@@ -108,7 +121,7 @@ func getCurrentPayModel(userName string) (result *PayModel, err error) {
 	return &payModel, nil
 }
 
-func getDefaultPayModel() (defaultPaymodel *PayModel, err error) {
+var getDefaultPayModel = func() (defaultPaymodel *PayModel, err error) {
 	var pm PayModel
 	if Config.Config.DefaultPayModel == pm {
 		return nil, fmt.Errorf("no default paymodel set")
@@ -129,26 +142,27 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 			return nil, err
 		}
 	}
-	payModel, err := getCurrentPayModel(userName)
+	currentPayModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
 	}
 
-	// If `getCurrentPayModel` returns nil,
-	// then there are no other paymodels to fallback to
-	if payModel == nil {
-		return nil, nil
+	// If payModelMap is empty and `getCurrentPayModel` returns a paymodel,
+	// Update payModelMap with it
+	if currentPayModel != nil {
+		if payModelMap == nil {
+			payModelMap = &[]PayModel{*currentPayModel}
+		} else if len(*payModelMap) == 0 {
+			*payModelMap = append(*payModelMap, *currentPayModel)
+		}
 	}
-
-	if payModelMap == nil {
-		payModelMap = &[]PayModel{*payModel}
-	} else if len(*payModelMap) == 0 {
-		*payModelMap = append(*payModelMap, *payModel)
+	if currentPayModel == nil && payModelMap == nil {
+		return nil, nil
 	}
 
 	PayModels.PayModels = *payModelMap
 
-	PayModels.CurrentPayModel = payModel
+	PayModels.CurrentPayModel = currentPayModel
 
 	return &PayModels, nil
 }
@@ -166,7 +180,7 @@ func setCurrentPaymodel(userName string, workspaceid string) (paymodel *PayModel
 	}
 	pm_config, err := payModelFromConfig(userName)
 	if err != nil {
-		if err != NopaymodelsError {
+		if err != ErrNopaymodels {
 			return nil, err
 		}
 	}
@@ -188,7 +202,7 @@ func setCurrentPaymodel(userName string, workspaceid string) (paymodel *PayModel
 			return &pm, nil
 		}
 	}
-	return nil, fmt.Errorf("No paymodel with id %s found for user %s", workspaceid, userName)
+	return nil, fmt.Errorf("no paymodel with id %s found for user %s", workspaceid, userName)
 }
 
 func updateCurrentPaymodelInDB(userName string, workspaceid string, svc *dynamodb.DynamoDB) error {
