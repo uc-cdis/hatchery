@@ -340,7 +340,6 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 			{
 				"Effect": "Allow",
 				"Action": [
-					"batch:*",
 					"batch:DescribeJobDefinitions"
 				],
 				"Resource": [
