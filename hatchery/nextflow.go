@@ -326,7 +326,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
                     				"batch:Image": [
 							"nextflow/tcoffee"
                     				]
-                			},
+                			}
             			}
 
                         },
