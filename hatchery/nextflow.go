@@ -301,7 +301,6 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 					"batch:SubmitJob",
 					"batch:DescribeJobs",
 					"batch:TerminateJob",
-					"batch:DescribeJobDefinitions",
 					"batch:DeregisterJobDefinition",
 					"batch:DescribeJobQueues",
 					"batch:ListJobs",
@@ -320,20 +319,14 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
                                         "batch:RegisterJobDefinition"
                                 ],
                                 "Resource": [
-                                        "arn:aws:batch:*:*:job-definition/*"
+                                        "*"
                                 ],
             			"Condition": {
                 			"StringEquals": {
-						"batch:User": [
-                        				"nobody"
-                    				],
                     				"batch:Image": [
 							"nextflow/tcoffee"
                     				]
                 			},
-                			"Bool": {
-						"batch:Privileged": "false"
-                			}
             			}
 
                         },
