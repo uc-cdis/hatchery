@@ -129,7 +129,7 @@ var getDefaultPayModel = func() (defaultPaymodel *PayModel, err error) {
 	return &Config.Config.DefaultPayModel, nil
 }
 
-func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
+var getPayModelsForUser = func(userName string) (result *AllPayModels, err error) {
 	if userName == "" {
 		return nil, fmt.Errorf("no username sent in header")
 	}
@@ -167,7 +167,7 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 	return &PayModels, nil
 }
 
-func setCurrentPaymodel(userName string, workspaceid string) (paymodel *PayModel, err error) {
+var setCurrentPaymodel = func(userName string, workspaceid string) (paymodel *PayModel, err error) {
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
 			Region: aws.String("us-east-1"),
@@ -205,7 +205,7 @@ func setCurrentPaymodel(userName string, workspaceid string) (paymodel *PayModel
 	return nil, fmt.Errorf("no paymodel with id %s found for user %s", workspaceid, userName)
 }
 
-func resetCurrentPaymodel(userName string) error {
+var resetCurrentPaymodel = func(userName string) error {
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
 			Region: aws.String("us-east-1"),

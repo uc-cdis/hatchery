@@ -54,7 +54,7 @@ func getCurrentUserName(r *http.Request) (userName string) {
 	return r.Header.Get("REMOTE_USER")
 }
 
-func getWorkspaceStatus(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
+var getWorkspaceStatus = func(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
 
 	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
@@ -123,7 +123,7 @@ func allpaymodels(w http.ResponseWriter, r *http.Request) {
 
 func setpaymodel(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", http.StatusNotFound)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	userName := getCurrentUserName(r)
@@ -246,7 +246,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 
 func launch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", http.StatusNotFound)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	accessToken := getBearerToken(r)
@@ -259,6 +259,10 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := getCurrentUserName(r)
+	if userName == "" {
+		http.Error(w, "No username found. Launch forbidden", http.StatusBadRequest)
+		return
+	}
 	allpaymodels, err := getPayModelsForUser(userName)
 
 	if err != nil {
@@ -269,8 +273,9 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	} else {
 		payModel := allpaymodels.CurrentPayModel
 		if payModel == nil {
-			Config.Logger.Printf("Paymodel is not active. Launch forbidden for user %s", userName)
-			http.Error(w, "Paymodel is not active. Launch forbidden", http.StatusInternalServerError)
+			Config.Logger.Printf("Current Paymodel is not set. Launch forbidden for user %s", userName)
+			http.Error(w, "Current Paymodel is not set. Launch forbidden", http.StatusInternalServerError)
+			return
 		} else if payModel.Local {
 			err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
 		} else if payModel.Ecs {
@@ -304,11 +309,16 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 func terminate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", http.StatusNotFound)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
+	if userName == "" {
+		http.Error(w, "No username found. Unable to terminate", http.StatusBadRequest)
+		return
+	}
+
 	Config.Logger.Printf("Terminating workspace for user %s", userName)
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
@@ -402,7 +412,7 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 }
 
 // Function to check status of ECS workspace.
-func statusEcs(ctx context.Context, userName string, accessToken string, awsAcctID string) (*WorkspaceStatus, error) {
+var statusEcs = func(ctx context.Context, userName string, accessToken string, awsAcctID string) (*WorkspaceStatus, error) {
 	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
@@ -419,7 +429,7 @@ func statusEcs(ctx context.Context, userName string, accessToken string, awsAcct
 
 // Wrapper function to launch ECS workspace in a goroutine.
 // Terminates workspace if launch fails for whatever reason
-func launchEcsWorkspaceWrapper(userName string, hash string, accessToken string, payModel PayModel) {
+var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken string, payModel PayModel) {
 
 	err := launchEcsWorkspace(userName, hash, accessToken, payModel)
 	if err != nil {
