@@ -263,7 +263,7 @@ func podStatus(ctx context.Context, userName string, accessToken string, payMode
 	return &status, nil
 }
 
-func statusK8sPod(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) (*WorkspaceStatus, error) {
+var statusK8sPod = func(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) (*WorkspaceStatus, error) {
 	status, err := podStatus(ctx, userName, accessToken, payModelPtr)
 	if err != nil {
 		status.Status = fmt.Sprintf("%v", err)
@@ -272,7 +272,7 @@ func statusK8sPod(ctx context.Context, userName string, accessToken string, payM
 	return status, nil
 }
 
-func deleteK8sPod(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) error {
+var deleteK8sPod = func(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) error {
 	podClient, _, err := getPodClient(ctx, userName, payModelPtr)
 	if err != nil {
 		return err
@@ -288,7 +288,7 @@ func deleteK8sPod(ctx context.Context, userName string, accessToken string, payM
 	podName := userToResourceName(userName, "pod")
 	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("A workspace pod was not found: %s", err)
+		return fmt.Errorf("a workspace pod was not found: %s", err)
 	}
 	containers := pod.Spec.Containers
 	var mountedAPIKeyID string
@@ -322,7 +322,7 @@ func deleteK8sPod(ctx context.Context, userName string, accessToken string, payM
 	serviceName := userToResourceName(userName, "service")
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("A workspace service was not found: %s", err)
+		return fmt.Errorf("a workspace service was not found: %s", err)
 	}
 	fmt.Printf("Attempting to delete service %s for user %s\n", serviceName, userName)
 	err = podClient.Services(Config.Config.UserNamespace).Delete(ctx, serviceName, deleteOptions)
@@ -624,7 +624,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	return pod, nil
 }
 
-func createLocalK8sPod(ctx context.Context, hash string, userName string, accessToken string) error {
+var createLocalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string) error {
 	hatchApp := Config.ContainersMap[hash]
 	Config.Logger.Printf("Creating a Local K8s Pod")
 	var extraVars []k8sv1.EnvVar
@@ -747,7 +747,7 @@ func createLocalK8sPod(ctx context.Context, hash string, userName string, access
 	return nil
 }
 
-func createExternalK8sPod(ctx context.Context, hash string, userName string, accessToken string, payModel PayModel) error {
+var createExternalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, payModel PayModel) error {
 	hatchApp := Config.ContainersMap[hash]
 	Config.Logger.Printf("Creating a External K8s Pod")
 	podClient, err := NewEKSClientset(ctx, userName, payModel)

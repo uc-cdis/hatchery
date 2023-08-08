@@ -261,7 +261,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 
 // Terminate workspace running in ECS
 // TODO: Make this terminate ALB as well.
-func terminateEcsWorkspace(ctx context.Context, userName string, accessToken string, awsAcctID string) (string, error) {
+var terminateEcsWorkspace = func(ctx context.Context, userName string, accessToken string, awsAcctID string) (string, error) {
 	Config.Logger.Printf("Terminating ECS workspace for user %s", userName)
 	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{

@@ -129,7 +129,7 @@ var getDefaultPayModel = func() (defaultPaymodel *PayModel, err error) {
 	return &Config.Config.DefaultPayModel, nil
 }
 
-func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
+var getPayModelsForUser = func(userName string) (result *AllPayModels, err error) {
 	if userName == "" {
 		return nil, fmt.Errorf("no username sent in header")
 	}
@@ -167,7 +167,7 @@ func getPayModelsForUser(userName string) (result *AllPayModels, err error) {
 	return &PayModels, nil
 }
 
-func setCurrentPaymodel(userName string, workspaceid string) (paymodel *PayModel, err error) {
+var setCurrentPaymodel = func(userName string, workspaceid string) (paymodel *PayModel, err error) {
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
 			Region: aws.String("us-east-1"),
@@ -186,7 +186,7 @@ func setCurrentPaymodel(userName string, workspaceid string) (paymodel *PayModel
 	}
 	if pm_config != nil {
 		if pm_config.Id == workspaceid {
-			err := resetCurrentPaymodel(userName, dynamodbSvc)
+			err := resetCurrentPaymodelInDB(userName, dynamodbSvc)
 			if err != nil {
 				return nil, err
 			}
@@ -205,9 +205,20 @@ func setCurrentPaymodel(userName string, workspaceid string) (paymodel *PayModel
 	return nil, fmt.Errorf("no paymodel with id %s found for user %s", workspaceid, userName)
 }
 
+var resetCurrentPaymodel = func(userName string) error {
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: aws.Config{
+			Region: aws.String("us-east-1"),
+		},
+	}))
+	dynamodbSvc := dynamodb.New(sess)
+
+	return resetCurrentPaymodelInDB(userName, dynamodbSvc)
+}
+
 func updateCurrentPaymodelInDB(userName string, workspaceid string, svc *dynamodb.DynamoDB) error {
 	// Reset current_pay_model for all paymodels first
-	err := resetCurrentPaymodel(userName, svc)
+	err := resetCurrentPaymodelInDB(userName, svc)
 	if err != nil {
 		return err
 	}
@@ -240,7 +251,7 @@ func updateCurrentPaymodelInDB(userName string, workspaceid string, svc *dynamod
 	return nil
 }
 
-func resetCurrentPaymodel(userName string, svc *dynamodb.DynamoDB) error {
+func resetCurrentPaymodelInDB(userName string, svc *dynamodb.DynamoDB) error {
 	pm_db, err := payModelsFromDatabase(userName, false)
 	if err != nil {
 		return err
