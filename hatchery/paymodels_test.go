@@ -5,25 +5,23 @@ import (
 	"testing"
 )
 
-var configWithDbTable = &FullHatcheryConfig{
-	Config: HatcheryConfig{
-		PayModelsDynamodbTable: "random_non_empty_string",
-	},
-}
-
-var configWithNoDbTable = &FullHatcheryConfig{
-	Config: HatcheryConfig{
-		PayModelsDynamodbTable: "",
-	},
-}
-
-var defaultPayModelForTest = &PayModel{
-	Name:  "Trial Workspace",
-	Local: true,
-}
-
 func Test_GetCurrentPayModel(t *testing.T) {
+	configWithDbTable := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "random_non_empty_string",
+		},
+	}
 
+	configWithNoDbTable := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "",
+		},
+	}
+
+	defaultPayModelForTest := &PayModel{
+		Name:  "Trial Workspace",
+		Local: true,
+	}
 	testCases := []struct {
 		name                      string
 		want                      *PayModel
@@ -144,7 +142,22 @@ func Test_GetCurrentPayModel(t *testing.T) {
 	}
 }
 func Test_GetPayModelsForUser(t *testing.T) {
+	configWithDbTable := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "random_non_empty_string",
+		},
+	}
 
+	configWithNoDbTable := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "",
+		},
+	}
+
+	defaultPayModelForTest := &PayModel{
+		Name:  "Trial Workspace",
+		Local: true,
+	}
 	testCases := []struct {
 		name                string
 		want                *AllPayModels
