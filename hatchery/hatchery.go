@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
-	k8sv1 "k8s.io/api/core/v1"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	k8sv1 "k8s.io/api/core/v1"
 )
 
 // Config package-global shared hatchery config
@@ -226,13 +226,42 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing ID argument", http.StatusBadRequest)
 		return
 	}
-
 	userName := getCurrentUserName(r)
+
+	payModel, err := getCurrentPayModel(userName)
+	if err != nil {
+		Config.Logger.Printf(err.Error())
+	}
+
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar
 
 	if Config.ContainersMap[hash].EnableNextflow {
 		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
+
+		if payModel == nil {
+			Config.Logger.Printf("Current Paymodel is not set. Launch forbidden for user %s", userName)
+			http.Error(w, "Current Paymodel is not set. Launch forbidden", http.StatusInternalServerError)
+			return
+		} else if !payModel.Ecs {
+			Config.Logger.Printf("Current Paymodel does not have ECS enabled. Launch forbidden for user %s", userName)
+			http.Error(w, "Current Paymodel does not have ECS enabled. Launch forbidden", http.StatusInternalServerError)
+			return
+		}
+
+		// Verify that the user has a valid ECS cluster
+		if payModel.AWSAccountId == "" {
+			Config.Logger.Printf("Current Paymodel does not have AWSAccountId set. Launch forbidden for user %s", userName)
+			http.Error(w, "Current Paymodel does not have AWSAccountId set. Launch forbidden", http.StatusInternalServerError)
+			return
+		}
+
+		Config.Logger.Printf("Nextflow requested for user %s, with paymodel %s", userName, payModel.Name)
+
+		// return early for development purposes
+		fmt.Fprint(w, "Nextflow requested")
+		return
+
 		nextflowBucketName := os.Getenv("NEXTFLOW_BUCKET_NAME")
 		nextflowBatchComputeEnvArn := os.Getenv("NEXTFLOW_BATCH_COMPUTE_ENV_ARN")
 		nextflowKeyId, nextflowKeySecret, err := createNextflowUserResources(userName, nextflowBucketName, nextflowBatchComputeEnvArn)
@@ -261,10 +290,6 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
 
-	payModel, err := getCurrentPayModel(userName)
-	if err != nil {
-		Config.Logger.Printf(err.Error())
-	}
 	if payModel == nil || payModel.Local {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
 	} else if payModel.Ecs {

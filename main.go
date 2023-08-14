@@ -77,16 +77,7 @@ func main() {
 	hatchery.RegisterHatchery(mux)
 
 	if enableNextflow {
-		config.Logger.Printf("Info: Nextflow is enabled: creating global Nextflow resources in AWS...")
-		nextflowBucketName, nextflowBatchComputeEnvArn, err := hatchery.CreateNextflowGlobalResources()
-		if err != nil {
-			config.Logger.Printf("Unable to create global AWS resources for Nextflow")
-			return
-		}
-		os.Setenv("NEXTFLOW_BUCKET_NAME", nextflowBucketName)
-		os.Setenv("NEXTFLOW_BATCH_COMPUTE_ENV_ARN", nextflowBatchComputeEnvArn)
-	} else {
-		config.Logger.Printf("Debug: Nextflow is not enabled: skipping global Nextflow resources creation")
+		config.Logger.Printf("Info: Nextflow is enabled")
 	}
 
 	config.Logger.Printf("Running main")
