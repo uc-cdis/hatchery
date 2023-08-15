@@ -77,6 +77,7 @@ func main() {
 	hatchery.RegisterHatchery(mux)
 
 	if enableNextflow {
+		// TODO: We can probably remove this check, as this only effect launch/ terminate functions, not startup.
 		config.Logger.Printf("Info: Nextflow is enabled")
 	}
 

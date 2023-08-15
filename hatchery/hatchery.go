@@ -260,6 +260,15 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 		// return early for development purposes
 		fmt.Fprint(w, "Nextflow requested")
+
+		// Create nextflow compute environment if it does not exist
+		err := setupBatchComputeEnvironment(userName)
+		if err != nil {
+			// error log
+			Config.Logger.Printf("Error creating compute environment for user %s: %s", userName, err.Error())
+			http.Error(w, "Unable to create user's AWS resources for Nextflow", http.StatusInternalServerError)
+			return
+		}
 		return
 
 		nextflowBucketName := os.Getenv("NEXTFLOW_BUCKET_NAME")
