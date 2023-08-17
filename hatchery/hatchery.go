@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
@@ -181,6 +180,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 		MemoryLimit   string `json:"memory-limit"`
 		ID            string `json:"id"`
 		IdleTimeLimit int    `json:"idle-time-limit"`
+		Nextflow      bool   `json:"nextflow"`
 	}
 	var options []container
 	for k, v := range Config.ContainersMap {
@@ -189,6 +189,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 			CPULimit:    v.CPULimit,
 			MemoryLimit: v.MemoryLimit,
 			ID:          k,
+			Nextflow:    v.EnableNextflow,
 		}
 		c.IdleTimeLimit = -1
 		for _, arg := range v.Args {
@@ -262,30 +263,30 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Nextflow requested")
 
 		// Create nextflow compute environment if it does not exist
-		err := setupBatchComputeEnvironment(userName)
+		nextflowBatchComputeEnvArn, err := setupBatchComputeEnvironment(userName)
 		if err != nil {
 			// error log
 			Config.Logger.Printf("Error creating compute environment for user %s: %s", userName, err.Error())
 			http.Error(w, "Unable to create user's AWS resources for Nextflow", http.StatusInternalServerError)
 			return
 		}
-		return
 
-		nextflowBucketName := os.Getenv("NEXTFLOW_BUCKET_NAME")
-		nextflowBatchComputeEnvArn := os.Getenv("NEXTFLOW_BATCH_COMPUTE_ENV_ARN")
-		nextflowKeyId, nextflowKeySecret, err := createNextflowUserResources(userName, nextflowBucketName, nextflowBatchComputeEnvArn)
+		// nextflowBucketName := os.Getenv("NEXTFLOW_BUCKET_NAME")
+
+		nextflowKeyId, nextflowKeySecret, err := createNextflowUserResources(userName, *nextflowBatchComputeEnvArn)
 		if err != nil {
 			http.Error(w, "Unable to create user's AWS resources for Nextflow", http.StatusInternalServerError)
 			return
 		}
-		envVars = append(envVars, k8sv1.EnvVar{
-			Name:  "AWS_ACCESS_KEY_ID",
-			Value: nextflowKeyId,
-		})
-		envVars = append(envVars, k8sv1.EnvVar{
-			Name:  "AWS_SECRET_ACCESS_KEY",
-			Value: nextflowKeySecret,
-		})
+
+		// envVars = append(envVars, k8sv1.EnvVar{
+		// 	Name:  "AWS_ACCESS_KEY_ID",
+		// 	Value: nextflowKeyId,
+		// })
+		// envVars = append(envVars, k8sv1.EnvVar{
+		// 	Name:  "AWS_SECRET_ACCESS_KEY",
+		// 	Value: nextflowKeySecret,
+		// })
 		envVarsEcs = append(envVarsEcs, EnvVar{
 			Key:   "AWS_ACCESS_KEY_ID",
 			Value: nextflowKeyId,
@@ -295,6 +296,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			Value: nextflowKeySecret,
 		})
 		// TODO do we need to set AWS_DEFAULT_REGION too?
+		return
 	} else {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
@@ -340,17 +342,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 
 	// delete nextflow resources if any configured container has nextflow enabled (there is no way
 	// to know if the actual workspace we are terminating is a nextflow workspace or not)
-	nextflowBucketName := os.Getenv("NEXTFLOW_BUCKET_NAME")
-	if nextflowBucketName != "" {
-		Config.Logger.Printf("Info: Nextflow is enabled: deleting Nextflow resources in AWS...")
-		err := cleanUpNextflowUserResources(userName, nextflowBucketName)
-		if err != nil {
-			http.Error(w, "Unable to delete user's AWS resources for Nextflow", http.StatusInternalServerError)
-			return
-		}
-	} else {
-		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources deletion")
-	}
+	err := cleanUpNextflowUserResources(userName)
 
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {

@@ -164,10 +164,10 @@ func (creds *CREDS) CreateEcsTaskExecutionRole() (*string, error) {
 
 func createPolicyIfNotExist(iamSvc *iam.IAM, policyName string, pathPrefix *string, tags []*iam.Tag, policyDocument *string) (string, error) {
 	policyResult, err := iamSvc.CreatePolicy(&iam.CreatePolicyInput{
-		PolicyName: &policyName,
+		PolicyName:     &policyName,
 		PolicyDocument: policyDocument,
-		Path: pathPrefix, // so we can use the path later to get the policy ARN
-		Tags: tags,
+		Path:           pathPrefix, // so we can use the path later to get the policy ARN
+		Tags:           tags,
 	})
 	policyArn := ""
 	if err != nil {

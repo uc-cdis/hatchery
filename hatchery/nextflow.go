@@ -21,150 +21,49 @@ import (
 	// "github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
-const batchComputeEnvMaxvCpus = 9
-
-// create the global AWS resources required to launch nextflow workflows
-func CreateNextflowGlobalResources() (string, string, error) {
+// create the per-user AWS resources required to launch nextflow workflows
+func createNextflowUserResources(userName string, batchComputeEnvArn string) (string, string, error) {
+	// // TODO get this working with paymodels
+	// // roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
+	// // sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
+	// // 	Region: aws.String(payModel.Region),
+	// // })))
+	// // creds := stscreds.NewCredentials(sess, roleARN)
 	// sess := session.Must(session.NewSessionWithOptions(session.Options{
 	// 	Config: aws.Config{
 	// 		Region: aws.String("us-east-1"),
+	// 		// Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
 	// 	},
 	// }))
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region: aws.String("us-east-1"),
-			// Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
-		},
+	// batchSvc := batch.New(sess)
+	// iamSvc := iam.New(sess)
+
+	payModel, err := getCurrentPayModel(userName)
+	if err != nil {
+		return "", "", err
+	}
+
+	// TODO: Make this configurable
+	roleArn := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
+
+	sess := session.Must(session.NewSession(&aws.Config{
+		// TODO: Make this configurable
+		Region: aws.String("us-east-1"),
 	}))
-	batchSvc := batch.New(sess)
-	ec2Svc := ec2.New(sess)
-	s3Svc := s3.New(sess)
 
-	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
-
-	// set the tags we will use on all created resources
-	tag := fmt.Sprintf("%s--hatchery-nextflow", hostname)
-	tagsMap := map[string]*string{
-		"name": &tag,
+	creds := stscreds.NewCredentials(sess, roleArn)
+	awsConfig := aws.Config{
+		Region:      aws.String("us-east-1"),
+		Credentials: creds,
 	}
 
-	Config.Logger.Printf("Getting AWS account ID...")
-	awsAccountId, err := getAwsAccountId(sess)
-	if err != nil {
-		Config.Logger.Printf("Error getting AWS account ID: %v", err)
-		return "", "", err
-	}
-	Config.Logger.Printf("AWS account ID: %v", awsAccountId)
-
-	Config.Logger.Printf("Getting default subnets...")
-	subnetsResult, err := ec2Svc.DescribeSubnets(&ec2.DescribeSubnetsInput{
-		Filters: []*ec2.Filter{
-			{
-				Name: aws.String("default-for-az"),
-				Values: []*string{
-					aws.String("true"),
-				},
-			},
-		},
-	})
-	if err != nil {
-		Config.Logger.Printf("Error getting default subnets: %v", err)
-		return "", "", err
-	}
-	// select the 1st returned subnet
-	subnetId := *subnetsResult.Subnets[0].SubnetId
-
-	batchComputeEnvName := fmt.Sprintf("%s--nextflow-compute-env", hostname)
-	batchComputeEnvArn := ""
-	batchComputeEnvResult, err := batchSvc.CreateComputeEnvironment(&batch.CreateComputeEnvironmentInput{
-		ComputeEnvironmentName: &batchComputeEnvName,
-		// ServiceRole: "arn:aws:iam::707767160287:role/aws-service-role/batch.amazonaws.com/AWSServiceRoleForBatch",
-		// ComputeEnvironmentOrder: []*batch.ComputeEnvironmentOrder{
-		// 	{
-		// 		ComputeEnvironment: aws.String("arn:aws:batch:us-east-1:707767160287:compute-environment/nextflow-pauline-compute-env"), // TODO update
-		// 		Order: aws.Int64(int64(0)),
-		// 	},
-		// },
-		// Priority: aws.Int64(int64(0)),
-		Type: aws.String("MANAGED"), // TODO maybe using unmanaged allows users to choose the instance types? or does nextflow control that?
-		ComputeResources: &batch.ComputeResource{
-			Ec2Configuration: []*batch.Ec2Configuration{
-				{
-					ImageIdOverride: aws.String("ami-0069809e4eba54531"), // TODO generate dynamically or get from config
-					ImageType:       aws.String("ECS_AL2"),
-				},
-			},
-			InstanceRole:       aws.String(fmt.Sprintf("arn:aws:iam::%s:instance-profile/ecsInstanceRole", awsAccountId)),
-			AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
-			MinvCpus:           aws.Int64(int64(0)),
-			MaxvCpus:           aws.Int64(int64(batchComputeEnvMaxvCpus)),
-			InstanceTypes:      []*string{aws.String("optimal")},
-			SecurityGroupIds:   []*string{aws.String("sg-adf1bedf")}, // TODO
-			Subnets:            []*string{&subnetId},
-			Type:               aws.String("SPOT"), // TODO probably not - too slow
-			Tags:               tagsMap,
-		},
-		Tags: tagsMap,
-	})
-	if err != nil {
-		if strings.Contains(err.Error(), "Object already exists") {
-			Config.Logger.Printf("Debug: Batch compute environment '%s' already exists", batchComputeEnvName)
-			listComputeEnvsResult, err := batchSvc.DescribeComputeEnvironments(&batch.DescribeComputeEnvironmentsInput{
-				ComputeEnvironments: []*string{
-					&batchComputeEnvName,
-				},
-			})
-			if err != nil {
-				Config.Logger.Printf("Error getting existing compute environment '%s': %v", batchComputeEnvName, err)
-				return "", "", err
-			}
-			batchComputeEnvArn = *listComputeEnvsResult.ComputeEnvironments[0].ComputeEnvironmentArn
-		} else {
-			Config.Logger.Printf("Error creating Batch compute environment '%s': %v", batchComputeEnvName, err)
-			return "", "", err
-		}
-	} else {
-		Config.Logger.Printf("Created Batch compute environment '%s'", batchComputeEnvName)
-		batchComputeEnvArn = *batchComputeEnvResult.ComputeEnvironmentArn
-	}
-
-	bucketName := fmt.Sprintf("%s--nextflow", hostname)
-	_, err = s3Svc.CreateBucket(&s3.CreateBucketInput{
-		Bucket: &bucketName,
-		// TODO conditional LocationConstraint? this only works if not "us-east-1"?
-		// CreateBucketConfiguration: &s3.CreateBucketConfiguration{
-		// 	LocationConstraint: aws.String("us-east-1"),
-		// },
-	})
-	if err != nil {
-		Config.Logger.Printf("Error creating S3 bucket '%s': %v", bucketName, err)
-		return "", "", err
-	} else {
-		Config.Logger.Printf("Created S3 bucket '%s'", bucketName)
-	}
-
-	return bucketName, batchComputeEnvArn, nil
-}
-
-// create the per-user AWS resources required to launch nextflow workflows
-func createNextflowUserResources(userName string, bucketName string, batchComputeEnvArn string) (string, string, error) {
-	// TODO get this working with paymodels
-	// roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
-	// sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
-	// 	Region: aws.String(payModel.Region),
-	// })))
-	// creds := stscreds.NewCredentials(sess, roleARN)
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region: aws.String("us-east-1"),
-			// Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
-		},
-	}))
-	batchSvc := batch.New(sess)
-	iamSvc := iam.New(sess)
-
+	batchSvc := batch.New(sess, &awsConfig)
+	iamSvc := iam.New(sess, &awsConfig)
+	s3Svc := s3.New(sess, &awsConfig)
 	userName = escapism(userName)
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
+	bucketName := fmt.Sprintf("%s--nextflow-%s", hostname, userName)
+	Config.Logger.Print("Bucket name: ", bucketName)
 
 	// set the tags we will use on all created resources
 	// batch and iam accept different formats
@@ -180,9 +79,16 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 	}
 	pathPrefix := aws.String(fmt.Sprintf("/%s/", tag))
 
+	// Create s3 bucket
+	err = setupNextflowS3bucket(s3Svc, userName, bucketName)
+	if err != nil {
+		Config.Logger.Print("Error creating s3 bucket: ", err)
+		return "", "", err
+	}
+
 	// create AWS batch job queue
 	batchJobQueueName := fmt.Sprintf("%s--nextflow-job-queue--%s", hostname, userName)
-	_, err := batchSvc.CreateJobQueue(&batch.CreateJobQueueInput{
+	_, err = batchSvc.CreateJobQueue(&batch.CreateJobQueueInput{
 		JobQueueName: &batchJobQueueName,
 		ComputeEnvironmentOrder: []*batch.ComputeEnvironmentOrder{
 			{
@@ -399,14 +305,34 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 }
 
 // delete the per-user AWS resources created to launch nextflow workflows
-func cleanUpNextflowUserResources(userName string, bucketName string) error {
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region: aws.String("us-east-1"),
-			// Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
-		},
+func cleanUpNextflowUserResources(userName string) error {
+	// sess := session.Must(session.NewSessionWithOptions(session.Options{
+	// 	Config: aws.Config{
+	// 		Region: aws.String("us-east-1"),
+	// 		// Credentials: credentials.NewStaticCredentials(os.Getenv("AccessKeyId"), os.Getenv("SecretAccessKey"), ""),
+	// 	},
+	// }))
+
+	payModel, err := getCurrentPayModel(userName)
+	if err != nil {
+		return err
+	}
+
+	// TODO: Make this configurable
+	roleArn := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
+
+	sess := session.Must(session.NewSession(&aws.Config{
+		// TODO: Make this configurable
+		Region: aws.String("us-east-1"),
 	}))
-	iamSvc := iam.New(sess)
+
+	creds := stscreds.NewCredentials(sess, roleArn)
+	awsConfig := aws.Config{
+		Region:      aws.String("us-east-1"),
+		Credentials: creds,
+	}
+
+	iamSvc := iam.New(sess, &awsConfig)
 	// s3Svc := s3.New(sess)
 
 	userName = escapism(userName)
@@ -457,11 +383,11 @@ func cleanUpNextflowUserResources(userName string, bucketName string) error {
 }
 
 // Create AWS BATCH compute environment for the user in users account.
-func setupBatchComputeEnvironment(userName string) error {
+func setupBatchComputeEnvironment(userName string) (*string, error) {
 
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// TODO: Make this configurable
@@ -480,6 +406,7 @@ func setupBatchComputeEnvironment(userName string) error {
 
 	batchSvc := batch.New(sess, &awsConfig)
 	ec2Svc := ec2.New(sess, &awsConfig)
+	iamSvc := iam.New(sess, &awsConfig)
 	// s3Svc := s3.New(sess, &awsConfig)
 
 	// set the tags we will use on all created resources
@@ -488,20 +415,27 @@ func setupBatchComputeEnvironment(userName string) error {
 	// 	"name": &tag,
 	// }
 
+	instanceProfile, err := createEcsInstanceProfile(iamSvc, "ecsInstanceRole")
+	if err != nil {
+		return nil, err
+	}
+
+	Config.Logger.Printf("Created ECS instance profile: %v", *instanceProfile)
+
 	// hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
 	// create the VPC if it doesn't exist
 	vpcid, subnetids, err := setupNextflowVPC(ec2Svc, userName)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// create the compute environment
-	batchEnv, err := createBatchComputeEnvironment(batchSvc, *vpcid, *subnetids, userName)
+	batchEnv, err := createBatchComputeEnvironment(batchSvc, ec2Svc, *vpcid, *subnetids, userName)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	Config.Logger.Print("Created compute environment: ", batchEnv)
-	return nil
+	Config.Logger.Print("Created AWS Batch compute environment: ", &batchEnv)
+	return batchEnv, nil
 
 }
 
@@ -622,6 +556,10 @@ func setupNextflowVPC(ec2Svc *ec2.EC2, userName string) (*string, *[]string, err
 		}
 		if len(subnet.Subnets) > 0 {
 			Config.Logger.Print("Debug: Subnet already exists, skipping creation")
+			for _, subnet := range subnet.Subnets {
+				subnetIds = append(subnetIds, *subnet.SubnetId)
+				Config.Logger.Print("Debug: returning subnetid: ", *subnet.SubnetId)
+			}
 			continue
 		}
 		subnetOutput, err := ec2Svc.CreateSubnet(createSubnetInput)
@@ -630,16 +568,34 @@ func setupNextflowVPC(ec2Svc *ec2.EC2, userName string) (*string, *[]string, err
 		}
 
 		subnetIds = append(subnetIds, *subnetOutput.Subnet.SubnetId)
-
+		Config.Logger.Print("Debug: Created subnet: ", subnetOutput)
 	}
 
 	Config.Logger.Print("Debug: Nextflow VPC setup complete")
 	return &vpcid, &subnetIds, nil
 }
 
-func createBatchComputeEnvironment(batchSvc *batch.Batch, vpcID string, subnetids []string, userName string) (*string, error) {
+func createBatchComputeEnvironment(batchSvc *batch.Batch, ec2Svc *ec2.EC2, vpcID string, subnetids []string, userName string) (*string, error) {
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
-	batchComputeEnvName := fmt.Sprintf("%s--nextflow-compute-env", hostname)
+	batchComputeEnvName := fmt.Sprintf("%s-nextflow-compute-env", hostname)
+
+	// Check if batch compute env exists, if it does return it
+	descBatchComputeEnvInput := &batch.DescribeComputeEnvironmentsInput{
+		ComputeEnvironments: []*string{
+			aws.String(batchComputeEnvName),
+		},
+	}
+	batchComputeEnv, err := batchSvc.DescribeComputeEnvironments(descBatchComputeEnvInput)
+	if err != nil {
+		return nil, err
+	}
+	if len(batchComputeEnv.ComputeEnvironments) > 0 {
+		Config.Logger.Print("Debug: Batch compute environment already exists, skipping creation")
+		return batchComputeEnv.ComputeEnvironments[0].ComputeEnvironmentArn, nil
+	}
+
+	// TODO: Configurable via hatcery config
+	const batchComputeEnvMaxvCpus = 9
 
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
@@ -649,16 +605,38 @@ func createBatchComputeEnvironment(batchSvc *batch.Batch, vpcID string, subnetid
 	subnets := []*string{}
 
 	for _, subnet := range subnetids {
-		Config.Logger.Print(subnet)
-		subnets = append(subnets, &subnet)
+		s := subnet
+		Config.Logger.Print(s)
+		subnets = append(subnets, &s)
 	}
+
+	Config.Logger.Print("Debug: Creating subnets: ", subnets)
 
 	// set the tags we will use on all created resources
 	// TODO: Proper tagging strategy
-	tag := fmt.Sprintf("%s--hatchery-nextflow", hostname)
+	tag := fmt.Sprintf("%s-hatchery-nextflow", hostname)
 	tagsMap := map[string]*string{
 		"name": &tag,
 	}
+
+	// Get the deafult security group for the VPC
+	securityGroup, err := ec2Svc.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []*string{aws.String(vpcID)},
+			},
+			{
+				Name:   aws.String("group-name"),
+				Values: []*string{aws.String("default")},
+			},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	securityGroupId := securityGroup.SecurityGroups[0].GroupId
 
 	batchComputeEnvResult, err := batchSvc.CreateComputeEnvironment(&batch.CreateComputeEnvironmentInput{
 		ComputeEnvironmentName: &batchComputeEnvName,
@@ -681,9 +659,9 @@ func createBatchComputeEnvironment(batchSvc *batch.Batch, vpcID string, subnetid
 			InstanceRole:       aws.String(fmt.Sprintf("arn:aws:iam::%s:instance-profile/ecsInstanceRole", payModel.AWSAccountId)),
 			AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
 			MinvCpus:           aws.Int64(int64(0)),
-			MaxvCpus:           aws.Int64(int64(batchComputeEnvMaxvCpus)),
+			MaxvCpus:           aws.Int64(int64(batchComputeEnvMaxvCpus)), // TODO: Configurable via hatchery config?
 			InstanceTypes:      []*string{aws.String("optimal")},
-			SecurityGroupIds:   []*string{aws.String("sg-adf1bedf")}, // TODO
+			SecurityGroupIds:   []*string{securityGroupId}, // TODO
 			Subnets:            subnets,
 			Type:               aws.String("SPOT"), // TODO probably not - too slow
 			Tags:               tagsMap,
@@ -691,7 +669,103 @@ func createBatchComputeEnvironment(batchSvc *batch.Batch, vpcID string, subnetid
 		Tags: tagsMap,
 	})
 
+	if err != nil {
+		return nil, err
+	}
+
 	Config.Logger.Print("Debug: Created compute environment: ", batchComputeEnvResult)
 
-	return nil, nil
+	return batchComputeEnvResult.ComputeEnvironmentArn, nil
+}
+
+// Create IAM role for AWS Batch compute environment
+func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
+	Config.Logger.Print("Debug: Creating ECS instance profile: ", name)
+	// Define the role policy
+	rolePolicy := `{
+		"Version": "2012-10-17",
+		"Statement": [
+		  {
+			"Effect": "Allow",
+			"Principal": { "Service": "ec2.amazonaws.com"},
+			"Action": "sts:AssumeRole"
+		  }
+		]
+	  }`
+
+	// Create the IAM role
+	_, err := iamSvc.CreateRole(&iam.CreateRoleInput{
+		AssumeRolePolicyDocument: aws.String(rolePolicy),
+		RoleName:                 aws.String(name),
+	})
+	// Handle error
+	if err != nil {
+		// if role exists move on
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
+			Config.Logger.Print("Debug: Role already exists, skipping creation")
+		} else {
+			return nil, err
+		}
+
+	}
+
+	// Attach policy to the role
+	_, err = iamSvc.AttachRolePolicy(&iam.AttachRolePolicyInput{
+		PolicyArn: aws.String("arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"),
+		RoleName:  aws.String(name),
+	})
+	// Handle error
+	if err != nil {
+		return nil, err
+	}
+
+	instanceProfile, err := iamSvc.GetInstanceProfile(&iam.GetInstanceProfileInput{
+		InstanceProfileName: aws.String(name),
+	})
+
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == iam.ErrCodeNoSuchEntityException {
+			Config.Logger.Print("Debug: Instance profile does not exist, creating it now")
+			// // Instance profile doesn't exist, create it
+			instanceProfile, err := iamSvc.CreateInstanceProfile(&iam.CreateInstanceProfileInput{
+				InstanceProfileName: aws.String(name),
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return instanceProfile.InstanceProfile.Arn, nil
+		}
+		return nil, err
+	}
+
+	_, err = iamSvc.AddRoleToInstanceProfile(&iam.AddRoleToInstanceProfileInput{
+		InstanceProfileName: aws.String(name),
+		RoleName:            aws.String(name),
+	})
+
+	// Profile already exists
+	return instanceProfile.InstanceProfile.Arn, nil
+}
+
+// Create s3 bucket for user
+func setupNextflowS3bucket(s3Svc *s3.S3, userName string, bucketName string) error {
+	// create S3 bucket for nextflow-created jobs
+	_, err := s3Svc.CreateBucket(&s3.CreateBucketInput{
+		Bucket: &bucketName,
+	})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == s3.ErrCodeBucketAlreadyExists || aerr.Code() == s3.ErrCodeBucketAlreadyOwnedByYou {
+				Config.Logger.Printf("Debug: S3 bucket '%s' already exists", bucketName)
+			} else {
+				Config.Logger.Printf("Error creating S3 bucket '%s': %v", bucketName, aerr)
+				return err
+			}
+		} else {
+			Config.Logger.Printf("Error creating S3 bucket '%s': %v", bucketName, err)
+			return err
+		}
+	}
+	return nil
 }
