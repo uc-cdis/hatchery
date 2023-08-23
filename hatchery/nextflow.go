@@ -208,7 +208,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 
 	// create IAM policy for nextflow-created jobs
 	policyName := fmt.Sprintf("%s--nextflow-jobs--%s", hostname, userName)
-	nextflowJobsPolicyArn, err := createPolicyIfNotExist(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
+	nextflowJobsPolicyArn, err := createOrUpdatePolicy(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
 		"Version": "2012-10-17",
 		"Statement": [
 			{
@@ -306,7 +306,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 	delete previous versions, instead of just continuing if it already exists.
 	*/
 	policyName = fmt.Sprintf("%s--nextflow--%s", hostname, userName)
-	nextflowPolicyArn, err := createPolicyIfNotExist(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
+	nextflowPolicyArn, err := createOrUpdatePolicy(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
 		"Version": "2012-10-17",
 		"Statement": [
 			{
