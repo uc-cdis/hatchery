@@ -180,6 +180,9 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 	pathPrefix := aws.String(fmt.Sprintf("/%s/", tag))
 
 	// create AWS batch job queue
+	// NOTE: There is a limit of 50 job queues per AWS account. If we have more than 50 total nextflow
+	// users this call will fail. A solution is to delete unused job queues, but we will still be
+	// limited to 50 concurrent nextflow users.
 	batchJobQueueName := fmt.Sprintf("%s--nextflow-job-queue--%s", hostname, userName)
 	_, err := batchSvc.CreateJobQueue(&batch.CreateJobQueueInput{
 		JobQueueName: &batchJobQueueName,
@@ -291,6 +294,17 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 	}
 
 	// create IAM policy for nextflow client
+	/* Notes:
+	- `batch:DescribeComputeEnvironments` is listed as required in the Nextflow docs, but it
+	works fine without it.
+	- `batch:DescribeJobDefinitions` does not support granular authz, and "*" allows users to
+	see all the job definitions in the account. This is acceptable here because Nextflow
+	workflows should only be deployed in the user's own AWS account (direct-pay-only workspace).
+	- Access to whitelisted public buckets such as `s3://ngi-igenomes` can be added
+	TODO make allowed buckets configurable?
+	- If you update this policy, you will need to update the logic to update the IAM policy and
+	delete previous versions, instead of just continuing if it already exists.
+	*/
 	policyName = fmt.Sprintf("%s--nextflow--%s", hostname, userName)
 	nextflowPolicyArn, err := createPolicyIfNotExist(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
 		"Version": "2012-10-17",
@@ -298,27 +312,30 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 			{
 				"Effect": "Allow",
 				"Action": [
-					"batch:SubmitJob",
-					"batch:DescribeJobs",
-					"batch:TerminateJob",
-					"batch:RegisterJobDefinition",
-					"batch:DescribeJobDefinitions",
-					"batch:DeregisterJobDefinition",
-					"batch:DescribeJobQueues",
-					"batch:ListJobs",
-					"s3:*"
+					"iam:PassRole"
 				],
 				"Resource": [
-					"arn:aws:batch:*:*:job-definition/*",
-					"arn:aws:batch:*:*:job-queue/%s",
-					"arn:aws:s3:::%s",
-					"arn:aws:s3:::%s/%s/*"
+					"%s"
 				]
 			},
 			{
 				"Effect": "Allow",
 				"Action": [
-					"batch:*",
+					"batch:DescribeJobQueues",
+					"batch:ListJobs",
+					"batch:DescribeJobs",
+					"batch:SubmitJob",
+					"batch:CancelJob",
+					"batch:TerminateJob",
+					"batch:RegisterJobDefinition"
+				],
+				"Resource": [
+					"arn:aws:batch:*:*:job-queue/%s"
+				]
+			},
+			{
+				"Effect": "Allow",
+				"Action": [
 					"batch:DescribeJobDefinitions"
 				],
 				"Resource": [
@@ -328,24 +345,44 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 			{
 				"Effect": "Allow",
 				"Action": [
-					"s3:ListBucket",
-					"s3:GetObject"
+					"s3:ListBucket"
 				],
 				"Resource": [
-					"*"
+					"arn:aws:s3:::%s"
+				],
+				"Condition": {
+					"StringLike": {
+						"s3:prefix": [
+							"arn:aws:s3:::%s",
+							"arn:aws:s3:::%s/%s/*"
+						]
+					}
+				}
+			},
+			{
+				"Effect": "Allow",
+				"Action": [
+					"s3:GetObject",
+					"s3:PutObject",
+					"s3:DeleteObject"
+				],
+				"Resource": [
+					"arn:aws:s3:::%s/%s/*"
 				]
 			},
 			{
 				"Effect": "Allow",
 				"Action": [
-					"iam:PassRole"
+					"s3:GetObject",
+					"s3:ListBucket"
 				],
 				"Resource": [
-					"%s"
+					"arn:aws:s3:::ngi-igenomes",
+					"arn:aws:s3:::ngi-igenomes/*"
 				]
 			}
 		]
-	}`, batchJobQueueName, bucketName, bucketName, userName, nextflowJobsRoleArn)))
+	}`, nextflowJobsRoleArn, batchJobQueueName, bucketName, bucketName, bucketName, userName, bucketName, userName)))
 	if err != nil {
 		return "", "", err
 	}
@@ -444,8 +481,8 @@ func cleanUpNextflowUserResources(userName string, bucketName string) (error) {
 	// // 	Prefix: &objectsKey,
 	// // })
 	// objectsIter := s3manager.NewDeleteListIterator(s3Svc, &s3.ListObjectsInput{
-	// 	Bucket: aws.String("qa-ibd-planx-pla-net--nextflow"),
-	// 	Prefix: aws.String("ribeyre-40uchicago-2eedu/"),
+	// 	Bucket: aws.String("xxx--nextflow"),
+	// 	Prefix: aws.String("xxx-40uchicago-2eedu/"),
 	// })
 	// if err := s3manager.NewBatchDeleteWithClient(s3Svc).Delete(context.Background(), objectsIter); err != nil {
 	// 	Config.Logger.Printf("Unable to delete objects in bucket '%s' at '%s' - continuing: %v", bucketName, objectsKey, err)

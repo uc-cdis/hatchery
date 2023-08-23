@@ -80,7 +80,7 @@ func main() {
 		config.Logger.Printf("Info: Nextflow is enabled: creating global Nextflow resources in AWS...")
 		nextflowBucketName, nextflowBatchComputeEnvArn, err := hatchery.CreateNextflowGlobalResources()
 		if err != nil {
-			config.Logger.Printf("Unable to create global AWS resources for Nextflow")
+			config.Logger.Printf("Unable to create global AWS resources for Nextflow: %s", err)
 			return
 		}
 		os.Setenv("NEXTFLOW_BUCKET_NAME", nextflowBucketName)
