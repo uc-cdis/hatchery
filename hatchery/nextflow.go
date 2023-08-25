@@ -214,24 +214,43 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 			{
 				"Effect": "Allow",
 				"Action": [
-					"s3:*"
+					"s3:ListBucket"
 				],
 				"Resource": [
-					"arn:aws:s3:::%s",
+					"arn:aws:s3:::%s"
+				],
+				"Condition": {
+					"StringLike": {
+						"s3:prefix": [
+							"%s/*"
+						]
+					}
+				}
+			},
+			{
+				"Effect": "Allow",
+				"Action": [
+					"s3:GetObject",
+					"s3:PutObject",
+					"s3:DeleteObject"
+				],
+				"Resource": [
 					"arn:aws:s3:::%s/%s/*"
 				]
 			},
 			{
 				"Effect": "Allow",
 				"Action": [
-					"s3:GetObject"
+					"s3:GetObject",
+					"s3:ListBucket"
 				],
 				"Resource": [
-					"*"
+					"arn:aws:s3:::ngi-igenomes",
+					"arn:aws:s3:::ngi-igenomes/*"
 				]
 			}
 		]
-	}`, bucketName, bucketName, userName)))
+	}`, bucketName, userName, bucketName, userName)))
 	if err != nil {
 		return "", "", err
 	}
