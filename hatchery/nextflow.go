@@ -297,9 +297,10 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 	/* Notes:
 	- `batch:DescribeComputeEnvironments` is listed as required in the Nextflow docs, but it
 	works fine without it.
-	- `batch:DescribeJobDefinitions` does not support granular authz, and "*" allows users to
-	see all the job definitions in the account. This is acceptable here because Nextflow
-	workflows should only be deployed in the user's own AWS account (direct-pay-only workspace).
+	- `batch:DescribeJobs` and `batch:DescribeJobDefinitions` do not support granular authz,
+	and "*" allows users to see all the jobs / job definitions in the account. This is acceptable
+	here because Nextflow workflows should only be deployed in the user's own AWS account
+	(direct-pay-only workspace).
 	- Access to whitelisted public buckets such as `s3://ngi-igenomes` can be added
 	TODO make allowed buckets configurable?
 	- If you update this policy, you will need to update the logic to update the IAM policy and
@@ -323,19 +324,20 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				"Action": [
 					"batch:DescribeJobQueues",
 					"batch:ListJobs",
-					"batch:DescribeJobs",
 					"batch:SubmitJob",
 					"batch:CancelJob",
 					"batch:TerminateJob",
 					"batch:RegisterJobDefinition"
 				],
 				"Resource": [
+					"arn:aws:batch:*:*:job-definition/*",
 					"arn:aws:batch:*:*:job-queue/%s"
 				]
 			},
 			{
 				"Effect": "Allow",
 				"Action": [
+					"batch:DescribeJobs",
 					"batch:DescribeJobDefinitions"
 				],
 				"Resource": [
@@ -353,8 +355,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				"Condition": {
 					"StringLike": {
 						"s3:prefix": [
-							"arn:aws:s3:::%s",
-							"arn:aws:s3:::%s/%s/*"
+							"%s/*"
 						]
 					}
 				}
@@ -382,7 +383,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				]
 			}
 		]
-	}`, nextflowJobsRoleArn, batchJobQueueName, bucketName, bucketName, bucketName, userName, bucketName, userName)))
+	}`, nextflowJobsRoleArn, batchJobQueueName, bucketName, userName, bucketName, userName)))
 	if err != nil {
 		return "", "", err
 	}
