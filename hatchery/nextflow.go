@@ -330,6 +330,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 		"Version": "2012-10-17",
 		"Statement": [
 			{
+				"Sid": "AllowPassingNextflowJobsRole",
 				"Effect": "Allow",
 				"Action": [
 					"iam:PassRole"
@@ -339,14 +340,14 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				]
 			},
 			{
+				"Sid": "AllowBatchActionsWithGranularAuthz",
 				"Effect": "Allow",
 				"Action": [
 					"batch:DescribeJobQueues",
 					"batch:ListJobs",
 					"batch:SubmitJob",
 					"batch:CancelJob",
-					"batch:TerminateJob",
-					"batch:RegisterJobDefinition"
+					"batch:TerminateJob"
 				],
 				"Resource": [
 					"arn:aws:batch:*:*:job-definition/*",
@@ -354,6 +355,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				]
 			},
 			{
+				"Sid": "AllowBatchActionsWithoutGranularAuthz",
 				"Effect": "Allow",
 				"Action": [
 					"batch:DescribeJobs",
@@ -364,6 +366,25 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				]
 			},
 			{
+				"Sid": "AllowWhitelistedImages",
+				"Effect": "Allow",
+				"Action": [
+					"batch:RegisterJobDefinition"
+				],
+				"Resource": [
+					"arn:aws:batch:*:*:job-definition/*"
+				],
+				"Condition": {
+					"StringEquals": {
+						"batch:Image": [
+							"ubuntu",
+							"nextflow/rnaseq-nf:latest"
+						]
+					}
+				}
+			},
+			{
+				"Sid": "AllowListingBucketFolder",
 				"Effect": "Allow",
 				"Action": [
 					"s3:ListBucket"
@@ -380,6 +401,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				}
 			},
 			{
+				"Sid": "AllowManagingBucketFolder",
 				"Effect": "Allow",
 				"Action": [
 					"s3:GetObject",
@@ -391,6 +413,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				]
 			},
 			{
+				"Sid": "AllowWhitelistedBuckets",
 				"Effect": "Allow",
 				"Action": [
 					"s3:GetObject",
