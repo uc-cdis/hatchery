@@ -231,11 +231,11 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar
 
-	if Config.ContainersMap[hash].EnableNextflow {
+	if Config.ContainersMap[hash].NextflowConfig.Enabled {
 		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
 		nextflowBucketName := os.Getenv("NEXTFLOW_BUCKET_NAME")
 		nextflowBatchComputeEnvArn := os.Getenv("NEXTFLOW_BATCH_COMPUTE_ENV_ARN")
-		nextflowKeyId, nextflowKeySecret, err := createNextflowUserResources(userName, nextflowBucketName, nextflowBatchComputeEnvArn)
+		nextflowKeyId, nextflowKeySecret, err := createNextflowUserResources(userName, Config.ContainersMap[hash].NextflowConfig, nextflowBucketName, nextflowBatchComputeEnvArn)
 		if err != nil {
 			http.Error(w, "Unable to create user's AWS resources for Nextflow", http.StatusInternalServerError)
 			return

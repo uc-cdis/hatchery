@@ -18,8 +18,6 @@ import (
 )
 
 
-const batchComputeEnvMaxvCpus = 9
-
 
 // create the global AWS resources required to launch nextflow workflows
 func CreateNextflowGlobalResources() (string, string, error) {
@@ -87,18 +85,18 @@ func CreateNextflowGlobalResources() (string, string, error) {
 		ComputeResources: &batch.ComputeResource{
 			Ec2Configuration: []*batch.Ec2Configuration{
 				{
-					ImageIdOverride: aws.String("ami-0069809e4eba54531"), // TODO generate dynamically or get from config
+					ImageIdOverride: aws.String("ami-0069809e4eba54531"), //aws.String(nextflowConfig.InstanceAMI),
 					ImageType: aws.String("ECS_AL2"),
 				},
 			},
 			InstanceRole: aws.String(fmt.Sprintf("arn:aws:iam::%s:instance-profile/ecsInstanceRole", awsAccountId)),
 			AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
-			MinvCpus: aws.Int64(int64(0)),
-			MaxvCpus: aws.Int64(int64(batchComputeEnvMaxvCpus)),
+			MinvCpus: aws.Int64(int64(0)), //aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
+			MaxvCpus: aws.Int64(int64(9)), //aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
 			InstanceTypes: []*string{aws.String("optimal")},
 			SecurityGroupIds: []*string{aws.String("sg-adf1bedf")}, // TODO
 			Subnets: []*string{&subnetId},
-			Type: aws.String("SPOT"), // TODO probably not - too slow
+			Type: aws.String("SPOT"), //aws.String(nextflowConfig.InstanceType),
 			Tags: tagsMap,
 		},
 		Tags: tagsMap,
@@ -146,7 +144,7 @@ func CreateNextflowGlobalResources() (string, string, error) {
 
 
 // create the per-user AWS resources required to launch nextflow workflows
-func createNextflowUserResources(userName string, bucketName string, batchComputeEnvArn string) (string, string, error) {
+func createNextflowUserResources(userName string, nextflowConfig NextflowConfig, bucketName string, batchComputeEnvArn string) (string, string, error) {
 	// TODO get this working with paymodels
 	// roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
 	// sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
@@ -179,10 +177,12 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 	}
 	pathPrefix := aws.String(fmt.Sprintf("/%s/", tag))
 
+	jobImageWhitelist := fmt.Sprintf(`"%v"`, strings.Join(nextflowConfig.JobImageWhitelist, "\", \""))
+
 	// create AWS batch job queue
 	// NOTE: There is a limit of 50 job queues per AWS account. If we have more than 50 total nextflow
-	// users this call will fail. A solution is to delete unused job queues, but we will still be
-	// limited to 50 concurrent nextflow users.
+	// users this call will fail. A solution is to delete unused job queues, but we would still be
+	// limited to 50 concurrent nextflow users in the same account.
 	batchJobQueueName := fmt.Sprintf("%s--nextflow-job-queue--%s", hostname, userName)
 	_, err := batchSvc.CreateJobQueue(&batch.CreateJobQueueInput{
 		JobQueueName: &batchJobQueueName,
@@ -212,6 +212,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 		"Version": "2012-10-17",
 		"Statement": [
 			{
+				"Sid": "AllowListingBucketFolder",
 				"Effect": "Allow",
 				"Action": [
 					"s3:ListBucket"
@@ -228,6 +229,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				}
 			},
 			{
+				"Sid": "AllowManagingBucketFolder",
 				"Effect": "Allow",
 				"Action": [
 					"s3:GetObject",
@@ -239,6 +241,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				]
 			},
 			{
+				"Sid": "AllowWhitelistedBuckets",
 				"Effect": "Allow",
 				"Action": [
 					"s3:GetObject",
@@ -375,10 +378,9 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 					"arn:aws:batch:*:*:job-definition/*"
 				],
 				"Condition": {
-					"StringEquals": {
+					"StringLike": {
 						"batch:Image": [
-							"ubuntu",
-							"nextflow/rnaseq-nf:latest"
+							%s
 						]
 					}
 				}
@@ -425,7 +427,7 @@ func createNextflowUserResources(userName string, bucketName string, batchComput
 				]
 			}
 		]
-	}`, nextflowJobsRoleArn, batchJobQueueName, bucketName, userName, bucketName, userName)))
+	}`, nextflowJobsRoleArn, batchJobQueueName, jobImageWhitelist, bucketName, userName, bucketName, userName)))
 	if err != nil {
 		return "", "", err
 	}
@@ -493,6 +495,8 @@ func cleanUpNextflowUserResources(userName string, bucketName string) (error) {
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
 
 	// delete the user's access key
+	// TODO need to do this before starting a container too, to avoid error:
+	// `LimitExceeded: Cannot exceed quota for AccessKeysPerUser: 2`
 	nextflowUserName := fmt.Sprintf("%s--nextflow--%s", hostname, userName)
 	listAccessKeysResult, err := iamSvc.ListAccessKeys(&iam.ListAccessKeysInput{
 		UserName: &nextflowUserName,

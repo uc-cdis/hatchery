@@ -37,7 +37,19 @@ An example manifest entry may look like
       "user-volume-location": "/home/jovyan/pd",
       "gen3-volume-location": "/home/jovyan/.gen3",
       "friends": [],
-      "enable-nextflow": false,
+      "nextflow": {
+          "enabled": true,
+          "job-image-whitelist": [
+            "quay.io/cdis/*:*"
+          ],
+          "s3-bucket-whitelist": [
+            "ngi-igenomes"
+          ],
+          "instance-ami": "ami-03392f075059ae3ba",
+          "instance-type": "SPOT",
+          "instance-min-vcpus": 0,
+          "instance-max-vcpus": 9
+      }
     }]
   }
 ```
@@ -72,5 +84,9 @@ An example manifest entry may look like
     * `gen3-volume-location` the location where the user's API key file will be put into
     * `lifecycle-pre-stop` a string array as the container prestop command.
     * `lifecycle-post-start` a string array as the container poststart command.
-    * `friends` is a list of kubernetes containers to deploy alongside the main container and the sidecar in the kubernetes pod
-    * `enable-nextflow` is false by default; if true, automatically create AWS resources required to run Nextflow workflows in AWS Batch - see the [Nextflow workspaces](/doc/explanation/nextflow.md) documentation for more details
+    * `friends` is a list of kubernetes containers to deploy alongside the main container and the sidecar in the kubernetes pod.
+    * `nextflow` is for configuration specific to Nextflow containers.
+      * `enabled` is false by default; if true, automatically create AWS resources required to run Nextflow workflows in AWS Batch - see the [Nextflow workspaces](/doc/explanation/nextflow.md) documentation for more details.
+      * `job-image-whitelist` are the only images that are allowed as Nextflow workflow containers. It supports wildcards `?` for a single character and `*` for multiple characters.
+      * `s3-bucket-whitelist` are public buckets that Nextflow jobs are allowed to get data objects from.
+      * `instance-ami`, `instance-type`, `instance-min-vcpus` and `instance-max-vcpus` are AWS Batch Compute Environment settings.
