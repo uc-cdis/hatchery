@@ -259,9 +259,6 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 		Config.Logger.Printf("Nextflow requested for user %s, with paymodel %s", userName, payModel.Name)
 
-		// return early for development purposes
-		fmt.Fprint(w, "Nextflow requested")
-
 		// Create nextflow compute environment if it does not exist
 		nextflowBatchComputeEnvArn, err := setupBatchComputeEnvironment(userName)
 		if err != nil {
@@ -296,7 +293,6 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			Value: nextflowKeySecret,
 		})
 		// TODO do we need to set AWS_DEFAULT_REGION too?
-		return
 	} else {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
@@ -343,7 +339,9 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	// delete nextflow resources if any configured container has nextflow enabled (there is no way
 	// to know if the actual workspace we are terminating is a nextflow workspace or not)
 	err := cleanUpNextflowUserResources(userName)
-
+	if err != nil {
+		Config.Logger.Printf("Error cleaning up Nextflow resources for user %s: %s", userName, err.Error())
+	}
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())

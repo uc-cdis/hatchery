@@ -2,10 +2,13 @@ package hatchery
 
 import (
 	// "context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/apparentlymart/go-cidr/cidr"
 	"github.com/aws/aws-sdk-go/aws"
@@ -333,6 +336,7 @@ func cleanUpNextflowUserResources(userName string) error {
 	}
 
 	iamSvc := iam.New(sess, &awsConfig)
+	ec2Svc := ec2.New(sess, &awsConfig)
 	// s3Svc := s3.New(sess)
 
 	userName = escapism(userName)
@@ -358,6 +362,11 @@ func cleanUpNextflowUserResources(userName string) error {
 		}
 	}
 	Config.Logger.Printf("Debug: Deleted access keys for Nextflow AWS user '%s'", nextflowUserName)
+
+	err = stopSquidInstance(ec2Svc)
+	if err != nil {
+		Config.Logger.Printf("Warning: Unable to stop SQUID instance - continuing: %v", err)
+	}
 
 	// NOTE: This was disabled because researchers may need to keep the intermediary files. Instead of
 	// deleting, we could set bucket lifecycle rules to delete after X days.
@@ -449,7 +458,7 @@ func setupNextflowVPC(ec2Svc *ec2.EC2, userName string) (*string, *[]string, err
 	cidrstring := "192.168.0.0/16"
 	_, IPNet, _ := net.ParseCIDR(cidrstring)
 
-	numberOfSubnets := 4
+	numberOfSubnets := 3
 	// subnet cidr ranges in array
 	subnets := []string{}
 	subnetIds := []string{}
@@ -498,12 +507,12 @@ func setupNextflowVPC(ec2Svc *ec2.EC2, userName string) (*string, *[]string, err
 		Config.Logger.Printf("Debug: Created VPC: %v", vpc)
 
 		vpcid = *vpc.Vpc.VpcId
+	} else {
+		vpcid = *vpc.Vpcs[0].VpcId
 	}
 
-	vpcid = *vpc.Vpcs[0].VpcId
-
 	// create internet gateway
-	_, err = createInternetGW(vpcName, vpcid, ec2Svc)
+	igw, err := createInternetGW(vpcName, vpcid, ec2Svc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -513,63 +522,39 @@ func setupNextflowVPC(ec2Svc *ec2.EC2, userName string) (*string, *[]string, err
 		subnetName := fmt.Sprintf("nextflow-subnet-%d", i)
 		Config.Logger.Print("Debug: Creating subnet: ", subnet, " with name: ", subnetName)
 
-		createSubnetInput := &ec2.CreateSubnetInput{
-			CidrBlock: aws.String(subnet),
-			VpcId:     &vpcid,
-			TagSpecifications: []*ec2.TagSpecification{
-				{
-					// Name
-					ResourceType: aws.String("subnet"),
-					Tags: []*ec2.Tag{
-						{
-							Key:   aws.String("Name"),
-							Value: aws.String(subnetName),
-						},
-						{
-							Key:   aws.String("Environment"),
-							Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
-						},
-					},
-				},
-			},
-		}
-		// Check if subnet exists
-		descSubnetInput := &ec2.DescribeSubnetsInput{
-			Filters: []*ec2.Filter{
-				{
-					Name:   aws.String("cidr-block"),
-					Values: []*string{aws.String(subnet)},
-				},
-				{
-					Name:   aws.String("tag:Name"),
-					Values: []*string{aws.String(subnetName)},
-				},
-				{
-					Name:   aws.String("tag:Environment"),
-					Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
-				},
-			},
-		}
-		subnet, err := ec2Svc.DescribeSubnets(descSubnetInput)
-		if err != nil {
-			return nil, nil, err
-		}
-		if len(subnet.Subnets) > 0 {
-			Config.Logger.Print("Debug: Subnet already exists, skipping creation")
-			for _, subnet := range subnet.Subnets {
-				subnetIds = append(subnetIds, *subnet.SubnetId)
-				Config.Logger.Print("Debug: returning subnetid: ", *subnet.SubnetId)
-			}
-			continue
-		}
-		subnetOutput, err := ec2Svc.CreateSubnet(createSubnetInput)
+		subnetId, err := subnetSetup(subnetName, subnet, vpcid, ec2Svc)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		subnetIds = append(subnetIds, *subnetOutput.Subnet.SubnetId)
-		Config.Logger.Print("Debug: Created subnet: ", subnetOutput)
+		subnetIds = append(subnetIds, *subnetId)
+		Config.Logger.Print("Debug: Created subnet: ", subnetName)
 	}
+
+	// setup route table for regular subnets
+	routeTableId, err := setupRouteTables(ec2Svc, vpcid, *igw, "nextflow-rt")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// setup route table for SQUID subnet
+	fwRouteTableId, err := setupRouteTables(ec2Svc, vpcid, *igw, "nextflow-fw-rt")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// associate subnets with route table
+	err = associateRouteTablesToSubnets(ec2Svc, subnetIds, *routeTableId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// setup SQUID
+	fwSubnetId, err := setupSquid(cidrstring, ec2Svc, vpcid, igw, fwRouteTableId, routeTableId)
+	if err != nil {
+		return nil, nil, err
+	}
+	Config.Logger.Print("Debug: Created SQUID: ", &fwSubnetId)
 
 	Config.Logger.Print("Debug: Nextflow VPC setup complete")
 	return &vpcid, &subnetIds, nil
@@ -652,7 +637,7 @@ func createBatchComputeEnvironment(batchSvc *batch.Batch, ec2Svc *ec2.EC2, vpcID
 		ComputeResources: &batch.ComputeResource{
 			Ec2Configuration: []*batch.Ec2Configuration{
 				{
-					ImageIdOverride: aws.String("ami-0069809e4eba54531"), // TODO generate dynamically or get from config
+					ImageIdOverride: aws.String("ami-03392f075059ae3ba"), // TODO generate dynamically or get from config
 					ImageType:       aws.String("ECS_AL2"),
 				},
 			},
@@ -768,4 +753,594 @@ func setupNextflowS3bucket(s3Svc *s3.S3, userName string, bucketName string) err
 		}
 	}
 	return nil
+}
+
+// Function to set up squid and subnets for squid
+func setupSquid(cidrstring string, svc *ec2.EC2, vpcID string, igw *string, fwRouteTableId *string, routeTableId *string) (*string, error) {
+	_, IPNet, _ := net.ParseCIDR(cidrstring)
+	subnet, err := cidr.Subnet(IPNet, 2, 3)
+	if err != nil {
+		return nil, err
+	}
+	subnetString := subnet.String()
+
+	// create subnet
+	subnetName := "nextflow-subnet-fw"
+	Config.Logger.Print("Debug: Creating subnet: ", subnet, " with name: ", subnetName)
+
+	subnetId, err := subnetSetup(subnetName, subnetString, vpcID, svc)
+	if err != nil {
+		return nil, err
+	}
+
+	// add route to internet gateway
+	_, err = svc.CreateRoute(&ec2.CreateRouteInput{
+		DestinationCidrBlock: aws.String("0.0.0.0/0"),
+		GatewayId:            igw,
+		RouteTableId:         fwRouteTableId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	Config.Logger.Print("Debug: Created route to internet: ", igw, " in route table: ", fwRouteTableId)
+
+	// associate route table to subnet
+	_, err = svc.AssociateRouteTable(&ec2.AssociateRouteTableInput{
+		RouteTableId: fwRouteTableId,
+		SubnetId:     subnetId,
+	})
+	if err != nil {
+		return nil, err
+	}
+	Config.Logger.Print("Debug: Associated route table: ", *fwRouteTableId, " to subnet: ", *subnetId)
+
+	// launch squid
+	squidInstanceId, err := launchSquidInstance(svc, subnetId, vpcID, subnetString)
+	if err != nil {
+		return nil, err
+	}
+
+	Config.Logger.Print("Will add route to squid: ", *squidInstanceId, " in route table: ", routeTableId)
+	// add or replace route to squid
+	_, err = svc.CreateRoute(&ec2.CreateRouteInput{
+		DestinationCidrBlock: aws.String("0.0.0.0/0"),
+		InstanceId:           squidInstanceId,
+		RouteTableId:         routeTableId,
+	})
+	if err != nil {
+		// check if route already exists
+		if aerr, ok := err.(awserr.Error); ok {
+			// handle IncorrectInstanceState error
+			if aerr.Code() == "IncorrectInstanceState" {
+				Config.Logger.Print("Debug: Need to wait a little before adding route...")
+				time.Sleep(10 * time.Second)
+				_, err = svc.CreateRoute(&ec2.CreateRouteInput{
+					DestinationCidrBlock: aws.String("0.0.0.0/0"),
+					InstanceId:           squidInstanceId,
+					RouteTableId:         routeTableId,
+				})
+				if err != nil {
+					if aerr, ok := err.(awserr.Error); ok {
+						if aerr.Code() == "RouteAlreadyExists" {
+							Config.Logger.Print("Debug: Route already exists, replacing it")
+							_, err = svc.ReplaceRoute(&ec2.ReplaceRouteInput{
+								DestinationCidrBlock: aws.String("0.0.0.0/0"),
+								InstanceId:           squidInstanceId,
+								RouteTableId:         routeTableId,
+							})
+							if err != nil {
+								return nil, err
+							}
+						} else {
+							return nil, err
+						}
+					}
+					return nil, err
+				}
+			}
+
+			// if route already exists replace it
+			if aerr.Code() == "RouteAlreadyExists" {
+				Config.Logger.Print("Debug: Route already exists, replacing it")
+				_, err = svc.ReplaceRoute(&ec2.ReplaceRouteInput{
+					DestinationCidrBlock: aws.String("0.0.0.0/0"),
+					InstanceId:           squidInstanceId,
+					RouteTableId:         routeTableId,
+				})
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+	Config.Logger.Print("Debug: Created route to squid: ", *squidInstanceId, " in route table: ", routeTableId)
+
+	return subnetId, nil
+}
+
+// Generic function to create subnet, and route table
+func subnetSetup(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) (*string, error) {
+	// Check if subnet exists if not create it
+	descSubnetInput := &ec2.DescribeSubnetsInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("cidr-block"),
+				Values: []*string{aws.String(cidr)},
+			},
+			{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String(subnetName)},
+			},
+			{
+				Name:   aws.String("tag:Environment"),
+				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+			},
+		},
+	}
+	exsubnet, err := ec2Svc.DescribeSubnets(descSubnetInput)
+	if err != nil {
+		return nil, err
+	}
+	if len(exsubnet.Subnets) > 0 {
+		Config.Logger.Print("Debug: Subnet already exists, skipping creation")
+		return exsubnet.Subnets[0].SubnetId, nil
+	}
+
+	// create subnet
+	Config.Logger.Print("Debug: Creating subnet: ", cidr, " with name: ", subnetName)
+	createSubnetInput := &ec2.CreateSubnetInput{
+		CidrBlock: aws.String(cidr),
+		VpcId:     aws.String(vpcid),
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				// Name
+				ResourceType: aws.String("subnet"),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String("Name"),
+						Value: aws.String(subnetName),
+					},
+					{
+						Key:   aws.String("Environment"),
+						Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
+					},
+				},
+			},
+		},
+	}
+	sn, err := ec2Svc.CreateSubnet(createSubnetInput)
+	if err != nil {
+		return nil, err
+	}
+	Config.Logger.Print("Debug: Created subnet: ", sn.Subnet.SubnetId)
+	return sn.Subnet.SubnetId, nil
+}
+
+func setupRouteTables(svc *ec2.EC2, vpcid string, igwid string, routeTableName string) (*string, error) {
+	// Check if route table exists
+	descRouteTableInput := &ec2.DescribeRouteTablesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String(routeTableName)},
+			},
+			{
+				Name:   aws.String("tag:Environment"),
+				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+			},
+		},
+	}
+
+	exrouteTable, err := svc.DescribeRouteTables(descRouteTableInput)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(exrouteTable.RouteTables) > 0 {
+		Config.Logger.Print("Debug: Route table already exists, skipping creation")
+		return exrouteTable.RouteTables[0].RouteTableId, nil
+	}
+	createRouteTableInput := &ec2.CreateRouteTableInput{
+		VpcId: &vpcid,
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				// Name
+				ResourceType: aws.String("route-table"),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String("Name"),
+						Value: aws.String(routeTableName),
+					},
+					{
+						Key:   aws.String("Environment"),
+						Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
+					},
+				},
+			},
+		},
+	}
+	routeTable, err := svc.CreateRouteTable(createRouteTableInput)
+	if err != nil {
+		return nil, err
+	}
+	Config.Logger.Print("Debug: Created route table: ", routeTable.RouteTable.RouteTableId)
+
+	if routeTableName == "nextflow-rt-fw" {
+		// create route
+		_, err = svc.CreateRoute(&ec2.CreateRouteInput{
+			DestinationCidrBlock: aws.String("0.0.0.0/0"),
+			GatewayId:            aws.String(igwid),
+			RouteTableId:         routeTable.RouteTable.RouteTableId,
+		})
+		if err != nil {
+			return nil, err
+		}
+		Config.Logger.Print("Debug: Created route to internet: ", igwid, " in route table: ", routeTable.RouteTable.RouteTableId)
+	}
+	return routeTable.RouteTable.RouteTableId, nil
+}
+
+func associateRouteTablesToSubnets(svc *ec2.EC2, subnets []string, routeTableId string) error {
+
+	// associate route tables to subnets
+	for _, subnet := range subnets {
+		_, err := svc.AssociateRouteTable(&ec2.AssociateRouteTableInput{
+			RouteTableId: aws.String(routeTableId),
+			SubnetId:     aws.String(subnet),
+		})
+		if err != nil {
+			return err
+		}
+		Config.Logger.Print("Debug: Associated route table: ", routeTableId, " to subnet: ", subnet)
+	}
+	return nil
+}
+
+func launchSquidInstance(svc *ec2.EC2, subnetId *string, vpcId string, subnet string) (*string, error) {
+
+	// check if instance already exists, if it does start it
+	// Check that the state of existing instance is either stopped,stopping or running
+	descInstanceInput := &ec2.DescribeInstancesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("instance-state-name"),
+				Values: []*string{aws.String("stopped"), aws.String("stopping"), aws.String("running"), aws.String("pending")},
+			},
+			{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String("nextflow-squid")},
+			},
+			{
+				Name:   aws.String("tag:Environment"),
+				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+			},
+		},
+	}
+	exinstance, err := svc.DescribeInstances(descInstanceInput)
+	if err != nil {
+		return nil, err
+	}
+	if len(exinstance.Reservations) > 0 {
+		// Make sure the instance is running
+		if *exinstance.Reservations[0].Instances[0].State.Name == "running" {
+			Config.Logger.Print("Debug: Instance already exists and is running, skipping creation")
+			return exinstance.Reservations[0].Instances[0].InstanceId, nil
+		}
+
+		// do this in a loop
+		for {
+			// If the instance is stopping or pending, wait for 10 seconds and check again
+			if *exinstance.Reservations[0].Instances[0].State.Name == "stopping" || *exinstance.Reservations[0].Instances[0].State.Name == "pending" {
+				Config.Logger.Print("Debug: Instance already exists and is stopping or pending, waiting 10 seconds and checking again")
+				time.Sleep(10 * time.Second)
+				exinstance, err = svc.DescribeInstances(descInstanceInput)
+				if err != nil {
+					return nil, err
+				}
+				continue
+			}
+
+			// if state is stopped, or running move on
+			if *exinstance.Reservations[0].Instances[0].State.Name == "stopped" || *exinstance.Reservations[0].Instances[0].State.Name == "running" {
+				break
+			}
+
+		}
+		// Start the instance
+		_, err := svc.StartInstances(&ec2.StartInstancesInput{
+			InstanceIds: []*string{
+				exinstance.Reservations[0].Instances[0].InstanceId,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		Config.Logger.Print("Debug: Instance already exists, starting it now")
+		return exinstance.Reservations[0].Instances[0].InstanceId, nil
+	}
+
+	// User data script to install and run Squid
+	userData := `#!/bin/bash
+USER="ec2-user"
+USER_HOME="/home/$USER"
+CLOUD_AUTOMATION="$USER_HOME/cloud-automation"
+(
+cd $USER_HOME
+sudo yum update -y
+sudo yum install git lsof -y
+git clone https://github.com/uc-cdis/cloud-automation.git
+cd $CLOUD_AUTOMATION
+git pull
+
+chown -R $USER. $CLOUD_AUTOMATION
+cd $USER_HOME
+
+# Configure iptables
+cp ${CLOUD_AUTOMATION}/flavors/squid_auto/startup_configs/iptables-docker.conf /etc/iptables.conf
+cp ${CLOUD_AUTOMATION}/flavors/squid_auto/startup_configs/iptables-rules /etc/network/if-up.d/iptables-rules
+
+chown root: /etc/network/if-up.d/iptables-rules
+chmod 0755 /etc/network/if-up.d/iptables-rules
+
+## Enable iptables for NAT. We need this so that the proxy can be used transparently
+iptables-restore < /etc/iptables.conf
+iptables-save > /etc/sysconfig/iptables
+
+SQUID_CONFIG_DIR="/etc/squid"
+SQUID_LOGS_DIR="/var/log/squid"
+SQUID_CACHE_DIR="/var/cache/squid"
+
+###############################################################
+# Squid configuration files
+###############################################################
+mkdir -p ${SQUID_CONFIG_DIR}/ssl
+cp ${CLOUD_AUTOMATION}/files/squid_whitelist/ftp_whitelist ${SQUID_CONFIG_DIR}/ftp_whitelist
+cp ${CLOUD_AUTOMATION}/files/squid_whitelist/web_whitelist ${SQUID_CONFIG_DIR}/web_whitelist
+cp ${CLOUD_AUTOMATION}/files/squid_whitelist/web_wildcard_whitelist ${SQUID_CONFIG_DIR}/web_wildcard_whitelist
+cp ${CLOUD_AUTOMATION}/flavors/squid_auto/startup_configs/squid.conf ${SQUID_CONFIG_DIR}/squid.conf
+cp ${CLOUD_AUTOMATION}/flavors/squid_auto/startup_configs/cachemgr.conf ${SQUID_CONFIG_DIR}/cachemgr.conf
+cp ${CLOUD_AUTOMATION}/flavors/squid_auto/startup_configs/errorpage.css ${SQUID_CONFIG_DIR}/errorpage.css
+cp ${CLOUD_AUTOMATION}/flavors/squid_auto/startup_configs/mime.conf ${SQUID_CONFIG_DIR}/mime.conf
+// use a sed command to replace pid_filename xxxx to pid_filename none
+sed -i 's/pid_filename .*/pid_filename none/g' ${SQUID_CONFIG_DIR}/squid.conf
+
+
+#####################
+# for HTTPS
+#####################
+openssl genrsa -out ${SQUID_CONFIG_DIR}/ssl/squid.key 2048
+openssl req -new -key ${SQUID_CONFIG_DIR}/ssl/squid.key -out ${SQUID_CONFIG_DIR}/ssl/squid.csr -subj '/C=XX/ST=XX/L=squid/O=squid/CN=squid'
+openssl x509 -req -days 3650 -in ${SQUID_CONFIG_DIR}/ssl/squid.csr -signkey ${SQUID_CONFIG_DIR}/ssl/squid.key -out ${SQUID_CONFIG_DIR}/ssl/squid.crt
+cat ${SQUID_CONFIG_DIR}/ssl/squid.key ${SQUID_CONFIG_DIR}/ssl/squid.crt | sudo tee ${SQUID_CONFIG_DIR}/ssl/squid.pem
+mkdir -p ${SQUID_LOGS_DIR} ${SQUID_CACHE_DIR}
+chown -R nobody:nogroup ${SQUID_LOGS_DIR} ${SQUID_CACHE_DIR} ${SQUID_CONFIG_DIR}
+
+systemctl restart docker
+$(command -v docker) run --name squid --restart=always --network=host -d \
+	--volume ${SQUID_LOGS_DIR}:${SQUID_LOGS_DIR} \
+	--volume ${SQUID_CACHE_DIR}:${SQUID_CACHE_DIR} \
+	--volume ${SQUID_CONFIG_DIR}:${SQUID_CONFIG_DIR}:ro \
+	quay.io/cdis/squid:master
+
+
+) > /var/log/bootstrapping_script.log`
+
+	// Set private IP to be the 10th ip in subnet range
+	_, ipnet, _ := net.ParseCIDR(subnet)
+	privateIP := ipnet.IP
+	privateIP[3] += 10
+
+	Config.Logger.Print("Debug: Private IP: ", privateIP.String())
+
+	// Get the latest amazonlinux AMI
+	amiId, err := amazonLinuxAmi(svc)
+	if err != nil {
+		return nil, err
+	}
+
+	sgId, err := setupFwSecurityGroup(svc, &vpcId)
+	if err != nil {
+		return nil, err
+	}
+
+	// instance type
+	// TODO: configurable via hatchery config
+	instanceType := "t3.micro"
+
+	// Launch EC2 instance
+	squid, err := svc.RunInstances(&ec2.RunInstancesInput{
+		// TODO: better handling of AMI
+		ImageId:      amiId,
+		InstanceType: aws.String(instanceType),
+		MinCount:     aws.Int64(1),
+		MaxCount:     aws.Int64(1),
+		// // Network interfaces
+		NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
+			{
+				AssociatePublicIpAddress: aws.Bool(true),
+				DeviceIndex:              aws.Int64(0),
+				DeleteOnTermination:      aws.Bool(true),
+				SubnetId:                 subnetId,
+				Groups:                   []*string{sgId},
+				// PrivateIpAddress:         aws.String(privateIP.String()),
+			},
+		},
+		KeyName: aws.String("qureshi"),
+		// base64 encoded user data script
+		UserData: aws.String(base64.StdEncoding.EncodeToString([]byte(userData))),
+		// Tag name
+		TagSpecifications: []*ec2.TagSpecification{
+			{
+				// Name
+				ResourceType: aws.String("instance"),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String("Name"),
+						Value: aws.String("nextflow-squid"),
+					},
+					{
+						Key:   aws.String("Environment"),
+						Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		Config.Logger.Print("Error launching instance: ", err)
+		return nil, err
+	}
+
+	// make sure the eni has source/destionation check disabled
+	// https://docs.aws.amazon.com/vpc/latest/userguide/VPC_NAT_Instance.html#EIP_Disable_SrcDestCheck
+	_, err = svc.ModifyNetworkInterfaceAttribute(&ec2.ModifyNetworkInterfaceAttributeInput{
+		NetworkInterfaceId: squid.Instances[0].NetworkInterfaces[0].NetworkInterfaceId,
+		SourceDestCheck: &ec2.AttributeBooleanValue{
+			Value: aws.Bool(false),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	Config.Logger.Print("Debug: Launched instance")
+
+	return squid.Instances[0].InstanceId, nil
+}
+
+func stopSquidInstance(svc *ec2.EC2) error {
+	// check if instance already exists, if it does stop it and return
+	descInstanceInput := &ec2.DescribeInstancesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("instance-state-name"),
+				Values: []*string{aws.String("stopped"), aws.String("stopping"), aws.String("running"), aws.String("pending")},
+			},
+			{
+				Name:   aws.String("tag:Name"),
+				Values: []*string{aws.String("nextflow-squid")},
+			},
+			{
+				Name:   aws.String("tag:Environment"),
+				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+			},
+		},
+	}
+	exinstance, err := svc.DescribeInstances(descInstanceInput)
+	if err != nil {
+		return err
+	}
+	if len(exinstance.Reservations) > 0 {
+		// Make sure the instance is stopped
+		if *exinstance.Reservations[0].Instances[0].State.Name == "stopped" {
+			Config.Logger.Print("Debug: Instance already stopped, skipping")
+			return nil
+		}
+		// Stop the instance
+		// _, err := svc.StopInstances(&ec2.StopInstancesInput{
+		// 	InstanceIds: []*string{
+		// 		exinstance.Reservations[0].Instances[0].InstanceId,
+		// 	},
+		// })
+		// Terminate the instance
+		_, err := svc.TerminateInstances(&ec2.TerminateInstancesInput{
+			InstanceIds: []*string{
+				exinstance.Reservations[0].Instances[0].InstanceId,
+			},
+		})
+		if err != nil {
+			return err
+		}
+		Config.Logger.Print("Debug: running instance found, terminating it now")
+	}
+	return nil
+}
+
+func setupFwSecurityGroup(svc *ec2.EC2, vpcId *string) (*string, error) {
+	// create security group
+	sgName := "nextflow-sg-fw"
+
+	// Check if security group exists
+	descSecurityGroupInput := &ec2.DescribeSecurityGroupsInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("group-name"),
+				Values: []*string{aws.String(sgName)},
+			},
+			{
+				Name:   aws.String("vpc-id"),
+				Values: []*string{vpcId},
+			},
+		},
+	}
+	exsecurityGroup, err := svc.DescribeSecurityGroups(descSecurityGroupInput)
+	if err != nil {
+		return nil, err
+	}
+	if len(exsecurityGroup.SecurityGroups) > 0 {
+		Config.Logger.Print("Debug: Security group already exists, skipping creation")
+		return exsecurityGroup.SecurityGroups[0].GroupId, nil
+	}
+
+	sgDesc := "Security group for nextflow SQUID"
+	sgId, err := svc.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
+		Description: &sgDesc,
+		GroupName:   &sgName,
+		VpcId:       vpcId,
+	})
+	if err != nil {
+		Config.Logger.Print("Error creating security group: ", err)
+		return nil, err
+	}
+
+	return sgId.GroupId, nil
+}
+
+// Get latest amazonlinux ami
+func amazonLinuxAmi(svc *ec2.EC2) (*string, error) {
+	ami, err := svc.DescribeImages(&ec2.DescribeImagesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name: aws.String("name"),
+				Values: []*string{
+					aws.String("amzn2-ami-ecs-hvm-2.0.*"),
+				},
+			},
+			{
+				Name:   aws.String("architecture"),
+				Values: []*string{aws.String("x86_64")},
+			},
+		},
+		Owners: []*string{
+			aws.String("amazon"),
+		},
+	})
+	if err != nil {
+		Config.Logger.Print("Error getting latest amazonlinux AMI: ", err)
+		return nil, err
+	}
+
+	if len(ami.Images) > 0 {
+		latestImage := ami.Images[0]
+		latestTimeStamp := time.Unix(0, 0).UTC()
+
+		for _, image := range ami.Images {
+
+			creationTimeStamp, _ := time.Parse(time.RFC3339, *image.CreationDate)
+
+			if creationTimeStamp.After(latestTimeStamp) {
+				latestTimeStamp = creationTimeStamp
+				latestImage = image
+			}
+
+		}
+
+		Config.Logger.Print(latestImage)
+		return latestImage.ImageId, nil
+	}
+	return nil, errors.New("No amazonlinux AMI found")
 }
