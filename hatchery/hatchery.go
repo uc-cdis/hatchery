@@ -29,9 +29,44 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/setpaymodel", setpaymodel)
 	mux.HandleFunc("/resetpaymodels", resetPaymodels)
 	mux.HandleFunc("/allpaymodels", allpaymodels)
+	mux.HandleFunc("/cost", cost)
 
 	// ECS functions
 	mux.HandleFunc("/create-ecs-cluster", createECSCluster)
+}
+
+func cost(w http.ResponseWriter, r *http.Request) {
+	// create context for http call
+	// context, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	// defer cancel()
+
+	userName := getCurrentUserName(r)
+
+	workflowname := r.URL.Query().Get("workflowname")
+	// check if workflowname is empty
+
+	// get cost usage report
+	costUsageReport, err := getCostUsageReport(userName, workflowname)
+	if err != nil {
+		Config.Logger.Print(err)
+		// Send 500 error
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// make a return object with username and cost
+	cur, err := json.Marshal(costUsageReport)
+	if err != nil {
+		Config.Logger.Print(err)
+		// Send 500 error
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Add header indicating this is a json response
+	w.Header().Set("Content-Type", "application/json")
+
+	// return json
+	fmt.Fprint(w, string(cur))
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +129,8 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Set header to indicate it's a json response
+	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(out))
 }
 

@@ -81,6 +81,7 @@ type HatcheryConfig struct {
 	UserNamespace          string           `json:"user-namespace"`
 	DefaultPayModel        PayModel         `json:"default-pay-model"`
 	DisableLocalWS         bool             `json:"disable-local-ws"`
+	Karpenter              bool             `json:"karpenter"`
 	PayModels              []PayModel       `json:"pay-models"`
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
 	SubDir                 string           `json:"sub-dir"`

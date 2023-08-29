@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -16,6 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 
 	// AWS modules
 	"github.com/aws/aws-sdk-go/aws"
@@ -83,9 +85,25 @@ func getPodClient(ctx context.Context, userName string, payModelPtr *PayModel) (
 	}
 }
 
+func getKubeConfig() (*rest.Config, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		// Fallback to kubeconfig from .kube/config (for local testing)
+		kubeconfig := filepath.Join(os.Getenv("HOME"), ".kube", "config")
+		// Use kubeconfig
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			Config.Logger.Printf("Error creating in-cluster config: %v", err)
+			// Send 500 error
+			return nil, err
+		}
+	}
+	return config, nil
+}
+
 func getLocalPodClient() corev1.CoreV1Interface {
 	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
+	config, err := getKubeConfig()
 	config.WrapTransport = kubernetestrace.WrapRoundTripper
 	if err != nil {
 		Config.Logger.Printf("Error creating in-cluster config: %v", err)
@@ -330,6 +348,19 @@ var deleteK8sPod = func(ctx context.Context, userName string, accessToken string
 		fmt.Printf("Error occurred when deleting service: %s", err)
 	}
 
+	Config.Logger.Print("Checking if karpenter stuff needs deleted")
+	if Config.Config.Karpenter {
+		Config.Logger.Print("Attempting to delete karpenter resources")
+		config, err := getKubeConfig()
+		if err != nil {
+			return err
+		}
+		err = deleteKarpenterResources(ctx, userName, config)
+		if err != nil {
+			Config.Logger.Print("Error occurred when deleting karpenter resources")
+		}
+	}
+
 	return nil
 }
 
@@ -346,6 +377,9 @@ func userToResourceName(userName string, resourceType string) string {
 	}
 	if resourceType == "mapping" { // ambassador mapping
 		return fmt.Sprintf("%s-mapping", safeUserName)
+	}
+	if resourceType == "user" {
+		return fmt.Sprintf("user-%s", safeUserName)
 	}
 
 	return fmt.Sprintf("%s-%s", resourceType, safeUserName)
@@ -503,6 +537,17 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		})
 	}
 
+	role := "jupyter"
+	if Config.Config.Karpenter {
+		role = userToResourceName(userName, "pod")
+
+		err = createKarpenterResources(userName)
+		if err != nil {
+			Config.Logger.Print(err)
+			// Send 500 error
+			return nil, err
+		}
+	}
 	pod = &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        podName,
@@ -550,9 +595,9 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			RestartPolicy:    k8sv1.RestartPolicyNever,
 			ImagePullSecrets: []k8sv1.LocalObjectReference{},
 			NodeSelector: map[string]string{
-				"role": "jupyter",
+				"role": role,
 			},
-			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}},
+			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: role, Effect: "NoSchedule", TolerationSeconds: nil}},
 			Volumes:     volumes,
 		},
 	}
