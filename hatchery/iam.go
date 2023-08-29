@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -176,6 +177,8 @@ func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string
 		if aerr, ok := err.(awserr.Error); ok {
 			if aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
 				Config.Logger.Printf("Policy '%s' already exists. Deleting old versions and updating it...", policyName)
+
+				// find the policy's ARN
 				listPoliciesResult, err := iamSvc.ListPolicies(&iam.ListPoliciesInput{
 					PathPrefix: pathPrefix,
 				})
@@ -183,7 +186,15 @@ func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string
 					Config.Logger.Printf("Error getting existing policy '%s': %v", policyName, err)
 					return "", err
 				}
-				policyArn = *listPoliciesResult.Policies[0].Arn
+				for _, policy := range listPoliciesResult.Policies {
+					if *policy.PolicyName == policyName {
+						policyArn = *policy.Arn
+						break
+					}
+				}
+				if policyArn == "" {
+					return "", errors.New(fmt.Sprintf("Unable to find ARN for existing policy '%s'", policyName))
+				}
 
 				// there can only be up to 5 versions, so delete old versions
 				listVersionsResult, err := iamSvc.ListPolicyVersions(&iam.ListPolicyVersionsInput{
