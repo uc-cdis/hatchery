@@ -39,7 +39,7 @@ func CreateNextflowGlobalResources() (string, string, error) {
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
 
 	// set the tags we will use on all created resources
-	tag := fmt.Sprintf("%s--hatchery-nextflow", hostname)
+	tag := fmt.Sprintf("%s-hatchery-nf", hostname)
 	tagsMap := map[string]*string{
 		"name": &tag,
 	}
@@ -70,17 +70,9 @@ func CreateNextflowGlobalResources() (string, string, error) {
 	// select the 1st returned subnet
 	subnetId := *subnetsResult.Subnets[0].SubnetId
 
-	batchComputeEnvName := fmt.Sprintf("%s--nextflow-compute-env", hostname)
+	batchComputeEnvName := fmt.Sprintf("%s-nf-compute-env", hostname)
 	batchComputeEnvResult, err := batchSvc.CreateComputeEnvironment(&batch.CreateComputeEnvironmentInput{
 		ComputeEnvironmentName: &batchComputeEnvName,
-		// ServiceRole: "arn:aws:iam::707767160287:role/aws-service-role/batch.amazonaws.com/AWSServiceRoleForBatch",
-		// ComputeEnvironmentOrder: []*batch.ComputeEnvironmentOrder{
-		// 	{
-		// 		ComputeEnvironment: aws.String("arn:aws:batch:us-east-1:707767160287:compute-environment/nextflow-pauline-compute-env"), // TODO update
-		// 		Order: aws.Int64(int64(0)),
-		// 	},
-		// },
-		// Priority: aws.Int64(int64(0)),
 		Type: aws.String("MANAGED"), // TODO maybe using unmanaged allows users to choose the instance types? or does nextflow control that?
 		ComputeResources: &batch.ComputeResource{
 			Ec2Configuration: []*batch.Ec2Configuration{
@@ -124,7 +116,7 @@ func CreateNextflowGlobalResources() (string, string, error) {
 		batchComputeEnvArn = *batchComputeEnvResult.ComputeEnvironmentArn
 	}
 
-	bucketName := fmt.Sprintf("%s--nextflow", hostname)
+	bucketName := fmt.Sprintf("%s-nf", hostname)
 	_, err = s3Svc.CreateBucket(&s3.CreateBucketInput{
 		Bucket: &bucketName,
 		// TODO conditional LocationConstraint? this only works if not "us-east-1"?
@@ -165,7 +157,7 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 
 	// set the tags we will use on all created resources
 	// batch and iam accept different formats
-	tag := fmt.Sprintf("%s--hatchery-nextflow--%s", hostname, userName)
+	tag := fmt.Sprintf("%s-hatchery-nf-%s", hostname, userName)
 	tagsMap := map[string]*string{
 		"name": &tag,
 	}
@@ -183,7 +175,7 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 	// NOTE: There is a limit of 50 job queues per AWS account. If we have more than 50 total nextflow
 	// users this call will fail. A solution is to delete unused job queues, but we would still be
 	// limited to 50 concurrent nextflow users in the same account.
-	batchJobQueueName := fmt.Sprintf("%s--nextflow-job-queue--%s", hostname, userName)
+	batchJobQueueName := fmt.Sprintf("%s-nf-job-queue-%s", hostname, userName)
 	_, err := batchSvc.CreateJobQueue(&batch.CreateJobQueueInput{
 		JobQueueName: &batchJobQueueName,
 		ComputeEnvironmentOrder: []*batch.ComputeEnvironmentOrder{
@@ -207,7 +199,7 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 	}
 
 	// create IAM policy for nextflow-created jobs
-	policyName := fmt.Sprintf("%s--nextflow-jobs--%s", hostname, userName)
+	policyName := fmt.Sprintf("%s-nf-jobs-%s", hostname, userName)
 	nextflowJobsPolicyArn, err := createOrUpdatePolicy(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
 		"Version": "2012-10-17",
 		"Statement": [
@@ -328,7 +320,7 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 	- If you update this policy, you will need to update the logic to update the IAM policy and
 	delete previous versions, instead of just continuing if it already exists.
 	*/
-	policyName = fmt.Sprintf("%s--nextflow--%s", hostname, userName)
+	policyName = fmt.Sprintf("%s-nf-%s", hostname, userName)
 	nextflowPolicyArn, err := createOrUpdatePolicy(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
 		"Version": "2012-10-17",
 		"Statement": [
@@ -433,7 +425,7 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 	}
 
 	// create user for nextflow client
-	nextflowUserName := fmt.Sprintf("%s--nextflow--%s", hostname, userName)
+	nextflowUserName := fmt.Sprintf("%s-nf-%s", hostname, userName)
 	_, err = iamSvc.CreateUser(&iam.CreateUserInput{
 		UserName: &nextflowUserName,
 		Tags: tags,
@@ -497,7 +489,7 @@ func cleanUpNextflowUserResources(userName string, bucketName string) (error) {
 	// delete the user's access key
 	// TODO need to do this before starting a container too, to avoid error:
 	// `LimitExceeded: Cannot exceed quota for AccessKeysPerUser: 2`
-	nextflowUserName := fmt.Sprintf("%s--nextflow--%s", hostname, userName)
+	nextflowUserName := fmt.Sprintf("%s-nf-%s", hostname, userName)
 	listAccessKeysResult, err := iamSvc.ListAccessKeys(&iam.ListAccessKeysInput{
 		UserName: &nextflowUserName,
 	})
@@ -528,7 +520,7 @@ func cleanUpNextflowUserResources(userName string, bucketName string) (error) {
 	// // 	Prefix: &objectsKey,
 	// // })
 	// objectsIter := s3manager.NewDeleteListIterator(s3Svc, &s3.ListObjectsInput{
-	// 	Bucket: aws.String("xxx--nextflow"),
+	// 	Bucket: aws.String("xxx-nf"),
 	// 	Prefix: aws.String("xxx-40uchicago-2eedu/"),
 	// })
 	// if err := s3manager.NewBatchDeleteWithClient(s3Svc).Delete(context.Background(), objectsIter); err != nil {
