@@ -169,8 +169,6 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 	}
 	pathPrefix := aws.String(fmt.Sprintf("/%s/", tag))
 
-	jobImageWhitelist := fmt.Sprintf(`"%v"`, strings.Join(nextflowConfig.JobImageWhitelist, "\", \""))
-
 	// create AWS batch job queue
 	// NOTE: There is a limit of 50 job queues per AWS account. If we have more than 50 total nextflow
 	// users this call will fail. A solution is to delete unused job queues, but we would still be
@@ -321,6 +319,18 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 	delete previous versions, instead of just continuing if it already exists.
 	*/
 	policyName = fmt.Sprintf("%s-nf-%s", hostname, userName)
+	jobImageCondition := ""
+	if len(nextflowConfig.JobImageWhitelist) > 0 {
+		jobImageWhitelist := fmt.Sprintf(`"%v"`, strings.Join(nextflowConfig.JobImageWhitelist, "\", \""))
+		jobImageCondition = fmt.Sprintf(`,
+		"Condition": {
+			"StringLike": {
+				"batch:Image": [
+					%s
+				]
+			}
+		}`, jobImageWhitelist)
+	}
 	nextflowPolicyArn, err := createOrUpdatePolicy(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
 		"Version": "2012-10-17",
 		"Statement": [
@@ -368,14 +378,7 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 				],
 				"Resource": [
 					"arn:aws:batch:*:*:job-definition/*"
-				],
-				"Condition": {
-					"StringLike": {
-						"batch:Image": [
-							%s
-						]
-					}
-				}
+				]%s
 			},
 			{
 				"Sid": "AllowListingBucketFolder",
@@ -419,7 +422,7 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 				]
 			}
 		]
-	}`, nextflowJobsRoleArn, batchJobQueueName, jobImageWhitelist, bucketName, userName, bucketName, userName)))
+	}`, nextflowJobsRoleArn, batchJobQueueName, jobImageCondition, bucketName, userName, bucketName, userName)))
 	if err != nil {
 		return "", "", err
 	}
