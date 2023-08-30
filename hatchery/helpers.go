@@ -142,10 +142,6 @@ func getAmbassadorURL() string {
 }
 
 func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIKeyStruct, err error) {
-	// return &APIKeyStruct{ // TODO remove
-	// 	APIKey: "abc",
-	// 	KeyID: "abc",
-	// }, nil
 	if accessToken == "" {
 		return nil, errors.New("No valid access token")
 	}

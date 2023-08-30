@@ -32,6 +32,6 @@ func TestLoadConfig(t *testing.T) {
 	config.Logger.Printf("config_test marshalled config: %v", string(jsBytes))
 
 	if !enableNextflow {
-		t.Errorf("enableNextflow should be true when at least 1 container has `enable-nextflow: true`")
+		t.Errorf("enableNextflow should be true when at least 1 container has `nextflow.enabled: true`")
 	}
 }

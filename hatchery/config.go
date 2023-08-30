@@ -170,7 +170,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		hash := fmt.Sprintf("%x", md5.Sum([]byte(jsonBytes)))
 		data.ContainersMap[hash] = container
 		if !enableNextflow && container.NextflowConfig.Enabled {
-			// if at least 1 container has `enable-nextflow: true`, we create global Nextflow resources in AWS
+			// if at least 1 container has `nextflow.enabled: true`, we create global Nextflow resources in AWS
 			enableNextflow = true
 		}
 	}

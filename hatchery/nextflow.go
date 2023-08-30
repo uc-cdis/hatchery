@@ -194,9 +194,6 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 	}
 
 	// create AWS batch job queue
-	// NOTE: There is a limit of 50 job queues per AWS account. If we have more than 50 total nextflow
-	// users this call will fail. A solution is to delete unused job queues, but we would still be
-	// limited to 50 concurrent nextflow users in the same account.
 	batchJobQueueName := fmt.Sprintf("%s-nf-job-queue-%s", hostname, userName)
 	_, err := batchSvc.CreateJobQueue(&batch.CreateJobQueueInput{
 		JobQueueName: &batchJobQueueName,
@@ -319,14 +316,8 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 	}
 
 	// create IAM policy for nextflow client
-	/* Notes:
-	- `batch:DescribeComputeEnvironments` is listed as required in the Nextflow docs, but it
-	works fine without it.
-	- `batch:DescribeJobs` and `batch:DescribeJobDefinitions` do not support granular authz,
-	and "*" allows users to see all the jobs / job definitions in the account. This is acceptable
-	here because Nextflow workflows should only be deployed in the user's own AWS account
-	(direct-pay-only workspace).
-	*/
+	// Note: `batch:DescribeComputeEnvironments` is listed as required
+	// in the Nextflow docs, but it seems to work fine without it.
 	policyName = fmt.Sprintf("%s-nf-%s", hostname, userName)
 	jobImageWhitelistCondition := "" // if not configured, all images are allowed
 	if len(nextflowConfig.JobImageWhitelist) > 0 {
