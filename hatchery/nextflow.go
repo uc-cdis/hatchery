@@ -169,6 +169,30 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 	}
 	pathPrefix := aws.String(fmt.Sprintf("/%s/", tag))
 
+	s3BucketWhitelistCondition := "" // if not configured, no buckets are allowed
+	if len(nextflowConfig.JobImageWhitelist) > 0 {
+		s3BucketWhitelist := ""
+		for _, bucket := range nextflowConfig.S3BucketWhitelist{
+			Config.Logger.Printf("bucket '%s'", bucket)
+			if s3BucketWhitelist != "" {
+				s3BucketWhitelist += ", "
+			}
+			s3BucketWhitelist += fmt.Sprintf("\"arn:aws:s3:::%s\", \"arn:aws:s3:::%s/*\"", bucket, bucket)
+		}
+		s3BucketWhitelistCondition = fmt.Sprintf(`,
+		{
+			"Sid": "AllowWhitelistedBuckets",
+			"Effect": "Allow",
+			"Action": [
+				"s3:GetObject",
+				"s3:ListBucket"
+			],
+			"Resource": [
+				%s
+			]
+		}`, s3BucketWhitelist)
+	}
+
 	// create AWS batch job queue
 	// NOTE: There is a limit of 50 job queues per AWS account. If we have more than 50 total nextflow
 	// users this call will fail. A solution is to delete unused job queues, but we would still be
@@ -229,21 +253,10 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 				"Resource": [
 					"arn:aws:s3:::%s/%s/*"
 				]
-			},
-			{
-				"Sid": "AllowWhitelistedBuckets",
-				"Effect": "Allow",
-				"Action": [
-					"s3:GetObject",
-					"s3:ListBucket"
-				],
-				"Resource": [
-					"arn:aws:s3:::ngi-igenomes",
-					"arn:aws:s3:::ngi-igenomes/*"
-				]
 			}
+			%s
 		]
-	}`, bucketName, userName, bucketName, userName)))
+	}`, bucketName, userName, bucketName, userName, s3BucketWhitelistCondition)))
 	if err != nil {
 		return "", "", err
 	}
@@ -313,16 +326,12 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 	and "*" allows users to see all the jobs / job definitions in the account. This is acceptable
 	here because Nextflow workflows should only be deployed in the user's own AWS account
 	(direct-pay-only workspace).
-	- Access to whitelisted public buckets such as `s3://ngi-igenomes` can be added
-	TODO make allowed buckets configurable?
-	- If you update this policy, you will need to update the logic to update the IAM policy and
-	delete previous versions, instead of just continuing if it already exists.
 	*/
 	policyName = fmt.Sprintf("%s-nf-%s", hostname, userName)
-	jobImageCondition := ""
+	jobImageWhitelistCondition := "" // if not configured, all images are allowed
 	if len(nextflowConfig.JobImageWhitelist) > 0 {
 		jobImageWhitelist := fmt.Sprintf(`"%v"`, strings.Join(nextflowConfig.JobImageWhitelist, "\", \""))
-		jobImageCondition = fmt.Sprintf(`,
+		jobImageWhitelistCondition = fmt.Sprintf(`,
 		"Condition": {
 			"StringLike": {
 				"batch:Image": [
@@ -378,7 +387,8 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 				],
 				"Resource": [
 					"arn:aws:batch:*:*:job-definition/*"
-				]%s
+				]
+				%s
 			},
 			{
 				"Sid": "AllowListingBucketFolder",
@@ -408,21 +418,10 @@ func createNextflowUserResources(userName string, nextflowConfig NextflowConfig,
 				"Resource": [
 					"arn:aws:s3:::%s/%s/*"
 				]
-			},
-			{
-				"Sid": "AllowWhitelistedBuckets",
-				"Effect": "Allow",
-				"Action": [
-					"s3:GetObject",
-					"s3:ListBucket"
-				],
-				"Resource": [
-					"arn:aws:s3:::ngi-igenomes",
-					"arn:aws:s3:::ngi-igenomes/*"
-				]
 			}
+			%s
 		]
-	}`, nextflowJobsRoleArn, batchJobQueueName, jobImageCondition, bucketName, userName, bucketName, userName)))
+	}`, nextflowJobsRoleArn, batchJobQueueName, jobImageWhitelistCondition, bucketName, userName, bucketName, userName, s3BucketWhitelistCondition)))
 	if err != nil {
 		return "", "", err
 	}
