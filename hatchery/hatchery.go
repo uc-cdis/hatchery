@@ -179,6 +179,8 @@ func allpaymodels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Set header to indicate it's a json response
+	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(out))
 }
 
