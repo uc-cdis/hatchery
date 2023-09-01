@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -166,10 +167,10 @@ func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string
 	/* Create the policy if it does not exist. If it does, there can only be up to 5 versions, so
 	delete old versions and then update the policy. */
 	policyResult, err := iamSvc.CreatePolicy(&iam.CreatePolicyInput{
-		PolicyName: &policyName,
+		PolicyName:     &policyName,
 		PolicyDocument: policyDocument,
-		Path: pathPrefix, // so we can use the path later to get the policy ARN
-		Tags: tags,
+		Path:           pathPrefix, // so we can use the path later to get the policy ARN
+		Tags:           tags,
 	})
 	policyArn := ""
 	if err != nil {
@@ -192,7 +193,7 @@ func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string
 					}
 				}
 				if policyArn == "" {
-					return "", fmt.Errorf("Unable to find ARN for existing policy '%s'", policyName)
+					return "", errors.New(fmt.Sprintf("Unable to find ARN for existing policy '%s'", policyName))
 				}
 
 				// there can only be up to 5 versions, so delete old versions
@@ -219,9 +220,9 @@ func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string
 
 				// update the policy
 				_, err = iamSvc.CreatePolicyVersion(&iam.CreatePolicyVersionInput{
-					PolicyArn: &policyArn,
+					PolicyArn:      &policyArn,
 					PolicyDocument: policyDocument,
-					SetAsDefault: aws.Bool(true),
+					SetAsDefault:   aws.Bool(true),
 				})
 				if err != nil {
 					Config.Logger.Printf("Error updating policy '%s': %v", policyName, err)
@@ -229,7 +230,41 @@ func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string
 				}
 			} else {
 				Config.Logger.Printf("Error creating policy '%s': %v", policyName, aerr)
-				Config.Logger.Printf("Policy document: '%s'", *policyDocument)
+				return "", err
+			}
+		} else {
+			Config.Logger.Printf("Error creating policy '%s': %v", policyName, err)
+			return "", err
+		}
+	} else {
+		Config.Logger.Printf("Created policy '%s'", policyName)
+		policyArn = *policyResult.Policy.Arn
+	}
+	return policyArn, nil
+}
+
+func createPolicyIfNotExist(iamSvc *iam.IAM, policyName string, pathPrefix *string, tags []*iam.Tag, policyDocument *string) (string, error) {
+	policyResult, err := iamSvc.CreatePolicy(&iam.CreatePolicyInput{
+		PolicyName:     &policyName,
+		PolicyDocument: policyDocument,
+		Path:           pathPrefix, // so we can use the path later to get the policy ARN
+		Tags:           tags,
+	})
+	policyArn := ""
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
+				Config.Logger.Printf("Debug: policy '%s' already exists", policyName)
+				listPoliciesResult, err := iamSvc.ListPolicies(&iam.ListPoliciesInput{
+					PathPrefix: pathPrefix,
+				})
+				if err != nil {
+					Config.Logger.Printf("Error getting existing policy '%s': %v", policyName, err)
+					return "", err
+				}
+				policyArn = *listPoliciesResult.Policies[0].Arn
+			} else {
+				Config.Logger.Printf("Error creating policy '%s': %v", policyName, aerr)
 				return "", err
 			}
 		} else {

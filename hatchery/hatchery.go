@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
-	k8sv1 "k8s.io/api/core/v1"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	k8sv1 "k8s.io/api/core/v1"
 )
 
 // Config package-global shared hatchery config
@@ -237,6 +237,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		nextflowBatchComputeEnvArn := os.Getenv("NEXTFLOW_BATCH_COMPUTE_ENV_ARN")
 		nextflowKeyId, nextflowKeySecret, err := createNextflowUserResources(userName, Config.ContainersMap[hash].NextflowConfig, nextflowBucketName, nextflowBatchComputeEnvArn)
 		if err != nil {
+			Config.Logger.Printf("Error: %s", err)
 			http.Error(w, "Unable to create user's AWS resources for Nextflow", http.StatusInternalServerError)
 			return
 		}
@@ -323,7 +324,13 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf(err.Error())
 	}
 	if payModel != nil && payModel.Ecs {
-		_, err := terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
+		// delete nextflow resources if any configured container has nextflow enabled (there is no way
+		// to know if the actual workspace we are terminating is a nextflow workspace or not)
+		err := cleanUpDirectPayAWSResources(userName)
+		if err != nil {
+			Config.Logger.Printf("Error cleaning up Nextflow resources for user %s: %s", userName, err.Error())
+		}
+		_, err = terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
