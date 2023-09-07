@@ -232,14 +232,6 @@ func createKarpenterResources(userName string) error {
 }
 
 func deleteKarpenterResources(ctx context.Context, userName string, config *rest.Config) error {
-
-	// creates the in-cluster config
-	config, err := getKubeConfig()
-	if err != nil {
-		Config.Logger.Printf("Error creating kubeconfig: %v", err)
-		return err
-	}
-
 	// create dynamic client
 	client, err := dynamic.NewForConfig(config)
 	if err != nil {
