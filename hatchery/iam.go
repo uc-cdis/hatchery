@@ -1,7 +1,6 @@
 package hatchery
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -193,7 +192,7 @@ func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string
 					}
 				}
 				if policyArn == "" {
-					return "", errors.New(fmt.Sprintf("Unable to find ARN for existing policy '%s'", policyName))
+					return "", fmt.Errorf("Unable to find ARN for existing policy '%s'", policyName)
 				}
 
 				// there can only be up to 5 versions, so delete old versions
@@ -230,6 +229,7 @@ func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string
 				}
 			} else {
 				Config.Logger.Printf("Error creating policy '%s': %v", policyName, aerr)
+				Config.Logger.Printf("Policy document: '%s'", *policyDocument)
 				return "", err
 			}
 		} else {
