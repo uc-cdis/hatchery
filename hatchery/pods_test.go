@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildPodFromJSON(t *testing.T) {
-	config, _, err := LoadConfig("../testData/testConfig.json", nil)
+	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
 		t.Errorf("failed to load config, got: %v", err)
 		return
@@ -36,7 +36,7 @@ func TestBuildPodFromJSON(t *testing.T) {
 }
 
 func TestBuildPodFromDockstore(t *testing.T) {
-	config, _, err := LoadConfig("../testData/testConfig.json", nil)
+	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
 		t.Errorf("failed to load config, got: %v", err)
 		return

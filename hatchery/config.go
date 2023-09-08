@@ -118,7 +118,7 @@ type FullHatcheryConfig struct {
 }
 
 // LoadConfig from a json file
-func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatcheryConfig, enableNextflow bool, err error) {
+func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatcheryConfig, err error) {
 	logger := loggerIn
 	if nil == loggerIn {
 		logger = log.New(os.Stdout, "", log.LstdFlags)
@@ -132,7 +132,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	if nil != err {
 		cwd, _ := os.Getwd()
 		data.Logger.Printf("failed to load %v from cwd %v got - %v", configFilePath, cwd, err)
-		return data, false, err
+		return data, err
 	}
 	data.Logger.Printf("loaded config: %v", string(plan))
 	data.ContainersMap = make(map[string]Container)
@@ -142,20 +142,20 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		for _, info := range data.Config.MoreConfigs {
 			if info.AppType == "dockstore-compose:1.0.0" {
 				if info.Name == "" {
-					return nil, false, fmt.Errorf("Empty name for more-configs app at: %v", info.Path)
+					return nil, fmt.Errorf("Empty name for more-configs app at: %v", info.Path)
 				}
 				data.Logger.Printf("loading config from %v", info.Path)
 				composeModel, err := DockstoreComposeFromFile(info.Path)
 				if nil != err {
 					data.Logger.Printf("failed to load config from %v, got: %v", info.Path, err)
-					return nil, false, err
+					return nil, err
 				}
 				data.Logger.Printf("%v", composeModel)
 				hatchApp, err := composeModel.BuildHatchApp()
 				hatchApp.Name = info.Name
 				if nil != err {
 					data.Logger.Printf("failed to translate app, got: %v", err)
-					return nil, false, err
+					return nil, err
 				}
 				data.Config.Containers = append(data.Config.Containers, *hatchApp)
 			} else {
@@ -164,15 +164,10 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		}
 	}
 
-	enableNextflow = false
 	for _, container := range data.Config.Containers {
 		jsonBytes, _ := json.Marshal(container)
 		hash := fmt.Sprintf("%x", md5.Sum([]byte(jsonBytes)))
 		data.ContainersMap[hash] = container
-		if !enableNextflow && container.NextflowConfig.Enabled {
-			// if at least 1 container has `nextflow.enabled: true`, we create global Nextflow resources in AWS
-			enableNextflow = true
-		}
 	}
 
 	if data.Config.PayModelsDynamodbTable == "" {
@@ -184,5 +179,5 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.PayModelMap[user] = payModel
 	}
 
-	return data, enableNextflow, nil
+	return data, nil
 }

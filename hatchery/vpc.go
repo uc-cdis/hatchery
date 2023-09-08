@@ -228,7 +228,7 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		if err != nil {
 			return nil, err
 		}
-		route, err := svc.CreateRoute(&ec2.CreateRouteInput{
+		_, err = svc.CreateRoute(&ec2.CreateRouteInput{
 			DestinationCidrBlock: aws.String("0.0.0.0/0"),
 			GatewayId:            igw.InternetGateway.InternetGatewayId,
 			RouteTableId:         routeTable.RouteTables[0].RouteTableId,
@@ -236,7 +236,6 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 		if err != nil {
 			return nil, err
 		}
-		Config.Logger.Printf("Route: %s", route)
 		return igw.InternetGateway.InternetGatewayId, nil
 	} else {
 		if len(exIgw.InternetGateways[0].Attachments) == 0 {

@@ -628,7 +628,7 @@ func createLocalK8sPod(ctx context.Context, hash string, userName string, access
 
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
-		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
+		Config.Logger.Printf("Failed to get API key for user '%v', Error: %v", userName, err)
 		return err
 	}
 	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
@@ -759,7 +759,7 @@ func createExternalK8sPod(ctx context.Context, hash string, userName string, acc
 
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
-		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
+		Config.Logger.Printf("Failed to get API key for user '%v', Error: %v", userName, err)
 		return err
 	}
 	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
