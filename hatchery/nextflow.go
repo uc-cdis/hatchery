@@ -1067,7 +1067,6 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 
 	// Launch EC2 instance
 	squid, err := ec2svc.RunInstances(&ec2.RunInstancesInput{
-		// TODO: better handling of AMI
 		ImageId:      amiId,
 		InstanceType: aws.String(instanceType),
 		MinCount:     aws.Int64(1),
@@ -1080,7 +1079,6 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 				DeleteOnTermination:      aws.Bool(true),
 				SubnetId:                 subnetId,
 				Groups:                   []*string{sgId},
-				// PrivateIpAddress:         aws.String(privateIP.String()),
 			},
 		},
 		// base64 encoded user data script
