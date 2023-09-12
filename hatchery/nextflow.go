@@ -551,7 +551,7 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 
 	batchComputeEnvResult, err := batchSvc.CreateComputeEnvironment(&batch.CreateComputeEnvironmentInput{
 		ComputeEnvironmentName: &batchComputeEnvName,
-		Type: aws.String("MANAGED"), // TODO maybe using unmanaged allows users to choose the instance types? or does nextflow control that?
+		Type:                   aws.String("MANAGED"), // TODO maybe using unmanaged allows users to choose the instance types? or does nextflow control that?
 		ComputeResources: &batch.ComputeResource{
 			Ec2Configuration: []*batch.Ec2Configuration{
 				{
@@ -1160,6 +1160,28 @@ func setupFwSecurityGroup(hostname string, ec2svc *ec2.EC2, vpcId *string) (*str
 	})
 	if err != nil {
 		Config.Logger.Printf("Error creating security group '%s': %v", sgName, err)
+		return nil, err
+	}
+
+	// Add ingress rules
+	_, err = ec2svc.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
+		GroupId: sgId.GroupId,
+		IpPermissions: []*ec2.IpPermission{
+			{
+				FromPort:   aws.Int64(0),
+				ToPort:     aws.Int64(65535),
+				IpProtocol: aws.String("tcp"),
+				IpRanges: []*ec2.IpRange{
+					{
+						// TODO: make this configurable?
+						CidrIp: aws.String("192.168.0.0/16"),
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		Config.Logger.Print("Error adding ingress rule to security group: ", err)
 		return nil, err
 	}
 
