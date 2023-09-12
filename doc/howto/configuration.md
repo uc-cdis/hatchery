@@ -89,4 +89,4 @@ An example manifest entry may look like
       * `enabled` is false by default; if true, automatically create AWS resources required to run Nextflow workflows in AWS Batch - see the [Nextflow workspaces](/doc/explanation/nextflow.md) documentation for more details.
       * `job-image-whitelist` are the only images that are allowed as Nextflow workflow containers. It supports wildcards `?` for a single character and `*` for multiple characters. Warning: setting the whitelist as an empty list allows all images!
       * `s3-bucket-whitelist` are public buckets that Nextflow jobs are allowed to get data objects from. Access to actions "s3:GetObject" and "s3:ListBucket" for `arn:aws:s3:::<bucket>` and `arn:aws:s3:::<bucket>/*` will be granted.
-      * `instance-ami`, `instance-type`, `instance-min-vcpus` and `instance-max-vcpus` are AWS Batch Compute Environment settings.
+      * `instance-ami`, `instance-type` ("EC2", "SPOT", "FARGATE" or "FARGATE_SPOT"), `instance-min-vcpus` and `instance-max-vcpus` are AWS Batch Compute Environment settings.
