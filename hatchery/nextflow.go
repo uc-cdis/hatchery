@@ -1068,7 +1068,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 	// instance type
 	// TODO: make this configurable via hatchery config (will need to change this function to
 	// update the instance type if the instance already exists)
-	instanceType := "t3.micro"
+	instanceType := "t2.micro"
 
 	// Launch EC2 instance
 	squid, err := ec2svc.RunInstances(&ec2.RunInstancesInput{
