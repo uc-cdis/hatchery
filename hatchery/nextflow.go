@@ -69,12 +69,13 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	// same tag as the other resources, so we can't use the same tag to track
 	// costs. To use the same tag, we might need to update `vpc.go`.
 	tag := fmt.Sprintf("%s-hatchery-nf-%s", hostname, userName)
+	// TODO add more tags - ask Jawad what's needed
 	tagsMap := map[string]*string{
-		"name": &tag,
+		"Name": &tag,
 	}
 	tags := []*iam.Tag{
 		&iam.Tag{
-			Key:   aws.String("name"),
+			Key:   aws.String("Name"),
 			Value: &tag,
 		},
 	}
@@ -508,6 +509,8 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 	}
 
 	// Check if batch compute env exists, if it does return it
+	// TODO if it exists, make sure it is pointing at the correct subnets - if the VPC is deleted,
+	// we should recreate the compute environment as well because it will be pointing at old vpc subnets
 	descBatchComputeEnvInput := &batch.DescribeComputeEnvironmentsInput{
 		ComputeEnvironments: []*string{
 			aws.String(batchComputeEnvName),
@@ -644,6 +647,8 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 		InstanceProfileName: aws.String(name),
 		RoleName:            aws.String(name),
 	})
+	// TODO address this error, on every run except the 1st one:
+	// Unable to add role 'qa-ibd-planx-pla-net-nf-ecsInstanceRole' to instance profile 'qa-ibd-planx-pla-net-nf-ecsInstanceRole': LimitExceeded: Cannot exceed quota for InstanceSessionsPerInstanceProfile: 1
 	if err != nil {
 		Config.Logger.Printf("Unable to add role '%s' to instance profile '%s': %s", name, name, err.Error())
 		return nil, err
@@ -1166,7 +1171,7 @@ func getLatestAmazonLinuxAmi(ec2svc *ec2.EC2) (*string, error) {
 	ami, err := ec2svc.DescribeImages(&ec2.DescribeImagesInput{
 		Filters: []*ec2.Filter{
 			{
-				Name: aws.String("name"),
+				Name: aws.String("name"), // TODO should it be "Name"?
 				Values: []*string{
 					aws.String("amzn2-ami-ecs-hvm-2.0.*"),
 				},
