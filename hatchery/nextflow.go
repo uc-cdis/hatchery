@@ -416,7 +416,9 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 		subnets = append(subnets, subnetString)
 	}
 
-	// create VPC
+	// create the VPC
+	// The VPC is per-user because the Squid architecture would not work with multiple users sharing a VPC, as
+	// it follows the lifecycle of the workspace. Idle VPCs don’t cost anything so we can create one per user.
 	vpcName := fmt.Sprintf("%s-nf-vpc-%s", hostname, userName)
 
 	descVPCInput := &ec2.DescribeVpcsInput{
@@ -462,7 +464,7 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 
 	// create subnets
 	for i, subnet := range subnets {
-		subnetName := fmt.Sprintf("%s-nf-subnet-%d", hostname, i) // TODO does this need the username too?
+		subnetName := fmt.Sprintf("%s-nf-subnet-%s-%d", hostname, userName, i)
 		subnetId, err := setupSubnet(subnetName, subnet, vpcid, ec2Svc)
 		if err != nil {
 			return nil, nil, err
@@ -489,7 +491,7 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 	}
 
 	// setup Squid
-	fwSubnetId, err := setupSquid(hostname, cidrstring, ec2Svc, vpcid, igw, fwRouteTableId, routeTableId)
+	fwSubnetId, err := setupSquid(hostname, userName, cidrstring, ec2Svc, vpcid, igw, fwRouteTableId, routeTableId)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -502,7 +504,7 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string, payModel *PayModel, awsAccountId string, nextflowConfig NextflowConfig) (string, error) {
 	batchComputeEnvName := fmt.Sprintf("%s-nf-compute-env", hostname) // note that it's not user-specific. But the batch queue is
 
-	instanceProfileArn, err := createEcsInstanceProfile(iamSvc, fmt.Sprintf("%s-nf-ecsInstanceRole", hostname)) // TODO does this need the username too?
+	instanceProfileArn, err := createEcsInstanceProfile(iamSvc, fmt.Sprintf("%s-nf-ecsInstanceRole", hostname))
 	if err != nil {
 		Config.Logger.Printf("Unable to create ECS instance profile: %s", err.Error())
 		return "", err
@@ -649,6 +651,7 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 	})
 	// TODO address this error, on every run except the 1st one:
 	// Unable to add role 'qa-ibd-planx-pla-net-nf-ecsInstanceRole' to instance profile 'qa-ibd-planx-pla-net-nf-ecsInstanceRole': LimitExceeded: Cannot exceed quota for InstanceSessionsPerInstanceProfile: 1
+	// Not one per user because the compute env is shared - but delete role and recreate?
 	if err != nil {
 		Config.Logger.Printf("Unable to add role '%s' to instance profile '%s': %s", name, name, err.Error())
 		return nil, err
@@ -680,7 +683,7 @@ func createS3bucket(s3Svc *s3.S3, bucketName string) error {
 }
 
 // Function to set up squid and subnets for squid
-func setupSquid(hostname string, cidrstring string, ec2svc *ec2.EC2, vpcid string, igw *string, fwRouteTableId *string, routeTableId *string) (*string, error) {
+func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2.EC2, vpcid string, igw *string, fwRouteTableId *string, routeTableId *string) (*string, error) {
 	_, IPNet, _ := net.ParseCIDR(cidrstring)
 	subnet, err := cidr.Subnet(IPNet, 2, 3)
 	if err != nil {
@@ -689,7 +692,7 @@ func setupSquid(hostname string, cidrstring string, ec2svc *ec2.EC2, vpcid strin
 	subnetString := subnet.String()
 
 	// create subnet
-	subnetName := fmt.Sprintf("%s-nf-subnet-fw", hostname) // TODO does this need the username too?
+	subnetName := fmt.Sprintf("%s-nf-subnet-fw-%s", hostname, userName)
 	Config.Logger.Printf("Debug: Creating subnet '%s' with name '%s'", subnet, subnetName)
 
 	subnetId, err := setupSubnet(subnetName, subnetString, vpcid, ec2svc)
@@ -719,7 +722,7 @@ func setupSquid(hostname string, cidrstring string, ec2svc *ec2.EC2, vpcid strin
 	Config.Logger.Printf("Debug: Associated route table '%s' to subnet '%s'", *fwRouteTableId, *subnetId)
 
 	// launch squid
-	squidInstanceId, err := launchSquidInstance(hostname, ec2svc, subnetId, vpcid, subnetString)
+	squidInstanceId, err := launchSquidInstance(hostname, userName, ec2svc, subnetId, vpcid, subnetString)
 	if err != nil {
 		return nil, err
 	}
@@ -888,7 +891,7 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 	if err != nil {
 		return nil, err
 	}
-	Config.Logger.Printf("Debug: Created route table '%s'", *routeTable.RouteTable.RouteTableId)
+	Config.Logger.Printf("Debug: Created route table '%s', ID '%s'", routeTableName, *routeTable.RouteTable.RouteTableId)
 
 	if routeTableName == fmt.Sprintf("%s-nf-fw-rt-%s", hostname, userName) {
 		// create route
@@ -906,7 +909,6 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 }
 
 func associateRouteTablesToSubnets(ec2svc *ec2.EC2, subnets []string, routeTableId string) error {
-
 	// associate route tables to subnets
 	for _, subnet := range subnets {
 		_, err := ec2svc.AssociateRouteTable(&ec2.AssociateRouteTableInput{
@@ -921,7 +923,7 @@ func associateRouteTablesToSubnets(ec2svc *ec2.EC2, subnets []string, routeTable
 	return nil
 }
 
-func launchSquidInstance(hostname string, ec2svc *ec2.EC2, subnetId *string, vpcId string, subnet string) (*string, error) {
+func launchSquidInstance(hostname string, userName string, ec2svc *ec2.EC2, subnetId *string, vpcId string, subnet string) (*string, error) {
 	// check if instance already exists, if it does start it
 	// Check that the state of existing instance is either stopped,stopping or running
 	descInstanceInput := &ec2.DescribeInstancesInput{
@@ -932,7 +934,7 @@ func launchSquidInstance(hostname string, ec2svc *ec2.EC2, subnetId *string, vpc
 			},
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(fmt.Sprintf("%s-nf-squid", hostname))}, // TODO does this need the username too?
+				Values: []*string{aws.String(fmt.Sprintf("%s-nf-squid-%s", hostname, userName))},
 			},
 			{
 				Name:   aws.String("tag:Environment"),
@@ -955,7 +957,7 @@ func launchSquidInstance(hostname string, ec2svc *ec2.EC2, subnetId *string, vpc
 		for {
 			// If the instance is stopping or pending, wait for 10 seconds and check again
 			if *exinstance.Reservations[0].Instances[0].State.Name == "stopping" || *exinstance.Reservations[0].Instances[0].State.Name == "pending" {
-				Config.Logger.Print("Debug: Squid instance already exists and is stopping or pending, waiting 10 seconds and checking again")
+				Config.Logger.Print("Debug: Squid instance already exists and is stopping or pending, waiting 10s and checking again")
 				time.Sleep(10 * time.Second)
 				exinstance, err = ec2svc.DescribeInstances(descInstanceInput)
 				if err != nil {
@@ -1061,7 +1063,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 		return nil, err
 	}
 
-	sgId, err := setupFwSecurityGroup(hostname, ec2svc, &vpcId)
+	sgId, err := setupFwSecurityGroup(hostname, userName, ec2svc, &vpcId)
 	if err != nil {
 		return nil, err
 	}
@@ -1095,7 +1097,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 				Tags: []*ec2.Tag{
 					{
 						Key:   aws.String("Name"),
-						Value: aws.String(fmt.Sprintf("%s-nf-squid", hostname)), // TODO does this need the username too?
+						Value: aws.String(fmt.Sprintf("%s-nf-squid-%s", hostname, userName)),
 					},
 					{
 						Key:   aws.String("Environment"),
@@ -1127,9 +1129,9 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 	return squid.Instances[0].InstanceId, nil
 }
 
-func setupFwSecurityGroup(hostname string, ec2svc *ec2.EC2, vpcId *string) (*string, error) {
+func setupFwSecurityGroup(hostname string, userName string, ec2svc *ec2.EC2, vpcId *string) (*string, error) {
 	// create security group
-	sgName := fmt.Sprintf("%s-nf-sg-fw", hostname) // TODO does this need the username too?
+	sgName := fmt.Sprintf("%s-nf-sg-fw-%s", hostname, userName)
 
 	// Check if security group exists
 	descSecurityGroupInput := &ec2.DescribeSecurityGroupsInput{
@@ -1296,7 +1298,7 @@ func cleanUpNextflowResources(userName string) error {
 	}
 	Config.Logger.Printf("Debug: Deleted access keys for Nextflow AWS user '%s'", nextflowUserName)
 
-	err = stopSquidInstance(hostname, ec2Svc)
+	err = stopSquidInstance(hostname, userName, ec2Svc)
 	if err != nil {
 		Config.Logger.Printf("Warning: Unable to stop Squid instance - continuing: %v", err)
 	}
@@ -1325,7 +1327,7 @@ func cleanUpNextflowResources(userName string) error {
 	return nil
 }
 
-func stopSquidInstance(hostname string, ec2svc *ec2.EC2) error {
+func stopSquidInstance(hostname string, userName string, ec2svc *ec2.EC2) error {
 	// check if instance already exists, if it does stop it and return
 	descInstanceInput := &ec2.DescribeInstancesInput{
 		Filters: []*ec2.Filter{
@@ -1335,7 +1337,7 @@ func stopSquidInstance(hostname string, ec2svc *ec2.EC2) error {
 			},
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(fmt.Sprintf("%s-nf-squid", hostname))}, // TODO does this need the username too?
+				Values: []*string{aws.String(fmt.Sprintf("%s-nf-squid-%s", hostname, userName))},
 			},
 			{
 				Name:   aws.String("tag:Environment"),
