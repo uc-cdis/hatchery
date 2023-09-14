@@ -589,7 +589,25 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 // Create IAM role for AWS Batch compute environment
 func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 	Config.Logger.Printf("Debug: Creating ECS instance profile '%s'", name)
-	// Define the role policy
+
+	instanceProfile, err := iamSvc.GetInstanceProfile(&iam.GetInstanceProfileInput{
+		InstanceProfileName: aws.String(name),
+	})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == iam.ErrCodeNoSuchEntityException {
+			Config.Logger.Printf("Debug: Instance profile '%s' does not exist, creating it", name)
+			_, err = iamSvc.CreateInstanceProfile(&iam.CreateInstanceProfileInput{
+				InstanceProfileName: aws.String(name),
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+		return nil, err
+	}
+
+	// Create the IAM role
+	Config.Logger.Printf("Debug: Creating IAM role '%s'", name)
 	rolePolicy := `{
 		"Version": "2012-10-17",
 		"Statement": [
@@ -600,21 +618,18 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 		  }
 		]
 	  }`
-
-	// Create the IAM role
-	_, err := iamSvc.CreateRole(&iam.CreateRoleInput{
+	_, err = iamSvc.CreateRole(&iam.CreateRoleInput{
 		AssumeRolePolicyDocument: aws.String(rolePolicy),
 		RoleName:                 aws.String(name),
 	})
 	if err != nil {
-		// if role exists move on
 		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
-			Config.Logger.Printf("Debug: Role '%s' already exists, skipping creation", name)
+			Config.Logger.Printf("Debug: Role '%s' already exists, assuming it is already linked to instance profile and continuing", name)
+			return instanceProfile.InstanceProfile.Arn, nil
 		} else {
 			Config.Logger.Printf("Unable to create IAM role '%s': %v", name, err)
 			return nil, err
 		}
-
 	}
 
 	// Attach policy to the role
@@ -626,32 +641,10 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 		return nil, err
 	}
 
-	instanceProfile, err := iamSvc.GetInstanceProfile(&iam.GetInstanceProfileInput{
-		InstanceProfileName: aws.String(name),
-	})
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == iam.ErrCodeNoSuchEntityException {
-			Config.Logger.Print("Debug: Instance profile does not exist, creating it now")
-			// Instance profile doesn't exist, create it
-			instanceProfile, err := iamSvc.CreateInstanceProfile(&iam.CreateInstanceProfileInput{
-				InstanceProfileName: aws.String(name),
-			})
-			if err != nil {
-				return nil, err
-			}
-
-			return instanceProfile.InstanceProfile.Arn, nil
-		}
-		return nil, err
-	}
-
 	_, err = iamSvc.AddRoleToInstanceProfile(&iam.AddRoleToInstanceProfileInput{
 		InstanceProfileName: aws.String(name),
 		RoleName:            aws.String(name),
 	})
-	// TODO address this error, on every run except the 1st one:
-	// Unable to add role 'qa-ibd-planx-pla-net-nf-ecsInstanceRole' to instance profile 'qa-ibd-planx-pla-net-nf-ecsInstanceRole': LimitExceeded: Cannot exceed quota for InstanceSessionsPerInstanceProfile: 1
-	// Not one per user because the compute env is shared - but delete role and recreate?
 	if err != nil {
 		Config.Logger.Printf("Unable to add role '%s' to instance profile '%s': %s", name, name, err.Error())
 		return nil, err
@@ -701,6 +694,7 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 	}
 
 	// add route to internet gateway
+	Config.Logger.Printf("Debug: Creating route to internet '%s' in route table '%s'", *igw, *fwRouteTableId)
 	_, err = ec2svc.CreateRoute(&ec2.CreateRouteInput{
 		DestinationCidrBlock: aws.String("0.0.0.0/0"),
 		GatewayId:            igw,
@@ -709,7 +703,6 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 	if err != nil {
 		return nil, err
 	}
-	Config.Logger.Printf("Debug: Created route to internet '%s' in route table '%s'", *igw, *fwRouteTableId)
 
 	// associate route table to subnet
 	_, err = ec2svc.AssociateRouteTable(&ec2.AssociateRouteTableInput{
@@ -891,10 +884,11 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 	if err != nil {
 		return nil, err
 	}
-	Config.Logger.Printf("Debug: Created route table '%s', ID '%s'", routeTableName, *routeTable.RouteTable.RouteTableId)
+	Config.Logger.Printf("Debug: Created route table '%s' with name '%s'", *routeTable.RouteTable.RouteTableId, routeTableName)
 
 	if routeTableName == fmt.Sprintf("%s-nf-fw-rt-%s", hostname, userName) {
 		// create route
+		Config.Logger.Printf("Debug: Creating route to internet '%s' in route table '%s'", igwid, *routeTable.RouteTable.RouteTableId)
 		_, err = ec2svc.CreateRoute(&ec2.CreateRouteInput{
 			DestinationCidrBlock: aws.String("0.0.0.0/0"),
 			GatewayId:            aws.String(igwid),
@@ -903,7 +897,6 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 		if err != nil {
 			return nil, err
 		}
-		Config.Logger.Printf("Debug: Created route to internet '%s' in route table '%s'", igwid, *routeTable.RouteTable.RouteTableId)
 	}
 	return routeTable.RouteTable.RouteTableId, nil
 }
