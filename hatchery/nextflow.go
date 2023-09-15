@@ -61,7 +61,12 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 
 	userName = escapism(userName)
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
-	bucketName := fmt.Sprintf("%s-nf", hostname) // note that it's not user-specific (but we use a prefix per user)
+
+	// The bucket name is not user-specific, but each user only has access to their prefix (`/username/*`) inside
+	// the bucket. Bucket names are globally unique, so we add the AWS account ID so that each AWS account connected
+	// to the environment can have its own Nextflow bucket - eg 1 bucket in main account for blanket billing workspaces,
+	// 1 bucket in userA's account for userA's direct pay workspace, etc.
+	bucketName := fmt.Sprintf("%s-nf-%s", hostname, awsAccountId)
 
 	// set the tags we will use on all created resources.
 	// different services accept different formats

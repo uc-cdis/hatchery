@@ -175,10 +175,7 @@
           ],
           "image": "ubuntu:18.04"
         }
-      ],
-      "nextflow": {
-        "enabled": true
-      }
+      ]
     },
     {
       "target-port": 8787,
