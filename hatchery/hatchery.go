@@ -304,8 +304,8 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
-	if allpaymodels == nil { //Commons with no concept of paymodels
-		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
+	if allpaymodels == nil { // Commons with no concept of paymodels
+		err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
 	} else {
 		payModel := allpaymodels.CurrentPayModel
 		if payModel == nil {
@@ -362,8 +362,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	Config.Logger.Printf("Info: Deleting Nextflow resources in AWS...")
 	err := cleanUpNextflowResources(userName)
 	if err != nil {
-		http.Error(w, "Unable to delete AWS resources for Nextflow", http.StatusInternalServerError)
-		return
+		Config.Logger.Printf("Unable to delete AWS resources for Nextflow... continuing anyway")
 	}
 
 	payModel, err := getCurrentPayModel(userName)

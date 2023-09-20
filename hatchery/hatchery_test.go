@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	k8sv1 "k8s.io/api/core/v1"
 )
 
 /*
@@ -196,6 +198,9 @@ func Test_SetpaymodelEndpoint(t *testing.T) {
 		t.Logf("Testing SetPaymodels when %s", testcase.name)
 
 		/* Setup */
+		Config = &FullHatcheryConfig{
+			Logger: log.New(io.Discard, "", log.LstdFlags), // Discard any logs in the tests
+		}
 		getWorkspaceStatus = func(context.Context, string, string) (*WorkspaceStatus, error) {
 			return testcase.currentStatus, nil
 		}
@@ -534,18 +539,18 @@ func Test_LaunchEndpoint(t *testing.T) {
 			"createExternalK8sPod":      0,
 		}
 
-		createLocalK8sPod = func(ctx context.Context, hash, userName, accessToken string) error {
+		createLocalK8sPod = func(ctx context.Context, hash, userName, accessToken string, envVars []k8sv1.EnvVar) error {
 			FuncCounter["createLocalK8sPod"] += 1
 			if testcase.throwError {
 				return errors.New("error creating local k8s pod")
 			}
 			return nil
 		}
-		launchEcsWorkspaceWrapper = func(userName, hash, accessToken string, payModel PayModel) {
+		launchEcsWorkspaceWrapper = func(userName, hash, accessToken string, payModel PayModel, envVars []EnvVar) {
 			FuncCounter["launchEcsWorkspaceWrapper"] += 1
 			waitGroup.Done() // Assertions are blocked until this line is completed
 		}
-		createExternalK8sPod = func(ctx context.Context, hash, userName, accessToken string, payModel PayModel) error {
+		createExternalK8sPod = func(ctx context.Context, hash, userName, accessToken string, payModel PayModel, envVars []k8sv1.EnvVar) error {
 			FuncCounter["createExternalK8sPod"] += 1
 			if testcase.throwError {
 				return errors.New("error creating external k8s pod")

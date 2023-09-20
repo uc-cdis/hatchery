@@ -36,7 +36,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 		Region: aws.String("us-east-1"),
 	}))
 	if payModel != nil && payModel.Ecs {
-		Config.Logger.Print("Info: pay model enabled: creating Nextflow resources in user's AWS account")
+		Config.Logger.Printf("Info: pay model enabled for user '%s': creating Nextflow resources in user's AWS account", userName)
 		// TODO: Make this configurable
 		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
 		awsConfig = aws.Config{
@@ -44,7 +44,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 		}
 		awsAccountId = payModel.AWSAccountId
 	} else {
-		Config.Logger.Print("Info: pay model disabled: creating Nextflow resources in main AWS account")
+		Config.Logger.Printf("Info: pay model disabled for user '%s': creating Nextflow resources in main AWS account", userName)
 		awsConfig = aws.Config{}
 		Config.Logger.Printf("Getting AWS account ID...")
 		awsAccountId, err = getAwsAccountId(sess, &awsConfig)
@@ -945,8 +945,9 @@ func launchSquidInstance(hostname string, userName string, ec2svc *ec2.EC2, subn
 		return nil, err
 	}
 	if len(exinstance.Reservations) > 0 {
+		instanceState := *exinstance.Reservations[0].Instances[0].State.Name
 		// Make sure the instance is running
-		if *exinstance.Reservations[0].Instances[0].State.Name == "running" {
+		if instanceState == "running" {
 			Config.Logger.Print("Debug: Squid instance already exists and is running, skipping creation")
 			return exinstance.Reservations[0].Instances[0].InstanceId, nil
 		}
@@ -954,8 +955,8 @@ func launchSquidInstance(hostname string, userName string, ec2svc *ec2.EC2, subn
 		// do this in a loop
 		for {
 			// If the instance is stopping or pending, wait for 10 seconds and check again
-			if *exinstance.Reservations[0].Instances[0].State.Name == "stopping" || *exinstance.Reservations[0].Instances[0].State.Name == "pending" {
-				Config.Logger.Print("Debug: Squid instance already exists and is stopping or pending, waiting 10s and checking again")
+			if instanceState == "stopping" || instanceState == "pending" {
+				Config.Logger.Printf("Debug: Squid instance already exists and is %s, waiting 10s and checking again", instanceState)
 				time.Sleep(10 * time.Second)
 				exinstance, err = ec2svc.DescribeInstances(descInstanceInput)
 				if err != nil {
@@ -965,10 +966,9 @@ func launchSquidInstance(hostname string, userName string, ec2svc *ec2.EC2, subn
 			}
 
 			// if state is stopped, or running move on
-			if *exinstance.Reservations[0].Instances[0].State.Name == "stopped" || *exinstance.Reservations[0].Instances[0].State.Name == "running" {
+			if instanceState == "stopped" || instanceState == "running" {
 				break
 			}
-
 		}
 		// Start the instance
 		_, err := ec2svc.StartInstances(&ec2.StartInstancesInput{
@@ -1249,7 +1249,7 @@ func cleanUpNextflowResources(userName string) error {
 		Region: aws.String("us-east-1"),
 	}))
 	if payModel != nil && payModel.Ecs {
-		Config.Logger.Print("Info: pay model enabled: deleting Nextflow resources in user's AWS account")
+		Config.Logger.Printf("Info: pay model enabled for user '%s': deleting Nextflow resources in user's AWS account", userName)
 		// TODO: Make this configurable
 		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
 		awsConfig = aws.Config{
@@ -1257,7 +1257,7 @@ func cleanUpNextflowResources(userName string) error {
 		}
 		awsAccountId = payModel.AWSAccountId
 	} else {
-		Config.Logger.Print("Info: pay model disabled: deleting Nextflow resources in main AWS account")
+		Config.Logger.Printf("Info: pay model disabled for user '%s': deleting Nextflow resources in main AWS account", userName)
 		awsConfig = aws.Config{}
 		Config.Logger.Printf("Debug: Getting AWS account ID...")
 		awsAccountId, err = getAwsAccountId(sess, &awsConfig)
