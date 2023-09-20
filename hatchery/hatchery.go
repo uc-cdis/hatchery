@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -27,6 +28,7 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/options", options)
 	mux.HandleFunc("/paymodels", paymodels)
 	mux.HandleFunc("/setpaymodel", setpaymodel)
+	mux.HandleFunc("/resetpaymodels", resetPaymodels)
 	mux.HandleFunc("/allpaymodels", allpaymodels)
 
 	// ECS functions
@@ -55,6 +57,25 @@ func getCurrentUserName(r *http.Request) (userName string) {
 		Config.Logger.Printf("Warning: No username in header REMOTE_USER!")
 	}
 	return user
+}
+
+var getWorkspaceStatus = func(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
+
+	allpaymodels, err := getPayModelsForUser(userName)
+	if err != nil {
+		return nil, err
+	}
+
+	if allpaymodels == nil {
+		return statusK8sPod(ctx, userName, accessToken, nil)
+	}
+
+	payModel := allpaymodels.CurrentPayModel
+	if payModel != nil && payModel.Ecs {
+		return statusEcs(ctx, userName, accessToken, payModel.AWSAccountId)
+	} else {
+		return statusK8sPod(ctx, userName, accessToken, payModel)
+	}
 }
 
 func paymodels(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +128,7 @@ func allpaymodels(w http.ResponseWriter, r *http.Request) {
 
 func setpaymodel(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", http.StatusNotFound)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	userName := getCurrentUserName(r)
@@ -116,6 +137,19 @@ func setpaymodel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing ID argument", http.StatusBadRequest)
 		return
 	}
+
+	currentStatus, err := getWorkspaceStatus(r.Context(), userName, getBearerToken(r))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Do not let users update status when a workpsace session is in progress
+	if currentStatus.Status != "Not Found" {
+		http.Error(w, "Can not update paymodel when workspace is running", http.StatusInternalServerError)
+		return
+	}
+
 	pm, err := setCurrentPaymodel(userName, id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -133,35 +167,10 @@ func status(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	accessToken := getBearerToken(r)
 
-	payModel, err := getCurrentPayModel(userName)
+	result, err := getWorkspaceStatus(r.Context(), userName, accessToken)
 	if err != nil {
-		if err != NopaymodelsError {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-	var result *WorkspaceStatus
-
-	if payModel == nil {
-		result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	} else {
-		if payModel.Ecs {
-			result, err = statusEcs(r.Context(), userName, accessToken, payModel.AWSAccountId)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		} else {
-			result, err = statusK8sPod(r.Context(), userName, accessToken, payModel)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	out, err := json.Marshal(result)
@@ -171,6 +180,34 @@ func status(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprint(w, string(out))
+}
+
+func resetPaymodels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	userName := getCurrentUserName(r)
+
+	currentStatus, err := getWorkspaceStatus(r.Context(), userName, getBearerToken(r))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Do not let users update status when a workpsace session is in progress
+	if currentStatus.Status != "Not Found" {
+		http.Error(w, "Can not reset paymodels when workspace is running", http.StatusInternalServerError)
+		return
+	}
+
+	err = resetCurrentPaymodel(userName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprint(w, "Current Paymodel has been reset")
 }
 
 func options(w http.ResponseWriter, r *http.Request) {
@@ -214,7 +251,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 
 func launch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", http.StatusNotFound)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	accessToken := getBearerToken(r)
@@ -227,9 +264,14 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userName := getCurrentUserName(r)
+	if userName == "" {
+		http.Error(w, "No username found. Launch forbidden", http.StatusBadRequest)
+		return
+	}
+	allpaymodels, err := getPayModelsForUser(userName)
+
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar
-
 	if Config.ContainersMap[hash].NextflowConfig.Enabled {
 		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
 		nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName, Config.ContainersMap[hash].NextflowConfig)
@@ -259,31 +301,39 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
 
-	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
-	if payModel == nil || payModel.Local {
-		err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
-	} else if payModel.Ecs {
-
-		if payModel.Status != "active" {
-			// send 500 response.
-			// TODO: 403 is the correct code, but it triggers a 302 to the default 403 page in revproxy instead of showing error message.
-			Config.Logger.Printf("Paymodel is not active. Launch forbidden for user %s", userName)
-			http.Error(w, "Paymodel is not active. Launch forbidden", http.StatusInternalServerError)
-			return
-		}
-
-		Config.Logger.Printf("Launching ECS workspace for user %s", userName)
-		// Sending a 200 response straight away, but starting the launch in a goroutine
-		// TODO: Do more sanity checks before returning 200.
-		w.WriteHeader(http.StatusOK)
-		go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel, envVarsEcs)
-		fmt.Fprintf(w, "Launch accepted")
-		return
+	if allpaymodels == nil { //Commons with no concept of paymodels
+		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
 	} else {
-		err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel, envVars)
+		payModel := allpaymodels.CurrentPayModel
+		if payModel == nil {
+			Config.Logger.Printf("Current Paymodel is not set. Launch forbidden for user %s", userName)
+			http.Error(w, "Current Paymodel is not set. Launch forbidden", http.StatusInternalServerError)
+			return
+		} else if payModel.Local {
+			err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
+		} else if payModel.Ecs {
+
+			if payModel.Status != "active" {
+				// send 500 response.
+				// TODO: 403 is the correct code, but it triggers a 302 to the default 403 page in revproxy instead of showing error message.
+				Config.Logger.Printf("Paymodel is not active. Launch forbidden for user %s", userName)
+				http.Error(w, "Paymodel is not active. Launch forbidden", http.StatusInternalServerError)
+				return
+			}
+
+			Config.Logger.Printf("Launching ECS workspace for user %s", userName)
+			// Sending a 200 response straight away, but starting the launch in a goroutine
+			// TODO: Do more sanity checks before returning 200.
+			w.WriteHeader(http.StatusOK)
+			go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel, envVarsEcs)
+			fmt.Fprintf(w, "Launch accepted")
+			return
+		} else {
+			err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel, envVars)
+		}
 	}
 	if err != nil {
 		Config.Logger.Printf("error during launch: %-v", err)
@@ -295,11 +345,16 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 func terminate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		http.Error(w, "Not Found", http.StatusNotFound)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
+	if userName == "" {
+		http.Error(w, "No username found. Unable to terminate", http.StatusBadRequest)
+		return
+	}
+
 	Config.Logger.Printf("Terminating workspace for user %s", userName)
 
 	// delete nextflow resources. There is no way to know if the actual workspace being
@@ -333,6 +388,25 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Terminated workspace for user %s", userName)
 		fmt.Fprintf(w, "Terminated workspace")
 	}
+
+	// Need to reset pay model only after workspace termination is completed.
+	go func() {
+		// Periodically poll for status, until it is set as "Not Found"
+		for {
+			status, err := getWorkspaceStatus(r.Context(), userName, accessToken)
+			if err != nil {
+				Config.Logger.Printf("error fetching workspace status for user %s\n err: %s", userName, err)
+			}
+			if status.Status == "Not Found" {
+				break
+			}
+			time.Sleep(5 * time.Second)
+		}
+		err = resetCurrentPaymodel(userName)
+		if err != nil {
+			Config.Logger.Printf("unable to reset current paymodel for current user %s\nerr: %s", userName, err)
+		}
+	}()
 }
 
 func getBearerToken(r *http.Request) string {
@@ -384,7 +458,7 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 }
 
 // Function to check status of ECS workspace.
-func statusEcs(ctx context.Context, userName string, accessToken string, awsAcctID string) (*WorkspaceStatus, error) {
+var statusEcs = func(ctx context.Context, userName string, accessToken string, awsAcctID string) (*WorkspaceStatus, error) {
 	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
 		// TODO: Make this configurable
@@ -401,8 +475,7 @@ func statusEcs(ctx context.Context, userName string, accessToken string, awsAcct
 
 // Wrapper function to launch ECS workspace in a goroutine.
 // Terminates workspace if launch fails for whatever reason
-func launchEcsWorkspaceWrapper(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar) {
-
+var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar) {
 	err := launchEcsWorkspace(userName, hash, accessToken, payModel, envVars)
 	if err != nil {
 		Config.Logger.Printf("Error: %s", err)

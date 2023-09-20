@@ -176,6 +176,7 @@ func (sess *CREDS) findEcsCluster() (*ecs.Cluster, error) {
 // Status of workspace running in ECS
 func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
 	status := WorkspaceStatus{}
+	status.WorkspaceType = "ECS"
 	statusMap := map[string]string{
 		"ACTIVE":    "Running",
 		"DRAINING":  "Terminating",
@@ -260,7 +261,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 
 // Terminate workspace running in ECS
 // TODO: Make this terminate ALB as well.
-func terminateEcsWorkspace(ctx context.Context, userName string, accessToken string, awsAcctID string) (string, error) {
+var terminateEcsWorkspace = func(ctx context.Context, userName string, accessToken string, awsAcctID string) (string, error) {
 	Config.Logger.Printf("Terminating ECS workspace for user %s", userName)
 	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
 	sess := session.Must(session.NewSession(&aws.Config{
