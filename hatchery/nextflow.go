@@ -732,37 +732,12 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 		InstanceId:           squidInstanceId,
 		RouteTableId:         routeTableId,
 	})
+
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
-			routeAlreadyExists := false
-			if aerr.Code() == "IncorrectInstanceState" {
-				// TODO `IncorrectInstanceState: Instance with state 'pending' is not valid for
-				// this operation.` Looks like 10s is not always enough, we should do a while loop
-				Config.Logger.Print("Debug: Instance not ready, wait 10s and try adding the route again...")
-				time.Sleep(10 * time.Second)
-				_, err = ec2svc.CreateRoute(&ec2.CreateRouteInput{
-					DestinationCidrBlock: aws.String("0.0.0.0/0"),
-					InstanceId:           squidInstanceId,
-					RouteTableId:         routeTableId,
-				})
-				if err != nil {
-					if aerr, ok := err.(awserr.Error); ok {
-						if aerr.Code() == "RouteAlreadyExists" {
-							routeAlreadyExists = true
-						} else {
-							return nil, err
-						}
-					} else {
-						return nil, err
-					}
-				}
-			} else if aerr.Code() == "RouteAlreadyExists" {
-				routeAlreadyExists = true
-			} else {
-				return nil, err
-			}
-
-			if routeAlreadyExists {
+			// Note: code `IncorrectInstanceState` should never happen here, because `launchSquidInstance`
+			// waits until the instance is ready.
+			if aerr.Code() == "RouteAlreadyExists" {
 				// the route already exists, replace it
 				Config.Logger.Print("Debug: Route already exists, replacing it")
 				_, err = ec2svc.ReplaceRoute(&ec2.ReplaceRouteInput{
@@ -773,6 +748,8 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 				if err != nil {
 					return nil, err
 				}
+			} else {
+				return nil, err
 			}
 		} else {
 			return nil, err
@@ -922,6 +899,8 @@ func associateRouteTablesToSubnets(ec2svc *ec2.EC2, subnets []string, routeTable
 }
 
 func launchSquidInstance(hostname string, userName string, ec2svc *ec2.EC2, subnetId *string, vpcId string, subnet string) (*string, error) {
+	instanceName := fmt.Sprintf("%s-nf-squid-%s", hostname, userName)
+
 	// check if instance already exists, if it does start it
 	// Check that the state of existing instance is either stopped,stopping or running
 	descInstanceInput := &ec2.DescribeInstancesInput{
@@ -932,7 +911,7 @@ func launchSquidInstance(hostname string, userName string, ec2svc *ec2.EC2, subn
 			},
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(fmt.Sprintf("%s-nf-squid-%s", hostname, userName))},
+				Values: []*string{aws.String(instanceName)},
 			},
 			{
 				Name:   aws.String("tag:Environment"),
@@ -944,47 +923,13 @@ func launchSquidInstance(hostname string, userName string, ec2svc *ec2.EC2, subn
 	if err != nil {
 		return nil, err
 	}
-	if len(exinstance.Reservations) > 0 {
-		instanceState := *exinstance.Reservations[0].Instances[0].State.Name
-		// Make sure the instance is running
-		if instanceState == "running" {
-			Config.Logger.Print("Debug: Squid instance already exists and is running, skipping creation")
-			return exinstance.Reservations[0].Instances[0].InstanceId, nil
-		}
 
-		// do this in a loop
-		for {
-			// If the instance is stopping or pending, wait for 10 seconds and check again
-			if instanceState == "stopping" || instanceState == "pending" {
-				Config.Logger.Printf("Debug: Squid instance already exists and is %s, waiting 10s and checking again", instanceState)
-				time.Sleep(10 * time.Second)
-				exinstance, err = ec2svc.DescribeInstances(descInstanceInput)
-				if err != nil {
-					return nil, err
-				}
-				continue
-			}
-
-			// if state is stopped, or running move on
-			if instanceState == "stopped" || instanceState == "running" {
-				break
-			}
-		}
-		// Start the instance
-		_, err := ec2svc.StartInstances(&ec2.StartInstancesInput{
-			InstanceIds: []*string{
-				exinstance.Reservations[0].Instances[0].InstanceId,
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
-		Config.Logger.Print("Debug: Instance already exists, starting it now")
-		return exinstance.Reservations[0].Instances[0].InstanceId, nil
-	}
-
-	// User data script to install and run Squid
-	userData := `#!/bin/bash
+	var instanceId string
+	if len(exinstance.Reservations) > 0 {  // instance already exists
+		instanceId = *exinstance.Reservations[0].Instances[0].InstanceId
+	} else { // instance does not already exist: create it
+		// User data script to install and run Squid
+		userData := `#!/bin/bash
 USER="ec2-user"
 USER_HOME="/home/$USER"
 CLOUD_AUTOMATION="$USER_HOME/cloud-automation"
@@ -1049,82 +994,116 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 
 ) > /var/log/bootstrapping_script.log`
 
-	// Set private IP to be the 10th ip in subnet range
-	_, ipnet, _ := net.ParseCIDR(subnet)
-	privateIP := ipnet.IP
-	privateIP[3] += 10
-	Config.Logger.Print("Debug: Private IP: ", privateIP.String())
+		// Set private IP to be the 10th ip in subnet range
+		_, ipnet, _ := net.ParseCIDR(subnet)
+		privateIP := ipnet.IP
+		privateIP[3] += 10
+		Config.Logger.Print("Debug: Private IP: ", privateIP.String())
 
-	// Get the latest amazonlinux AMI
-	amiId, err := getLatestAmazonLinuxAmi(ec2svc)
-	if err != nil {
-		return nil, err
-	}
+		// Get the latest amazonlinux AMI
+		amiId, err := getLatestAmazonLinuxAmi(ec2svc)
+		if err != nil {
+			return nil, err
+		}
 
-	sgId, err := setupFwSecurityGroup(hostname, userName, ec2svc, &vpcId)
-	if err != nil {
-		return nil, err
-	}
+		sgId, err := setupFwSecurityGroup(hostname, userName, ec2svc, &vpcId)
+		if err != nil {
+			return nil, err
+		}
 
-	// instance type
-	// TODO: make this configurable via hatchery config (will need to change this function to
-	// update the instance type if the instance already exists)
-	instanceType := "t2.micro"
+		// instance type
+		// TODO: make this configurable via hatchery config (will need to change this function to
+		// update the instance type if the instance already exists)
+		instanceType := "t2.micro"
 
-	// Launch EC2 instance
-	squid, err := ec2svc.RunInstances(&ec2.RunInstancesInput{
-		ImageId:      amiId,
-		InstanceType: aws.String(instanceType),
-		MinCount:     aws.Int64(1),
-		MaxCount:     aws.Int64(1),
-		// Network interfaces
-		NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
-			{
-				AssociatePublicIpAddress: aws.Bool(true),
-				DeviceIndex:              aws.Int64(0),
-				DeleteOnTermination:      aws.Bool(true),
-				SubnetId:                 subnetId,
-				Groups:                   []*string{sgId},
+		// Launch EC2 instance
+		squid, err := ec2svc.RunInstances(&ec2.RunInstancesInput{
+			ImageId:      amiId,
+			InstanceType: aws.String(instanceType),
+			MinCount:     aws.Int64(1),
+			MaxCount:     aws.Int64(1),
+			// Network interfaces
+			NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
+				{
+					AssociatePublicIpAddress: aws.Bool(true),
+					DeviceIndex:              aws.Int64(0),
+					DeleteOnTermination:      aws.Bool(true),
+					SubnetId:                 subnetId,
+					Groups:                   []*string{sgId},
+				},
 			},
-		},
-		// base64 encoded user data script
-		UserData: aws.String(base64.StdEncoding.EncodeToString([]byte(userData))),
-		TagSpecifications: []*ec2.TagSpecification{
-			{
-				ResourceType: aws.String("instance"),
-				Tags: []*ec2.Tag{
-					{
-						Key:   aws.String("Name"),
-						Value: aws.String(fmt.Sprintf("%s-nf-squid-%s", hostname, userName)),
-					},
-					{
-						Key:   aws.String("Environment"),
-						Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
+			// base64 encoded user data script
+			UserData: aws.String(base64.StdEncoding.EncodeToString([]byte(userData))),
+			TagSpecifications: []*ec2.TagSpecification{
+				{
+					ResourceType: aws.String("instance"),
+					Tags: []*ec2.Tag{
+						{
+							Key:   aws.String("Name"),
+							Value: aws.String(instanceName),
+						},
+						{
+							Key:   aws.String("Environment"),
+							Value: aws.String(os.Getenv("GEN3_ENDPOINT")),
+						},
 					},
 				},
 			},
-		},
-	})
-	if err != nil {
-		Config.Logger.Print("Error launching instance: ", err)
-		return nil, err
+		})
+		if err != nil {
+			Config.Logger.Print("Error launching instance: ", err)
+			return nil, err
+		}
+
+		// make sure the eni has source/destionation check disabled
+		// https://docs.aws.amazon.com/vpc/latest/userguide/VPC_NAT_Instance.html#EIP_Disable_SrcDestCheck
+		_, err = ec2svc.ModifyNetworkInterfaceAttribute(&ec2.ModifyNetworkInterfaceAttributeInput{
+			NetworkInterfaceId: squid.Instances[0].NetworkInterfaces[0].NetworkInterfaceId,
+			SourceDestCheck: &ec2.AttributeBooleanValue{
+				Value: aws.Bool(false),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		Config.Logger.Print("Debug: Launched Squid instance")
+		instanceId = *squid.Instances[0].InstanceId
 	}
 
-	// make sure the eni has source/destionation check disabled
-	// https://docs.aws.amazon.com/vpc/latest/userguide/VPC_NAT_Instance.html#EIP_Disable_SrcDestCheck
-	_, err = ec2svc.ModifyNetworkInterfaceAttribute(&ec2.ModifyNetworkInterfaceAttributeInput{
-		NetworkInterfaceId: squid.Instances[0].NetworkInterfaces[0].NetworkInterfaceId,
-		SourceDestCheck: &ec2.AttributeBooleanValue{
-			Value: aws.Bool(false),
-		},
-	})
-	if err != nil {
-		return nil, err
+	// Wait until the instance is running
+	maxIter := 5
+	iterDelaySecs := 10
+	var instanceState string
+	for i := 0;; i++ {
+		exinstance, err = ec2svc.DescribeInstances(descInstanceInput)
+		if err != nil {
+			return nil, err
+		}
+		instanceState = *exinstance.Reservations[0].Instances[0].State.Name
+		if instanceState == "running" {
+			Config.Logger.Print("Debug: Squid instance is ready")
+			break
+		}
+		if instanceState == "stopped" {
+			Config.Logger.Print("Debug: Instance already exists and is stopped, starting it now")
+			_, err := ec2svc.StartInstances(&ec2.StartInstancesInput{
+				InstanceIds: []*string{
+					&instanceId,
+				},
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+		if i == maxIter {
+			return nil, fmt.Errorf("Squid instance is not ready after %v seconds. Exiting", maxIter * iterDelaySecs)
+		}
+		Config.Logger.Printf("Debug: Squid instance is %s, waiting %vs and checking again", instanceState, iterDelaySecs)
+		time.Sleep(time.Duration(iterDelaySecs) * time.Second)
 	}
 
-	Config.Logger.Print("Debug: Launched instance")
-
-	return squid.Instances[0].InstanceId, nil
+	return &instanceId, nil
 }
 
 func setupFwSecurityGroup(hostname string, userName string, ec2svc *ec2.EC2, vpcId *string) (*string, error) {
@@ -1355,6 +1334,7 @@ func stopSquidInstance(hostname string, userName string, ec2svc *ec2.EC2) error 
 		}
 
 		// Terminate the instance
+		Config.Logger.Print("Debug: running Squid instance found, terminating it now")
 		_, err := ec2svc.TerminateInstances(&ec2.TerminateInstancesInput{
 			InstanceIds: []*string{
 				exinstance.Reservations[0].Instances[0].InstanceId,
@@ -1363,7 +1343,6 @@ func stopSquidInstance(hostname string, userName string, ec2svc *ec2.EC2) error 
 		if err != nil {
 			return err
 		}
-		Config.Logger.Print("Debug: running Squid instance found, terminating it now")
 	}
 	return nil
 }
