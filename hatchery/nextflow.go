@@ -425,8 +425,7 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 	// The VPC is per-user because the Squid architecture would not work with multiple users sharing a VPC, as
 	// it follows the lifecycle of the workspace. Idle VPCs don’t cost anything so we can create one per user.
 	vpcName := fmt.Sprintf("%s-nf-vpc-%s", hostname, userName)
-
-	descVPCInput := &ec2.DescribeVpcsInput{
+	vpc, err := ec2Svc.DescribeVpcs(&ec2.DescribeVpcsInput{
 		Filters: []*ec2.Filter{
 			{
 				Name:   aws.String("cidr"),
@@ -441,8 +440,7 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
 			},
 		},
-	}
-	vpc, err := ec2Svc.DescribeVpcs(descVPCInput)
+	})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -518,12 +516,11 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 	// Check if batch compute env exists, if it does return it
 	// TODO if it exists, make sure it is pointing at the correct subnets - if the VPC is deleted,
 	// we should recreate the compute environment as well because it will be pointing at old vpc subnets
-	descBatchComputeEnvInput := &batch.DescribeComputeEnvironmentsInput{
+	batchComputeEnv, err := batchSvc.DescribeComputeEnvironments(&batch.DescribeComputeEnvironmentsInput{
 		ComputeEnvironments: []*string{
 			aws.String(batchComputeEnvName),
 		},
-	}
-	batchComputeEnv, err := batchSvc.DescribeComputeEnvironments(descBatchComputeEnvInput)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -585,8 +582,30 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 
 	Config.Logger.Printf("Debug: Created AWS Batch compute environment '%s'", batchComputeEnvName)
 
-	// the compute environment must be in "VALID" state before we can create the job queue
-	// TODO check state here and wait if needed
+	// the compute environment must be "VALID" before we can create the job queue: wait until ready
+	maxIter := 6
+	iterDelaySecs := 5
+	var compEnvStatus string
+	for i := 0;; i++ {
+		batchComputeEnv, err := batchSvc.DescribeComputeEnvironments(&batch.DescribeComputeEnvironmentsInput{
+			ComputeEnvironments: []*string{
+				aws.String(batchComputeEnvName),
+			},
+		})
+		if err != nil {
+			return "", err
+		}
+		compEnvStatus = *batchComputeEnv.ComputeEnvironments[0].Status
+		if compEnvStatus == "VALID" {
+			Config.Logger.Print("Debug: Compute environment is ready")
+			break
+		}
+		if i == maxIter {
+			return "", fmt.Errorf("Compute environment is not ready after %v seconds. Exiting", maxIter * iterDelaySecs)
+		}
+		Config.Logger.Printf("Info: Compute environment is %s, waiting %vs and checking again", compEnvStatus, iterDelaySecs)
+		time.Sleep(time.Duration(iterDelaySecs) * time.Second)
+	}
 
 	return *batchComputeEnvResult.ComputeEnvironmentArn, nil
 }
@@ -763,7 +782,7 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 // Generic function to create subnet, and route table
 func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) (*string, error) {
 	// Check if subnet exists if not create it
-	descSubnetInput := &ec2.DescribeSubnetsInput{
+	exsubnet, err := ec2Svc.DescribeSubnets(&ec2.DescribeSubnetsInput{
 		Filters: []*ec2.Filter{
 			{
 				Name:   aws.String("cidr-block"),
@@ -778,8 +797,7 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) 
 				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
 			},
 		},
-	}
-	exsubnet, err := ec2Svc.DescribeSubnets(descSubnetInput)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -791,7 +809,7 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) 
 
 	// create subnet
 	Config.Logger.Printf("Debug: Creating subnet '%v' with name '%s'", cidr, subnetName)
-	createSubnetInput := &ec2.CreateSubnetInput{
+	sn, err := ec2Svc.CreateSubnet(&ec2.CreateSubnetInput{
 		CidrBlock: aws.String(cidr),
 		VpcId:     aws.String(vpcid),
 		TagSpecifications: []*ec2.TagSpecification{
@@ -810,8 +828,7 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) 
 				},
 			},
 		},
-	}
-	sn, err := ec2Svc.CreateSubnet(createSubnetInput)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -820,7 +837,7 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) 
 
 func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid string, igwid string, routeTableName string) (*string, error) {
 	// Check if route table exists
-	descRouteTableInput := &ec2.DescribeRouteTablesInput{
+	exrouteTable, err := ec2svc.DescribeRouteTables(&ec2.DescribeRouteTablesInput{
 		Filters: []*ec2.Filter{
 			{
 				Name:   aws.String("tag:Name"),
@@ -831,9 +848,7 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
 			},
 		},
-	}
-
-	exrouteTable, err := ec2svc.DescribeRouteTables(descRouteTableInput)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -843,7 +858,7 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 		Config.Logger.Printf("Debug: Route table '%s' already exists, skipping creation", routeTableName)
 		return exrouteTable.RouteTables[0].RouteTableId, nil
 	}
-	createRouteTableInput := &ec2.CreateRouteTableInput{
+	routeTable, err := ec2svc.CreateRouteTable(&ec2.CreateRouteTableInput{
 		VpcId: &vpcid,
 		TagSpecifications: []*ec2.TagSpecification{
 			{
@@ -861,8 +876,7 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 				},
 			},
 		},
-	}
-	routeTable, err := ec2svc.CreateRouteTable(createRouteTableInput)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -1072,7 +1086,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 	}
 
 	// Wait until the instance is running
-	maxIter := 5
+	maxIter := 6
 	iterDelaySecs := 10
 	var instanceState string
 	for i := 0;; i++ {
@@ -1099,7 +1113,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 		if i == maxIter {
 			return nil, fmt.Errorf("Squid instance is not ready after %v seconds. Exiting", maxIter * iterDelaySecs)
 		}
-		Config.Logger.Printf("Debug: Squid instance is %s, waiting %vs and checking again", instanceState, iterDelaySecs)
+		Config.Logger.Printf("Info: Squid instance is %s, waiting %vs and checking again", instanceState, iterDelaySecs)
 		time.Sleep(time.Duration(iterDelaySecs) * time.Second)
 	}
 
@@ -1111,7 +1125,7 @@ func setupFwSecurityGroup(hostname string, userName string, ec2svc *ec2.EC2, vpc
 	sgName := fmt.Sprintf("%s-nf-sg-fw-%s", hostname, userName)
 
 	// Check if security group exists
-	descSecurityGroupInput := &ec2.DescribeSecurityGroupsInput{
+	exsecurityGroup, err := ec2svc.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
 		Filters: []*ec2.Filter{
 			{
 				Name:   aws.String("group-name"),
@@ -1122,8 +1136,7 @@ func setupFwSecurityGroup(hostname string, userName string, ec2svc *ec2.EC2, vpc
 				Values: []*string{vpcId},
 			},
 		},
-	}
-	exsecurityGroup, err := ec2svc.DescribeSecurityGroups(descSecurityGroupInput)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -1306,7 +1319,7 @@ func cleanUpNextflowResources(userName string) error {
 
 func stopSquidInstance(hostname string, userName string, ec2svc *ec2.EC2) error {
 	// check if instance already exists, if it does stop it and return
-	descInstanceInput := &ec2.DescribeInstancesInput{
+	exinstance, err := ec2svc.DescribeInstances(&ec2.DescribeInstancesInput{
 		Filters: []*ec2.Filter{
 			{
 				Name:   aws.String("instance-state-name"),
@@ -1321,8 +1334,7 @@ func stopSquidInstance(hostname string, userName string, ec2svc *ec2.EC2) error 
 				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
 			},
 		},
-	}
-	exinstance, err := ec2svc.DescribeInstances(descInstanceInput)
+	})
 	if err != nil {
 		return err
 	}
