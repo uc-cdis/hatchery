@@ -527,8 +527,6 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 	}
 
 	// Check if batch compute env exists, if it does return it
-	// TODO if it exists, make sure it is pointing at the correct subnets - if the VPC is deleted,
-	// we should recreate the compute environment as well because it will be pointing at old vpc subnets
 	batchComputeEnv, err := batchSvc.DescribeComputeEnvironments(&batch.DescribeComputeEnvironmentsInput{
 		ComputeEnvironments: []*string{
 			aws.String(batchComputeEnvName),
@@ -537,70 +535,100 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 	if err != nil {
 		return "", err
 	}
+
+	var batchComputeEnvArn string
 	if len(batchComputeEnv.ComputeEnvironments) > 0 {
-		Config.Logger.Printf("Debug: Batch compute environment '%s' already exists, skipping creation", batchComputeEnvName)
-		return *batchComputeEnv.ComputeEnvironments[0].ComputeEnvironmentArn, nil
-	}
+		Config.Logger.Printf("Debug: Batch compute environment '%s' already exists, updating it", batchComputeEnvName)
+		batchComputeEnvArn = *batchComputeEnv.ComputeEnvironments[0].ComputeEnvironmentArn
 
-	subnets := []*string{}
-	for _, subnet := range subnetids {
-		s := subnet
-		subnets = append(subnets, &s)
-	}
-
-	// Get the deafult security group for the VPC
-	securityGroup, err := ec2Svc.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
-		Filters: []*ec2.Filter{
-			{
-				Name:   aws.String("vpc-id"),
-				Values: []*string{aws.String(vpcid)},
+		// update any settings that may have changed in the config
+		// TODO also make sure it is pointing at the correct subnets - if the VPC is deleted,
+		// we should recreate the compute environment as well because it will be pointing at old vpc subnets
+		_, err = batchSvc.UpdateComputeEnvironment(&batch.UpdateComputeEnvironmentInput{
+			ComputeEnvironment: &batchComputeEnvArn,
+			State: aws.String("ENABLED"), // since the env already exists, make sure it's enabled
+			ComputeResources: &batch.ComputeResourceUpdate{
+				Ec2Configuration: []*batch.Ec2Configuration{
+					{
+						ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+						ImageType:       aws.String("ECS_AL2"),
+					},
+				},
+				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
+				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
+				Type:               aws.String(nextflowConfig.InstanceType),
 			},
-			{
-				Name:   aws.String("group-name"),
-				Values: []*string{aws.String("default")},
+			UpdatePolicy: &batch.UpdatePolicy{
+				// existing jobs are not terminated and keep running for up to 30 min after this update
+				JobExecutionTimeoutMinutes: aws.Int64(30),
+				TerminateJobsOnUpdate: aws.Bool(false),
 			},
-		},
-	})
-	if err != nil {
-		return "", err
-	}
-	securityGroupId := securityGroup.SecurityGroups[0].GroupId
+		})
+		if err != nil {
+			Config.Logger.Printf("Unable to update Batch compute environment '%s': %v", batchComputeEnvName, err)
+			return "", err
+		}
+	} else { // compute environment does not exist, create it
+		subnets := []*string{}
+		for _, subnet := range subnetids {
+			s := subnet
+			subnets = append(subnets, &s)
+		}
 
-	batchComputeEnvResult, err := batchSvc.CreateComputeEnvironment(&batch.CreateComputeEnvironmentInput{
-		ComputeEnvironmentName: &batchComputeEnvName,
-		Type: aws.String("MANAGED"),
-		ComputeResources: &batch.ComputeResource{
-			Ec2Configuration: []*batch.Ec2Configuration{
+		// Get the default security group for the VPC
+		securityGroup, err := ec2Svc.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
+			Filters: []*ec2.Filter{
 				{
-					// TODO if the config changes we need to update. So update the compute env at every run.
-					ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-					ImageType:       aws.String("ECS_AL2"),
+					Name:   aws.String("vpc-id"),
+					Values: []*string{aws.String(vpcid)},
+				},
+				{
+					Name:   aws.String("group-name"),
+					Values: []*string{aws.String("default")},
 				},
 			},
-			InstanceRole:       instanceProfileArn,
-			AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
-			MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
-			MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
-			InstanceTypes:      []*string{aws.String("optimal")},
-			SecurityGroupIds:   []*string{securityGroupId},
-			Subnets:            subnets,
-			Type:               aws.String(nextflowConfig.InstanceType),
-			Tags:               tagsMap,
-		},
-		Tags: tagsMap,
-	})
-	if err != nil {
-		return "", err
-	}
+		})
+		if err != nil {
+			return "", err
+		}
+		securityGroupId := securityGroup.SecurityGroups[0].GroupId
 
-	Config.Logger.Printf("Debug: Created AWS Batch compute environment '%s'", batchComputeEnvName)
+		batchComputeEnvResult, err := batchSvc.CreateComputeEnvironment(&batch.CreateComputeEnvironmentInput{
+			ComputeEnvironmentName: &batchComputeEnvName,
+			Type: aws.String("MANAGED"),
+			ComputeResources: &batch.ComputeResource{
+				Ec2Configuration: []*batch.Ec2Configuration{
+					{
+						ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+						ImageType:       aws.String("ECS_AL2"),
+					},
+				},
+				InstanceRole:       instanceProfileArn,
+				AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
+				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
+				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
+				InstanceTypes:      []*string{aws.String("optimal")},
+				SecurityGroupIds:   []*string{securityGroupId},
+				Subnets:            subnets,
+				Type:               aws.String(nextflowConfig.InstanceType),
+				Tags:               tagsMap,
+			},
+			Tags: tagsMap,
+		})
+		if err != nil {
+			return "", err
+		}
+
+		Config.Logger.Printf("Debug: Created AWS Batch compute environment '%s'", batchComputeEnvName)
+		batchComputeEnvArn = *batchComputeEnvResult.ComputeEnvironmentArn
+	}
 
 	// the compute environment must be "VALID" before we can create the job queue: wait until ready
 	maxIter := 6
 	iterDelaySecs := 5
 	var compEnvStatus string
 	for i := 0;; i++ {
-		batchComputeEnv, err := batchSvc.DescribeComputeEnvironments(&batch.DescribeComputeEnvironmentsInput{
+		batchComputeEnvs, err := batchSvc.DescribeComputeEnvironments(&batch.DescribeComputeEnvironmentsInput{
 			ComputeEnvironments: []*string{
 				aws.String(batchComputeEnvName),
 			},
@@ -608,7 +636,7 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 		if err != nil {
 			return "", err
 		}
-		compEnvStatus = *batchComputeEnv.ComputeEnvironments[0].Status
+		compEnvStatus = *batchComputeEnvs.ComputeEnvironments[0].Status
 		if compEnvStatus == "VALID" {
 			Config.Logger.Print("Debug: Compute environment is ready")
 			break
@@ -620,7 +648,7 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 		time.Sleep(time.Duration(iterDelaySecs) * time.Second)
 	}
 
-	return *batchComputeEnvResult.ComputeEnvironmentArn, nil
+	return batchComputeEnvArn, nil
 }
 
 // Create IAM role for AWS Batch compute environment
