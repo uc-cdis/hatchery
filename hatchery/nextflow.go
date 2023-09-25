@@ -20,6 +20,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
+/*
+TODOS
+- Make the AWS region configurable in the hatchery config (although ideally, the user should be able to choose)
+- Make the `roleArn` configurable
+*/
+
 // create the AWS resources required to launch nextflow workflows
 func createNextflowResources(userName string, nextflowConfig NextflowConfig) (string, string, error) {
 	var err error
@@ -32,12 +38,10 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 		return "", "", err
 	}
 	sess := session.Must(session.NewSession(&aws.Config{
-		// TODO: Make region configurable? ideally the user should be able to choose
 		Region: aws.String("us-east-1"),
 	}))
 	if payModel != nil && payModel.Ecs {
 		Config.Logger.Printf("Info: pay model enabled for user '%s': creating Nextflow resources in user's AWS account", userName)
-		// TODO: Make this configurable
 		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
 		awsConfig = aws.Config{
 			Credentials: stscreds.NewCredentials(sess, roleArn),
@@ -363,6 +367,15 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	if err != nil {
 		if strings.Contains(err.Error(), "EntityAlreadyExists") {
 			Config.Logger.Printf("Debug: user '%s' already exists", nextflowUserName)
+
+			// delete any existing access keys to avoid `LimitExceeded: Cannot exceed
+			// quota for AccessKeysPerUser: 2` error
+			err = deleteUserAccessKeys(nextflowUserName, iamSvc)
+			if err != nil {
+				Config.Logger.Printf("Unable to delete access keys for user '%s': %v", nextflowUserName, err)
+				return "", "", err
+			}
+
 		} else {
 			Config.Logger.Printf("Error creating user '%s': %v", nextflowUserName, err)
 			return "", "", err
@@ -555,7 +568,7 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 
 	batchComputeEnvResult, err := batchSvc.CreateComputeEnvironment(&batch.CreateComputeEnvironmentInput{
 		ComputeEnvironmentName: &batchComputeEnvName,
-		Type: aws.String("MANAGED"), // TODO maybe using unmanaged allows users to choose the instance types? or does nextflow control that?
+		Type: aws.String("MANAGED"),
 		ComputeResources: &batch.ComputeResource{
 			Ec2Configuration: []*batch.Ec2Configuration{
 				{
@@ -682,7 +695,9 @@ func createS3bucket(s3Svc *s3.S3, bucketName string) error {
 	// create S3 bucket for nextflow input, output and intermediate files
 	_, err := s3Svc.CreateBucket(&s3.CreateBucketInput{
 		Bucket: &bucketName,
-		// TODO conditional LocationConstraint? this only works if not "us-east-1"?
+		// TODO We may need to add the LocationConstraint below if we change the region to not
+		// "us-east-1". It seems this block causes an error when the region is "us-east-1", so
+		// it would need to be added conditionally.
 		// CreateBucketConfiguration: &s3.CreateBucketConfiguration{
 		// 	LocationConstraint: aws.String("us-east-1"),
 		// },
@@ -1186,7 +1201,7 @@ func getLatestAmazonLinuxAmi(ec2svc *ec2.EC2) (*string, error) {
 	ami, err := ec2svc.DescribeImages(&ec2.DescribeImagesInput{
 		Filters: []*ec2.Filter{
 			{
-				Name: aws.String("name"), // TODO should it be "Name"?
+				Name: aws.String("name"),
 				Values: []*string{
 					aws.String("amzn2-ami-ecs-hvm-2.0.*"),
 				},
@@ -1233,16 +1248,14 @@ func cleanUpNextflowResources(userName string) error {
 		return err
 	}
 
-	// creadentials and AWS services init
+	// credentials and AWS services init
 	var awsConfig aws.Config
 	var awsAccountId string
 	sess := session.Must(session.NewSession(&aws.Config{
-		// TODO: Make region configurable?
 		Region: aws.String("us-east-1"),
 	}))
 	if payModel != nil && payModel.Ecs {
 		Config.Logger.Printf("Info: pay model enabled for user '%s': deleting Nextflow resources in user's AWS account", userName)
-		// TODO: Make this configurable
 		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
 		awsConfig = aws.Config{
 			Credentials: stscreds.NewCredentials(sess, roleArn),
@@ -1266,27 +1279,12 @@ func cleanUpNextflowResources(userName string) error {
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
 
 	// delete the user's access keys
-	// TODO need to do this before starting a container too, to avoid error:
-	// `LimitExceeded: Cannot exceed quota for AccessKeysPerUser: 2`
 	nextflowUserName := fmt.Sprintf("%s-nf-%s", hostname, userName)
-	listAccessKeysResult, err := iamSvc.ListAccessKeys(&iam.ListAccessKeysInput{
-		UserName: &nextflowUserName,
-	})
+	err = deleteUserAccessKeys(nextflowUserName, iamSvc)
 	if err != nil {
-		Config.Logger.Printf("Unable to list access keys for user '%s': %v", nextflowUserName, err)
+		Config.Logger.Printf("Unable to delete access keys for user '%s': %v", nextflowUserName, err)
 		return err
 	}
-	for _, key := range listAccessKeysResult.AccessKeyMetadata {
-		Config.Logger.Printf("Deleting access key '%s' for user '%s'", *key.AccessKeyId, nextflowUserName)
-		_, err := iamSvc.DeleteAccessKey(&iam.DeleteAccessKeyInput{
-			UserName:    &nextflowUserName,
-			AccessKeyId: key.AccessKeyId,
-		})
-		if err != nil {
-			Config.Logger.Printf("Warning: Unable to delete access key '%s' for user '%s' - continuing: %v", *key.AccessKeyId, nextflowUserName, err)
-		}
-	}
-	Config.Logger.Printf("Debug: Deleted access keys for Nextflow AWS user '%s'", nextflowUserName)
 
 	err = stopSquidInstance(hostname, userName, ec2Svc)
 	if err != nil {
@@ -1314,6 +1312,28 @@ func cleanUpNextflowResources(userName string) error {
 	// 	Config.Logger.Printf("Debug: Deleted objects in bucket '%s' at '%s'", bucketName, objectsKey)
 	// }
 
+	return nil
+}
+
+func deleteUserAccessKeys(nextflowUserName string, iamSvc *iam.IAM) error {
+	listAccessKeysResult, err := iamSvc.ListAccessKeys(&iam.ListAccessKeysInput{
+		UserName: &nextflowUserName,
+	})
+	if err != nil {
+		Config.Logger.Printf("Unable to list access keys for user '%s': %v", nextflowUserName, err)
+		return err
+	}
+	for _, key := range listAccessKeysResult.AccessKeyMetadata {
+		Config.Logger.Printf("Deleting access key '%s' for user '%s'", *key.AccessKeyId, nextflowUserName)
+		_, err := iamSvc.DeleteAccessKey(&iam.DeleteAccessKeyInput{
+			UserName:    &nextflowUserName,
+			AccessKeyId: key.AccessKeyId,
+		})
+		if err != nil {
+			Config.Logger.Printf("Warning: Unable to delete access key '%s' for user '%s' - continuing: %v", *key.AccessKeyId, nextflowUserName, err)
+		}
+	}
+	Config.Logger.Printf("Debug: Deleted access keys for Nextflow AWS user '%s'", nextflowUserName)
 	return nil
 }
 
