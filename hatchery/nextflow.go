@@ -541,6 +541,12 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 		Config.Logger.Printf("Debug: Batch compute environment '%s' already exists, updating it", batchComputeEnvName)
 		batchComputeEnvArn = *batchComputeEnv.ComputeEnvironments[0].ComputeEnvironmentArn
 
+		// wait for the compute env to be ready to be updated
+		err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc)
+		if err != nil {
+			return "", err
+		}
+
 		// update any settings that may have changed in the config
 		// TODO also make sure it is pointing at the correct subnets - if the VPC is deleted,
 		// we should recreate the compute environment as well because it will be pointing at old vpc subnets
@@ -624,6 +630,15 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 	}
 
 	// the compute environment must be "VALID" before we can create the job queue: wait until ready
+	err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc)
+	if err != nil {
+		return "", err
+	}
+
+	return batchComputeEnvArn, nil
+}
+
+func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.Batch) error {
 	maxIter := 6
 	iterDelaySecs := 5
 	var compEnvStatus string
@@ -634,7 +649,7 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 			},
 		})
 		if err != nil {
-			return "", err
+			return err
 		}
 		compEnvStatus = *batchComputeEnvs.ComputeEnvironments[0].Status
 		if compEnvStatus == "VALID" {
@@ -642,13 +657,12 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 			break
 		}
 		if i == maxIter {
-			return "", fmt.Errorf("Compute environment is not ready after %v seconds. Exiting", maxIter * iterDelaySecs)
+			return fmt.Errorf("Compute environment is not ready after %v seconds. Exiting", maxIter * iterDelaySecs)
 		}
 		Config.Logger.Printf("Info: Compute environment is %s, waiting %vs and checking again", compEnvStatus, iterDelaySecs)
 		time.Sleep(time.Duration(iterDelaySecs) * time.Second)
 	}
-
-	return batchComputeEnvArn, nil
+	return nil
 }
 
 // Create IAM role for AWS Batch compute environment
