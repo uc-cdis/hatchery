@@ -44,6 +44,10 @@ func (creds *CREDS) acceptTGWShare(ramArn *string) error {
 	if len(resourceShareInvitation.ResourceShareInvitations) == 0 {
 		// Log that there are no invitations
 		Config.Logger.Printf("No invitations found something fishy is going on")
+		err := creds.acceptTGWShare(ramArn)
+		if err != nil {
+			return err
+		}
 		return nil
 	} else {
 		if *resourceShareInvitation.ResourceShareInvitations[0].Status != "ACCEPTED" {
@@ -126,6 +130,7 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 			return nil, fmt.Errorf("failed to ListPrincipals: %s", err)
 		}
 		if len(listPrincipals.Principals) == 0 || len(listResources.Resources) == 0 {
+			Config.Logger.Printf("TransitGateway is not shared with AWS account %s, associating resource share with account", accountid)
 			associateResourceShareInput := &ram.AssociateResourceShareInput{
 				Principals:       []*string{aws.String(accountid)},
 				ResourceArns:     []*string{&tgwArn},
