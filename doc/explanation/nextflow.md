@@ -14,17 +14,10 @@ TODO add config details to restrict the pay model
 
 ## Automatically-created AWS resources
 
-### Global resources
-
-TODO update
-
-At start-up, Hatchery checks if any of the configured containers has the `nextflow.enabled` flag enabled. If so, the following resources are created automatically:
+When a user **launches** a Nextflow workspace, Hatchery automatically creates the necessary resources in AWS if they do not already exist:
+- VPC and Squid instance
 - AWS Batch Compute environment
 - S3 bucket for workflow inputs and intermediate files
-
-### Per-user resources
-
-When a user **launches** a Nextflow workspace, Hatchery automatically creates the necessary resources in AWS if they do not already exist:
 - AWS Batch job queue
 - IAM policy with access to `s3://<nextflow bucket>/<username>`
 - IAM role with access to this policy ^
@@ -33,8 +26,9 @@ When a user **launches** a Nextflow workspace, Hatchery automatically creates th
 - Access key for this user ^. Harchery then sets the key and secret as environment variables `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` in the user's workspace for use by Nextflow.
 
 When a user **terminates** a Nextflow workspace, Hatchery automatically deletes resources in AWS:
-- The contents of `s3://<nextflow bucket>/<username>`
 - The user’s access key
+- The Squid instance is stopped
+- Note: The contents of `s3://<nextflow bucket>/<username>` are not deleted because researchers may need to keep the intermediary files. Instead of deleting, we could set bucket lifecycle rules to delete after X days.
 
 ### Hatchery access
 
@@ -42,6 +36,4 @@ To do the above, the service account used by Hatchery needs various permissions 
 
 ## Note about cloud-automation deployments
 
-To enable the Nextflow feature in a Hatchery deployment created before version 2023.07/1.3.0, run `kubectl delete sa hatchery-service-account; gen3 kube-setup-hatchery` in order to recreate the Hatchery IAM role with additional access.
-
-TODO update version numbers here ^
+To enable the Nextflow feature in a Hatchery deployment created before version 2023.11/1.4.0, run `kubectl delete sa hatchery-service-account; gen3 kube-setup-hatchery` in order to recreate the Hatchery IAM role with additional access.
