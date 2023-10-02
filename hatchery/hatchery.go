@@ -60,7 +60,6 @@ func getCurrentUserName(r *http.Request) (userName string) {
 }
 
 var getWorkspaceStatus = func(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
-
 	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
 		return nil, err

@@ -10,8 +10,6 @@ It is recommended only to allow Nextflow workspaces when the user's pay model us
 - AWS Batch access cannot be controlled via resource tags. Because the `batch:DescribeJobs` and `batch:DescribeJobDefinitions` actions do not support a more granular authorization, we have to grant access to `*` which allows users to see all the jobs and job definitions in the account. This is not acceptable in a setting where users are sharing an AWS account.
 - There is a limit of 50 job queues per AWS account. If we have more than 50 total Nextflow users this call will fail. An option would be to delete unused job queues (when users terminate their workspace), but we would still be limited to 50 concurrent Nextflow users in the same account.
 
-TODO add config details to restrict the pay model
-
 ## Automatically-created AWS resources
 
 When a user **launches** a Nextflow workspace, Hatchery automatically creates the necessary resources in AWS if they do not already exist:

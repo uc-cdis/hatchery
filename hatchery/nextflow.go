@@ -21,9 +21,12 @@ import (
 )
 
 /*
-TODOS
+General TODOS:
 - Make the AWS region configurable in the hatchery config (although ideally, the user should be able to choose)
 - Make the `roleArn` configurable
+- The contents of `s3://<nextflow bucket>/<username>` are not deleted because researchers may need to keep the intermediary files.
+  We should set bucket lifecycle rules to delete after X days.
+- Can we do this long setup as a separate workspace launch step, instead of in the launch() function?
 */
 
 // create the AWS resources required to launch nextflow workflows
@@ -78,7 +81,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	// same tag as the other resources, so we can't use the same tag to track
 	// costs. To use the same tag, we might need to update `vpc.go`.
 	tag := fmt.Sprintf("%s-hatchery-nf-%s", hostname, userName)
-	// TODO add more tags - ask Jawad what's needed
+	// TODO Jawad mentioned we should add more tags. Ask him which ones are needed
 	tagsMap := map[string]*string{
 		"Name": &tag,
 	}
@@ -458,7 +461,7 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 		return nil, nil, err
 	}
 	vpcid := ""
-	// TODO: Check that VPC is configured correctly too, and not just the length of vpc's
+	// TODO: Check that the VPC is configured correctly, and not just that it exists
 	if len(vpc.Vpcs) == 0 {
 		Config.Logger.Print("Debug: VPC does not exist, creating it now")
 		vpc, err := createVPC(cidrstring, vpcName, ec2Svc)
@@ -552,7 +555,7 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 		// we should recreate the compute environment as well because it will be pointing at old vpc subnets
 		_, err = batchSvc.UpdateComputeEnvironment(&batch.UpdateComputeEnvironmentInput{
 			ComputeEnvironment: &batchComputeEnvArn,
-			State: aws.String("ENABLED"), // since the env already exists, make sure it's enabled
+			State:              aws.String("ENABLED"), // since the env already exists, make sure it's enabled
 			ComputeResources: &batch.ComputeResourceUpdate{
 				Ec2Configuration: []*batch.Ec2Configuration{
 					{
@@ -560,14 +563,14 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 						ImageType:       aws.String("ECS_AL2"),
 					},
 				},
-				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
-				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
-				Type:               aws.String(nextflowConfig.InstanceType),
+				MinvCpus: aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
+				MaxvCpus: aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
+				Type:     aws.String(nextflowConfig.InstanceType),
 			},
 			UpdatePolicy: &batch.UpdatePolicy{
 				// existing jobs are not terminated and keep running for up to 30 min after this update
 				JobExecutionTimeoutMinutes: aws.Int64(30),
-				TerminateJobsOnUpdate: aws.Bool(false),
+				TerminateJobsOnUpdate:      aws.Bool(false),
 			},
 		})
 		if err != nil {
@@ -601,7 +604,7 @@ func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, 
 
 		batchComputeEnvResult, err := batchSvc.CreateComputeEnvironment(&batch.CreateComputeEnvironmentInput{
 			ComputeEnvironmentName: &batchComputeEnvName,
-			Type: aws.String("MANAGED"),
+			Type:                   aws.String("MANAGED"),
 			ComputeResources: &batch.ComputeResource{
 				Ec2Configuration: []*batch.Ec2Configuration{
 					{
@@ -642,7 +645,7 @@ func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.
 	maxIter := 6
 	iterDelaySecs := 5
 	var compEnvStatus string
-	for i := 0;; i++ {
+	for i := 0; ; i++ {
 		batchComputeEnvs, err := batchSvc.DescribeComputeEnvironments(&batch.DescribeComputeEnvironmentsInput{
 			ComputeEnvironments: []*string{
 				aws.String(batchComputeEnvName),
@@ -657,7 +660,7 @@ func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.
 			break
 		}
 		if i == maxIter {
-			return fmt.Errorf("Compute environment is not ready after %v seconds. Exiting", maxIter * iterDelaySecs)
+			return fmt.Errorf("Compute environment is not ready after %v seconds. Exiting", maxIter*iterDelaySecs)
 		}
 		Config.Logger.Printf("Info: Compute environment is %s, waiting %vs and checking again", compEnvStatus, iterDelaySecs)
 		time.Sleep(time.Duration(iterDelaySecs) * time.Second)
@@ -859,7 +862,6 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) 
 		return nil, err
 	}
 	if len(exsubnet.Subnets) > 0 {
-		// TODO check if each individual subnet already exists?
 		Config.Logger.Printf("Debug: Subnet '%s' already exists, skipping creation", subnetName)
 		return exsubnet.Subnets[0].SubnetId, nil
 	}
@@ -911,7 +913,6 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 	}
 
 	if len(exrouteTable.RouteTables) > 0 {
-		// TODO check if each individual table already exists?
 		Config.Logger.Printf("Debug: Route table '%s' already exists, skipping creation", routeTableName)
 		return exrouteTable.RouteTables[0].RouteTableId, nil
 	}
@@ -996,7 +997,7 @@ func launchSquidInstance(hostname string, userName string, ec2svc *ec2.EC2, subn
 	}
 
 	var instanceId string
-	if len(exinstance.Reservations) > 0 {  // instance already exists
+	if len(exinstance.Reservations) > 0 { // instance already exists
 		instanceId = *exinstance.Reservations[0].Instances[0].InstanceId
 	} else { // instance does not already exist: create it
 		// User data script to install and run Squid
@@ -1083,8 +1084,8 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 		}
 
 		// instance type
-		// TODO: make this configurable via hatchery config (will need to change this function to
-		// update the instance type if the instance already exists)
+		// TODO: we could make this configurable via hatchery config (would need to change this
+		// function to update the instance type if the instance already exists)
 		instanceType := "t2.micro"
 
 		// Launch EC2 instance
@@ -1146,7 +1147,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 	maxIter := 6
 	iterDelaySecs := 10
 	var instanceState string
-	for i := 0;; i++ {
+	for i := 0; ; i++ {
 		exinstance, err = ec2svc.DescribeInstances(descInstanceInput)
 		if err != nil {
 			return nil, err
@@ -1168,7 +1169,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 			}
 		}
 		if i == maxIter {
-			return nil, fmt.Errorf("Squid instance is not ready after %v seconds. Exiting", maxIter * iterDelaySecs)
+			return nil, fmt.Errorf("Squid instance is not ready after %v seconds. Exiting", maxIter*iterDelaySecs)
 		}
 		Config.Logger.Printf("Info: Squid instance is %s, waiting %vs and checking again", instanceState, iterDelaySecs)
 		time.Sleep(time.Duration(iterDelaySecs) * time.Second)
