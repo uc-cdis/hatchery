@@ -210,6 +210,8 @@ func resetPaymodels(w http.ResponseWriter, r *http.Request) {
 }
 
 func options(w http.ResponseWriter, r *http.Request) {
+	userName := getCurrentUserName(r)
+
 	type container struct {
 		Name          string `json:"name"`
 		CPULimit      string `json:"cpu-limit"`
@@ -219,6 +221,16 @@ func options(w http.ResponseWriter, r *http.Request) {
 	}
 	var options []container
 	for k, v := range Config.ContainersMap {
+		// filter out workspace options that the user is not allowed to run
+		allowed, err := isUserAuthorizedForContainer(userName, v)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			continue // do not return containers that the user is not allowed to run
+		}
+
 		c := container{
 			Name:        v.Name,
 			CPULimit:    v.CPULimit,
@@ -268,6 +280,12 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	allpaymodels, err := getPayModelsForUser(userName)
+
+	// TODO check isUserAuthorizedForContainer here
+	// if !allowed {
+	// 	http.Error(w, fmt.Errorf("You are not allowed to run this container", maxIter * iterDelaySecs), http.StatusUnauthorized)
+	// 	return
+	// }
 
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar

@@ -170,7 +170,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	}
 
 	for _, container := range data.Config.Containers {
-		if container.Authz.Version != 0 { // default value "0" is interpreted as "no authz config"
+		if container.Authz.Version != 0 { // default int value "0" is interpreted as "no authz config"
 			err = ValidateAuthzConfig(container.Authz)
 			if nil != err {
 				data.Logger.Printf("Container '%s' has an invalid 'authz' configuration: %v", container.Name, err)

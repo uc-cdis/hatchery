@@ -52,3 +52,103 @@ func ValidateAuthzConfig(authzConfig AuthzConfig) error {
 
 	return nil
 }
+
+func isUserAuthorizedForContainer(userName string, container Container) (bool, error) {
+	if container.Authz.Version == 0 { // default int value "0" is interpreted as "no authz config"
+		return true, nil
+	}
+
+	var err error
+	var userIsAuthorized bool
+
+	if len(container.Authz.Rules.Or) > 0 {
+		for _, rule := range container.Authz.Rules.Or {
+			authorized, err := isUserAuthorizedForRule(userName, rule)
+			if nil != err {
+				return false, fmt.Errorf("TODO")
+			}
+			if authorized {
+				userIsAuthorized = true
+				break
+			}
+		}
+		userIsAuthorized = false
+	} else if len(container.Authz.Rules.And) > 0 {
+		for _, rule := range container.Authz.Rules.And {
+			authorized, err := isUserAuthorizedForRule(userName, rule)
+			if nil != err {
+				return false, fmt.Errorf("TODO")
+			}
+			if !authorized {
+				userIsAuthorized = false
+				break
+			}
+		}
+		userIsAuthorized = true
+	} else if len(container.Authz.Rules.ResourcePaths) > 0 {
+		userIsAuthorized, err = isUserAuthorizedForRule(userName, container.Authz.Rules)
+		if nil != err {
+			return false, fmt.Errorf("TODO")
+		}
+	} else if len(container.Authz.Rules.PayModels) > 0 {
+		userIsAuthorized, err = isUserAuthorizedForRule(userName, container.Authz.Rules)
+		if nil != err {
+			return false, fmt.Errorf("TODO")
+		}
+	} else {
+		// in this function we assume that the Authz block passed the `ValidateAuthzConfig` validation, so
+		// there should be no other option than the ones above. We should never reach this `else` block.
+		return false, fmt.Errorf("Unexpected container Authz value")
+	}
+
+	logPartial := ""
+	if !userIsAuthorized {
+		logPartial = "not "
+	}
+	Config.Logger.Printf("DEBUG: User '%s' is %sauthorized to run container '%s'", userName, logPartial, container.Name)
+	return userIsAuthorized, nil
+}
+
+func isUserAuthorizedForRule(userName string, rule AuthzVersion_0_1) (bool, error) {
+	if len(rule.ResourcePaths) > 0 {
+
+	} else if len(rule.PayModels) > 0 {
+		isUserAuthorizedForPayModels(userName, rule.PayModels)
+	} else {
+		// in this function we assume that the Authz block passed the `ValidateAuthzConfig` validation, so
+		// there should be no other option than the ones above. We should never reach this `else` block.
+		return false, fmt.Errorf("Unexpected container Authz rule value")
+	}
+	return false, nil
+}
+
+func isUserAuthorizedForPayModels(userName string, allowedPayModels []string) (bool, error) {
+	/*
+		If the user is using any of the pay models specified in `allowedPayModels`, return true.
+		Otherwise, return false.
+	*/
+	if len(allowedPayModels) == 0 {
+		// no pay models are allowed => everyone is denied access (although we should never reach this block
+		// if the Authz block passed the `ValidateAuthzConfig` validation)
+		return false, nil
+	}
+
+	if userName == "" {
+		Config.Logger.Print("User is not logged in, assume they are not allowd to run the container")
+		return false, nil
+	}
+	currentPayModel, err := getCurrentPayModel(userName)
+	if err != nil || currentPayModel == nil {
+		Config.Logger.Printf(fmt.Sprintf("Failed to get current pay model, unable to check if workspace option '%s' is allowed, not returning option. Error: %v", container.Name, err))
+	}
+	// TODO check if "Trial Workspace" can be an AllowedPayModel. Would `currentPayModel` be nil?
+	if currentPayModel == nil {
+		Config.Logger.Printf(fmt.Sprintf("No current pay model, unable to check if workspace option '%s' is allowed, not returning option.", container.Name))
+	}
+	if !stringArrayContains(container.AllowedPayModels, currentPayModel.Name) {
+		Config.Logger.Printf(fmt.Sprintf("Pay model '%s' is not allowed for container '%s'", currentPayModel, container.Name))
+		return false, nil // do not return this pay model as an option
+	}
+
+	return true, nil
+}
