@@ -279,22 +279,28 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Unable to create AWS resources for Nextflow", http.StatusInternalServerError)
 			return
 		}
-		envVars = append(envVars, k8sv1.EnvVar{
-			Name:  "AWS_ACCESS_KEY_ID",
-			Value: nextflowKeyId,
-		})
-		envVars = append(envVars, k8sv1.EnvVar{
-			Name:  "AWS_SECRET_ACCESS_KEY",
-			Value: nextflowKeySecret,
-		})
-		envVarsEcs = append(envVarsEcs, EnvVar{
-			Key:   "AWS_ACCESS_KEY_ID",
-			Value: nextflowKeyId,
-		})
-		envVarsEcs = append(envVarsEcs, EnvVar{
-			Key:   "AWS_SECRET_ACCESS_KEY",
-			Value: nextflowKeySecret,
-		})
+		envVars = append(
+			envVars,
+			k8sv1.EnvVar{
+				Name:  "AWS_ACCESS_KEY_ID",
+				Value: nextflowKeyId,
+			},
+			k8sv1.EnvVar{
+				Name:  "AWS_SECRET_ACCESS_KEY",
+				Value: nextflowKeySecret,
+			},
+		)
+		envVarsEcs = append(
+			envVarsEcs,
+			EnvVar{
+				Key:   "AWS_ACCESS_KEY_ID",
+				Value: nextflowKeyId,
+			},
+			EnvVar{
+				Key:   "AWS_SECRET_ACCESS_KEY",
+				Value: nextflowKeySecret,
+			},
+		)
 		// TODO do we need to set AWS_DEFAULT_REGION too?
 	} else {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")

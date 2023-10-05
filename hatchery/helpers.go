@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"regexp"
@@ -156,8 +155,6 @@ func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIK
 	}
 
 	if resp != nil && resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
-		Config.Logger.Print(string(b))
 		return nil, errors.New("Error occurred when creating API key with error code " + strconv.Itoa(resp.StatusCode))
 	}
 	defer resp.Body.Close()

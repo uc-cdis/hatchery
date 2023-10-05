@@ -752,10 +752,9 @@ func createS3bucket(s3Svc *s3.S3, bucketName string) error {
 		// `s3Svc.CreateBucket` does not error when the bucket exists
 		Config.Logger.Printf("Error creating S3 bucket '%s': %v", bucketName, err)
 		return err
-	} else {
-		Config.Logger.Printf("Created S3 bucket '%s'", bucketName)
 	}
 
+	Config.Logger.Printf("Created S3 bucket '%s'", bucketName)
 	return nil
 }
 
