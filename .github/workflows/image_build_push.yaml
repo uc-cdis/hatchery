@@ -5,7 +5,7 @@ on: push
 jobs:
   ci:
     name: Build Image and Push to Quay
-    uses: uc-cdis/.github/.github/workflows/image_build_push.yaml@fix/image-name-length
+    uses: uc-cdis/.github/.github/workflows/image_build_push.yaml@0f02cb2ba3333d75627af50c4dc09d58ccc758d0
     secrets:
       ECR_AWS_ACCESS_KEY_ID: ${{ secrets.ECR_AWS_ACCESS_KEY_ID }}
       ECR_AWS_SECRET_ACCESS_KEY: ${{ secrets.ECR_AWS_SECRET_ACCESS_KEY }}
