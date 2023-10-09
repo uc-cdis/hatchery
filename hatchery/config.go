@@ -11,6 +11,17 @@ import (
 	"os"
 )
 
+// Configuration specific to Nextflow containers
+type NextflowConfig struct {
+	Enabled            bool    `json:"enabled"`
+	JobImageWhitelist []string `json:"job-image-whitelist"`
+	S3BucketWhitelist []string `json:"s3-bucket-whitelist"`
+	InstanceAMI        string  `json:"instance-ami"`
+	InstanceType       string  `json:"instance-type"`
+	InstanceMinVCpus   int32   `json:"instance-min-vcpus"`
+	InstanceMaxVCpus   int32   `json:"instance-max-vcpus"`
+}
+
 // Container Struct to hold the configuration for Pod Container
 type Container struct {
 	Name               string            `json:"name"`
@@ -34,6 +45,7 @@ type Container struct {
 	Gen3VolumeLocation string            `json:"gen3-volume-location"`
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
+	NextflowConfig     NextflowConfig    `json:"nextflow"`
 }
 
 // SidecarContainer holds fuse sidecar configuration
@@ -151,6 +163,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 			}
 		}
 	}
+
 	for _, container := range data.Config.Containers {
 		jsonBytes, _ := json.Marshal(container)
 		hash := fmt.Sprintf("%x", md5.Sum([]byte(jsonBytes)))
