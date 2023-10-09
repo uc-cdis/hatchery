@@ -124,7 +124,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	}
 
 	// Create nextflow compute environment if it does not exist
-	batchComputeEnvArn, err := createBatchComputeEnvironment(hostname, tagsMap, batchSvc, ec2Svc, iamSvc, *vpcid, *subnetids, payModel, awsAccountId, nextflowConfig)
+	batchComputeEnvArn, err := createBatchComputeEnvironment(userName, hostname, tagsMap, batchSvc, ec2Svc, iamSvc, *vpcid, *subnetids, payModel, awsAccountId, nextflowConfig)
 	if err != nil {
 		Config.Logger.Printf("Error creating compute environment for user %s: %s", userName, err.Error())
 		return "", "", err
@@ -520,14 +520,15 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 	return &vpcid, &subnetIds, nil
 }
 
-func createBatchComputeEnvironment(hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string, payModel *PayModel, awsAccountId string, nextflowConfig NextflowConfig) (string, error) {
-	batchComputeEnvName := fmt.Sprintf("%s-nf-compute-env", hostname) // note that it's not user-specific. But the batch queue is
-
+func createBatchComputeEnvironment(userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string, payModel *PayModel, awsAccountId string, nextflowConfig NextflowConfig) (string, error) {
 	instanceProfileArn, err := createEcsInstanceProfile(iamSvc, fmt.Sprintf("%s-nf-ecsInstanceRole", hostname))
 	if err != nil {
 		Config.Logger.Printf("Unable to create ECS instance profile: %s", err.Error())
 		return "", err
 	}
+
+	// the compute environment must be user-specific as well, since it's in the user-specific VPC
+	batchComputeEnvName := fmt.Sprintf("%s-nf-compute-env-%s", hostname, userName)
 
 	// Check if batch compute env exists, if it does return it
 	batchComputeEnv, err := batchSvc.DescribeComputeEnvironments(&batch.DescribeComputeEnvironmentsInput{
