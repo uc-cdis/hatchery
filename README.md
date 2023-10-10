@@ -19,7 +19,3 @@ Hatchery creates Kubernetes Pods for workspace services. Workspace services must
     * [RStudio](doc/howto/rStudio.md)
     * [Galaxy](doc/howto/galaxy.md)
     * [noNVC Firefox](doc/howto/noVNCFirefox.md)
-
-### Tutorials
-
-### Reference
