@@ -211,6 +211,7 @@ func resetPaymodels(w http.ResponseWriter, r *http.Request) {
 
 func options(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
+	accessToken := getBearerToken(r)
 
 	type container struct {
 		Name          string `json:"name"`
@@ -222,7 +223,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 	var options []container
 	for k, v := range Config.ContainersMap {
 		// filter out workspace options that the user is not allowed to run
-		allowed, err := isUserAuthorizedForContainer(userName, v)
+		allowed, err := isUserAuthorizedForContainer(userName, accessToken, v)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

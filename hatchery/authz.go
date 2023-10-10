@@ -1,7 +1,11 @@
 package hatchery
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"net/http"
+	"time"
 )
 
 type AuthzConfig struct {
@@ -53,7 +57,8 @@ func ValidateAuthzConfig(authzConfig AuthzConfig) error {
 	return nil
 }
 
-func isUserAuthorizedForContainer(userName string, container Container) (bool, error) {
+func isUserAuthorizedForContainer(userName string, accessToken string, container Container) (bool, error) {
+	Config.Logger.Printf("DEBUG: Checking user '%s' access to container '%s'", userName, container.Name)
 	if container.Authz.Version == 0 { // default int value "0" is interpreted as "no authz config"
 		return true, nil
 	}
@@ -63,7 +68,7 @@ func isUserAuthorizedForContainer(userName string, container Container) (bool, e
 
 	if len(container.Authz.Rules.Or) > 0 {
 		for _, rule := range container.Authz.Rules.Or {
-			authorized, err := isUserAuthorizedForRule(userName, rule)
+			authorized, err := isUserAuthorizedForRule(userName, accessToken, rule)
 			if nil != err {
 				return false, fmt.Errorf("TODO")
 			}
@@ -75,7 +80,7 @@ func isUserAuthorizedForContainer(userName string, container Container) (bool, e
 		userIsAuthorized = false
 	} else if len(container.Authz.Rules.And) > 0 {
 		for _, rule := range container.Authz.Rules.And {
-			authorized, err := isUserAuthorizedForRule(userName, rule)
+			authorized, err := isUserAuthorizedForRule(userName, accessToken, rule)
 			if nil != err {
 				return false, fmt.Errorf("TODO")
 			}
@@ -86,40 +91,39 @@ func isUserAuthorizedForContainer(userName string, container Container) (bool, e
 		}
 		userIsAuthorized = true
 	} else if len(container.Authz.Rules.ResourcePaths) > 0 {
-		userIsAuthorized, err = isUserAuthorizedForRule(userName, container.Authz.Rules)
+		userIsAuthorized, err = isUserAuthorizedForRule(userName, accessToken, container.Authz.Rules)
 		if nil != err {
 			return false, fmt.Errorf("TODO")
 		}
 	} else if len(container.Authz.Rules.PayModels) > 0 {
-		userIsAuthorized, err = isUserAuthorizedForRule(userName, container.Authz.Rules)
+		userIsAuthorized, err = isUserAuthorizedForRule(userName, accessToken, container.Authz.Rules)
 		if nil != err {
 			return false, fmt.Errorf("TODO")
 		}
 	} else {
 		// in this function we assume that the Authz block passed the `ValidateAuthzConfig` validation, so
 		// there should be no other option than the ones above. We should never reach this `else` block.
-		return false, fmt.Errorf("Unexpected container Authz value")
+		return false, fmt.Errorf("unexpected container Authz value")
 	}
 
 	logPartial := ""
 	if !userIsAuthorized {
 		logPartial = "not "
 	}
-	Config.Logger.Printf("DEBUG: User '%s' is %sauthorized to run container '%s'", userName, logPartial, container.Name)
+	Config.Logger.Printf("INFO: User '%s' is %sauthorized to run container '%s'", userName, logPartial, container.Name)
 	return userIsAuthorized, nil
 }
 
-func isUserAuthorizedForRule(userName string, rule AuthzVersion_0_1) (bool, error) {
+func isUserAuthorizedForRule(userName string, accessToken string, rule AuthzVersion_0_1) (bool, error) {
 	if len(rule.ResourcePaths) > 0 {
-
+		return isUserAuthorizedForResourcePaths(userName, accessToken, rule.ResourcePaths)
 	} else if len(rule.PayModels) > 0 {
-		isUserAuthorizedForPayModels(userName, rule.PayModels)
+		return isUserAuthorizedForPayModels(userName, rule.PayModels)
 	} else {
 		// in this function we assume that the Authz block passed the `ValidateAuthzConfig` validation, so
 		// there should be no other option than the ones above. We should never reach this `else` block.
-		return false, fmt.Errorf("Unexpected container Authz rule value")
+		return false, fmt.Errorf("unexpected container Authz rule value")
 	}
-	return false, nil
 }
 
 func isUserAuthorizedForPayModels(userName string, allowedPayModels []string) (bool, error) {
@@ -134,21 +138,88 @@ func isUserAuthorizedForPayModels(userName string, allowedPayModels []string) (b
 	}
 
 	if userName == "" {
-		Config.Logger.Print("User is not logged in, assume they are not allowd to run the container")
+		Config.Logger.Print("User is not logged in, assume they are not allowed to run container")
 		return false, nil
 	}
 	currentPayModel, err := getCurrentPayModel(userName)
-	if err != nil || currentPayModel == nil {
-		Config.Logger.Printf(fmt.Sprintf("Failed to get current pay model, unable to check if workspace option '%s' is allowed, not returning option. Error: %v", container.Name, err))
+	if err != nil {
+		Config.Logger.Printf(fmt.Sprintf("Failed to get current pay model for user '%s', unable to check if user is authorized to launch container. Error: %v", userName, err))
+		return false, nil
 	}
-	// TODO check if "Trial Workspace" can be an AllowedPayModel. Would `currentPayModel` be nil?
-	if currentPayModel == nil {
-		Config.Logger.Printf(fmt.Sprintf("No current pay model, unable to check if workspace option '%s' is allowed, not returning option.", container.Name))
+
+	// "None" is a special `allowedPayModels` value that allows the absence of pay model (aka blanket billing)
+	currentPayModelName := "None"
+	if currentPayModel != nil {
+		currentPayModelName = currentPayModel.Name
 	}
-	if !stringArrayContains(container.AllowedPayModels, currentPayModel.Name) {
-		Config.Logger.Printf(fmt.Sprintf("Pay model '%s' is not allowed for container '%s'", currentPayModel, container.Name))
+
+	if !stringArrayContains(allowedPayModels, currentPayModelName) {
+		Config.Logger.Printf("Pay model '%s' is not allowed for container", currentPayModelName)
 		return false, nil // do not return this pay model as an option
 	}
 
 	return true, nil
+}
+
+func isUserAuthorizedForResourcePaths(userName string, accessToken string, resourcePaths []string) (bool, error) {
+	// if contentType != "" {
+	// 	headers["Content-Type"] = contentType
+	// }
+	// var req *http.Request
+	// var err error
+
+	body := "{ \"requests\": ["
+	for _, resource := range resourcePaths {
+		// if s3BucketWhitelist != "" {
+		// 	s3BucketWhitelist += ", "
+		// }
+		body += fmt.Sprintf("{\"resource\": \"%s\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}},", resource)
+	}
+	body = body[:len(body)-1] // remove the last trailing comma
+	body += "]}"
+
+	// {
+	// 	// "user": {
+	// 	// 	"token": accessToken
+	// 	// }
+	// 	"requests": [
+	// 		{"resource": resource, "action": {"service": "jupyterhub", "method": "laumch"}}
+	// 		for resource in resources
+	// 	]
+	// }
+	// body := bytes.NewBufferString("{\"scope\": [\"data\", \"user\"]}")
+
+	resp, err := makeArboristAuthCall(accessToken, body)
+	if err != nil {
+		return false, err
+	}
+
+	// check resp
+	Config.Logger.Printf("isUserAuthorizedForResourcePaths resp: %v", resp)
+
+	return true, nil
+}
+
+var makeArboristAuthCall = func(accessToken string, body string) (string, error) {
+	arboristUrl := "http://arborist-service/auth/request"
+	req, err := http.NewRequest("POST", arboristUrl, bytes.NewBufferString(body))
+	if err != nil {
+		return "", errors.New("Error occurred while generating HTTP request: " + err.Error())
+	}
+
+	headers := map[string]string{
+		"Authorization": fmt.Sprintf("Bearer %s", accessToken),
+	}
+	for k, v := range headers {
+		req.Header.Add(k, v)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", errors.New("Error occurred while making HTTP request: " + err.Error())
+	}
+
+	Config.Logger.Printf("makeArboristAuthCall resp: %v", resp)
+	return "resp TODO", nil
 }

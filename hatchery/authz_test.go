@@ -2,10 +2,16 @@ package hatchery
 
 import (
 	"encoding/json"
+	"log"
+	"os"
 	"testing"
 )
 
 func TestValidateAuthzConfigVersion0_1(t *testing.T) {
+	Config = &FullHatcheryConfig{
+		Logger: log.New(os.Stdout, "", log.LstdFlags),
+	}
+
 	testCases := []struct {
 		name       string
 		jsonConfig string
