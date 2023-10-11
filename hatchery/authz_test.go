@@ -2,6 +2,7 @@ package hatchery
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -14,8 +15,8 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 
 	testCases := []struct {
 		name       string
-		jsonConfig string
 		valid      bool
+		jsonConfig string
 	}{
 		{
 			name:  "Valid first level 'or' with 2 items",
@@ -156,22 +157,165 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 		},
 	}
 
-	for _, testcase := range testCases {
-		t.Logf("Running test case '%s'", testcase.name)
+	for _, testCase := range testCases {
+		t.Logf("Running test case '%s'", testCase.name)
 		config := AuthzConfig{}
-		err := json.Unmarshal([]byte(testcase.jsonConfig), &config)
+		err := json.Unmarshal([]byte(testCase.jsonConfig), &config)
 		if nil != err {
 			t.Errorf("failed to load authz config: %v", err)
 			return
 		}
 		err = ValidateAuthzConfig(config)
-		if testcase.valid && nil != err {
+		if testCase.valid && nil != err {
 			t.Errorf("config is valid but the validation did not accept it: %v", err)
 			return
 		}
-		if !testcase.valid && nil == err {
-			t.Errorf("config is not valid but the validation accepted it")
+		if !testCase.valid && nil == err {
+			t.Error("config is not valid but the validation accepted it")
 			return
 		}
 	}
+}
+
+// func TestIsUserAuthorizedForContainer(t *testing.T) {
+
+// 	t.Errorf("DONE! TODO remove")
+// }
+
+func TestIsUserAuthorizedForPayModels(t *testing.T) {
+	Config = &FullHatcheryConfig{
+		Logger: log.New(os.Stdout, "", log.LstdFlags),
+	}
+
+	testCases := []struct {
+		authorized       bool
+		userPayModel     *PayModel
+		allowedPayModels []string
+	}{
+		{
+			authorized:       true,
+			userPayModel:     nil,
+			allowedPayModels: []string{"None"},
+		},
+		{
+			authorized:       false,
+			userPayModel:     nil,
+			allowedPayModels: []string{"Direct Pay"},
+		},
+		{
+			authorized:       true,
+			userPayModel:     &PayModel{Name: "Direct Pay"},
+			allowedPayModels: []string{"None", "Direct Pay"},
+		},
+		{
+			authorized:       false,
+			userPayModel:     &PayModel{Name: "Direct Pay"},
+			allowedPayModels: []string{"None"},
+		},
+		{
+			authorized:       false,
+			userPayModel:     &PayModel{Name: "ERROR"}, // unable to get the user's pay model
+			allowedPayModels: []string{"Direct Pay"},
+		},
+	}
+
+	originalGetCurrentPayModel := getCurrentPayModel
+	for _, testCase := range testCases {
+		userPayModelName := "nil"
+		if testCase.userPayModel != nil {
+			userPayModelName = testCase.userPayModel.Name
+		}
+		t.Logf("Running test case: userPayModel='%s'; allowedPayModels=%v", userPayModelName, testCase.allowedPayModels)
+
+		// mock the user's pay model
+		getCurrentPayModel = func(string) (*PayModel, error) {
+			if testCase.userPayModel != nil && testCase.userPayModel.Name == "ERROR" {
+				return nil, fmt.Errorf("unable to get the user's pay model")
+			}
+			return testCase.userPayModel, nil
+		}
+
+		authorized, err := isUserAuthorizedForPayModels("user1", testCase.allowedPayModels)
+		if nil != err {
+			t.Errorf("'isUserAuthorizedForPayModels' call failed: %v", err)
+			return
+		}
+		if testCase.authorized && !authorized {
+			t.Error("access should be granted, but it was not")
+			return
+		} else if !testCase.authorized && authorized {
+			t.Error("access should not be granted, but it was")
+			return
+		}
+	}
+
+	getCurrentPayModel = originalGetCurrentPayModel // restore original function
+}
+
+func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
+	Config = &FullHatcheryConfig{
+		Logger: log.New(os.Stdout, "", log.LstdFlags),
+	}
+
+	testCases := []struct {
+		name                 string
+		authorizedInArborist bool
+		arboristError        bool
+	}{
+		{
+			name:                 "User has access in Arborist",
+			arboristError:        false,
+			authorizedInArborist: true,
+		},
+		{
+			name:                 "User does not have access in Arborist",
+			arboristError:        false,
+			authorizedInArborist: false,
+		},
+		{
+			name:                 "Error while mking call to Arborist",
+			arboristError:        true,
+			authorizedInArborist: true,
+		},
+	}
+
+	resourcePaths := []string{"/workspace/abc", "/workspace/xyz"}
+	expectedRequestBody := "{ \"requests\": [{\"resource\": \"/workspace/abc\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}},{\"resource\": \"/workspace/xyz\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}}]}"
+
+	originalArboristAuthRequest := arboristAuthRequest
+	for _, testCase := range testCases {
+		t.Logf("Running test case: '%s'", testCase.name)
+
+		// mock the call to arborist
+		arboristAuthRequest = func(accessToken string, body string) (bool, error) {
+			if testCase.arboristError {
+				return false, fmt.Errorf("mocking an error while making call to arborist")
+			}
+			// part of the test is to ensure that the right request body is generated and sent to arborist:
+			if !json.Valid([]byte(body)) {
+				return false, fmt.Errorf("request body generated by `isUserAuthorizedForResourcePaths` is not valid JSON: %s", body)
+			}
+			if body != expectedRequestBody {
+				return false, fmt.Errorf("request body generated by `isUserAuthorizedForResourcePaths` is not the same as expected. Expected: '%s'. Received: '%s'", expectedRequestBody, body)
+			}
+			return testCase.authorizedInArborist, nil
+		}
+
+		authorized, err := isUserAuthorizedForResourcePaths("user1", "accessToken", resourcePaths)
+		if nil != err {
+			t.Errorf("'isUserAuthorizedForResourcePaths' call failed: %v", err)
+			return
+		}
+		if testCase.arboristError {
+			if authorized {
+				t.Error("There was an error while making call to arborist, so user should not have been authorized")
+				return
+			}
+		} else if authorized != testCase.authorizedInArborist {
+			t.Errorf("User authorization in Arborist is '%v', but `isUserAuthorizedForResourcePaths` returned 'authorized='%v'", testCase.authorizedInArborist, authorized)
+			return
+		}
+	}
+
+	arboristAuthRequest = originalArboristAuthRequest // restore original function
 }

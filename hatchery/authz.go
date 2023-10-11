@@ -2,6 +2,7 @@ package hatchery
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,6 +19,10 @@ type AuthzVersion_0_1 struct {
 	Or            []AuthzVersion_0_1 `json:"or"`
 	ResourcePaths []string           `json:"resource_paths"`
 	PayModels     []string           `json:"pay_models"`
+}
+
+type AuthRequestResponse struct {
+	Auth bool `json:"auth"`
 }
 
 func ValidateAuthzConfig(authzConfig AuthzConfig) error {
@@ -70,7 +75,7 @@ func isUserAuthorizedForContainer(userName string, accessToken string, container
 		for _, rule := range container.Authz.Rules.Or {
 			authorized, err := isUserAuthorizedForRule(userName, accessToken, rule)
 			if nil != err {
-				return false, fmt.Errorf("TODO")
+				return false, err
 			}
 			if authorized {
 				userIsAuthorized = true
@@ -82,7 +87,7 @@ func isUserAuthorizedForContainer(userName string, accessToken string, container
 		for _, rule := range container.Authz.Rules.And {
 			authorized, err := isUserAuthorizedForRule(userName, accessToken, rule)
 			if nil != err {
-				return false, fmt.Errorf("TODO")
+				return false, err
 			}
 			if !authorized {
 				userIsAuthorized = false
@@ -93,12 +98,12 @@ func isUserAuthorizedForContainer(userName string, accessToken string, container
 	} else if len(container.Authz.Rules.ResourcePaths) > 0 {
 		userIsAuthorized, err = isUserAuthorizedForRule(userName, accessToken, container.Authz.Rules)
 		if nil != err {
-			return false, fmt.Errorf("TODO")
+			return false, err
 		}
 	} else if len(container.Authz.Rules.PayModels) > 0 {
 		userIsAuthorized, err = isUserAuthorizedForRule(userName, accessToken, container.Authz.Rules)
 		if nil != err {
-			return false, fmt.Errorf("TODO")
+			return false, err
 		}
 	} else {
 		// in this function we assume that the Authz block passed the `ValidateAuthzConfig` validation, so
@@ -162,49 +167,27 @@ func isUserAuthorizedForPayModels(userName string, allowedPayModels []string) (b
 }
 
 func isUserAuthorizedForResourcePaths(userName string, accessToken string, resourcePaths []string) (bool, error) {
-	// if contentType != "" {
-	// 	headers["Content-Type"] = contentType
-	// }
-	// var req *http.Request
-	// var err error
-
 	body := "{ \"requests\": ["
 	for _, resource := range resourcePaths {
-		// if s3BucketWhitelist != "" {
-		// 	s3BucketWhitelist += ", "
-		// }
 		body += fmt.Sprintf("{\"resource\": \"%s\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}},", resource)
 	}
 	body = body[:len(body)-1] // remove the last trailing comma
 	body += "]}"
 
-	// {
-	// 	// "user": {
-	// 	// 	"token": accessToken
-	// 	// }
-	// 	"requests": [
-	// 		{"resource": resource, "action": {"service": "jupyterhub", "method": "laumch"}}
-	// 		for resource in resources
-	// 	]
-	// }
-	// body := bytes.NewBufferString("{\"scope\": [\"data\", \"user\"]}")
-
-	resp, err := makeArboristAuthCall(accessToken, body)
+	authorized, err := arboristAuthRequest(accessToken, body)
 	if err != nil {
-		return false, err
+		Config.Logger.Printf("something went wrong when making a call to arborist's `/auth/request` endpoint. Denying access. Details: %v", err.Error())
+		return false, nil
 	}
 
-	// check resp
-	Config.Logger.Printf("isUserAuthorizedForResourcePaths resp: %v", resp)
-
-	return true, nil
+	return authorized, nil
 }
 
-var makeArboristAuthCall = func(accessToken string, body string) (string, error) {
+var arboristAuthRequest = func(accessToken string, body string) (bool, error) {
 	arboristUrl := "http://arborist-service/auth/request"
 	req, err := http.NewRequest("POST", arboristUrl, bytes.NewBufferString(body))
 	if err != nil {
-		return "", errors.New("Error occurred while generating HTTP request: " + err.Error())
+		return false, errors.New("Error occurred while generating HTTP request: " + err.Error())
 	}
 
 	headers := map[string]string{
@@ -217,9 +200,18 @@ var makeArboristAuthCall = func(accessToken string, body string) (string, error)
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", errors.New("Error occurred while making HTTP request: " + err.Error())
+		return false, fmt.Errorf("error occurred while making HTTP request: %v", err.Error())
+	}
+	if resp.StatusCode != 200 {
+		return false, fmt.Errorf("arborist returned non-200 code during authorization check: %v", resp.StatusCode)
+	}
+	defer resp.Body.Close()
+
+	authRequestResponse := new(AuthRequestResponse)
+	err = json.NewDecoder(resp.Body).Decode(authRequestResponse)
+	if err != nil {
+		return false, fmt.Errorf("unable to decode arborist response: %v", err.Error())
 	}
 
-	Config.Logger.Printf("makeArboristAuthCall resp: %v", resp)
-	return "resp TODO", nil
+	return authRequestResponse.Auth, nil
 }
