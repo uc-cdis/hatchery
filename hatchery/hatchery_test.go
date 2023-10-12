@@ -3,8 +3,6 @@ package hatchery
 import (
 	"context"
 	"errors"
-	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -198,9 +196,6 @@ func Test_SetpaymodelEndpoint(t *testing.T) {
 		t.Logf("Testing SetPaymodels when %s", testcase.name)
 
 		/* Setup */
-		Config = &FullHatcheryConfig{
-			Logger: log.New(io.Discard, "", log.LstdFlags), // Discard any logs in the tests
-		}
 		getWorkspaceStatus = func(context.Context, string, string) (*WorkspaceStatus, error) {
 			return testcase.currentStatus, nil
 		}
@@ -525,11 +520,6 @@ func Test_LaunchEndpoint(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Logf("Testing Launch Endpoint when %s", testcase.name)
 
-		/* Setup */
-		Config = &FullHatcheryConfig{
-			Logger: log.New(io.Discard, "", log.LstdFlags), // Discard any logs in the tests
-		}
-
 		// waitGroup is needed since one of the mocked methods is called as a go routine internally
 		var waitGroup sync.WaitGroup
 
@@ -757,9 +747,6 @@ func Test_TerminateEndpoint(t *testing.T) {
 		t.Logf("Testing Terminate Endpoint when %s", testcase.name)
 
 		/* Setup */
-		Config = &FullHatcheryConfig{
-			Logger: log.New(io.Discard, "", log.LstdFlags), // Discard any logs in the tests
-		}
 		workspaceTerminationPending := testcase.waitToTerminate
 		workspaceStatusCallCounter := 0
 		goRoutineCalled := testcase.calledFunctionName != "" && !testcase.throwError

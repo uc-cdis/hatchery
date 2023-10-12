@@ -63,15 +63,16 @@ func ValidateAuthzConfig(authzConfig AuthzConfig) error {
 }
 
 func isUserAuthorizedForContainer(userName string, accessToken string, container Container) (bool, error) {
-	Config.Logger.Printf("DEBUG: Checking user '%s' access to container '%s'", userName, container.Name)
 	if container.Authz.Version == 0 { // default int value "0" is interpreted as "no authz config"
 		return true, nil
 	}
 
+	Config.Logger.Printf("DEBUG: Checking user '%s' access to container '%s'", userName, container.Name)
 	var err error
 	var userIsAuthorized bool
 
 	if len(container.Authz.Rules.Or) > 0 {
+		userIsAuthorized = false
 		for _, rule := range container.Authz.Rules.Or {
 			authorized, err := isUserAuthorizedForRule(userName, accessToken, rule)
 			if nil != err {
@@ -82,8 +83,8 @@ func isUserAuthorizedForContainer(userName string, accessToken string, container
 				break
 			}
 		}
-		userIsAuthorized = false
 	} else if len(container.Authz.Rules.And) > 0 {
+		userIsAuthorized = true
 		for _, rule := range container.Authz.Rules.And {
 			authorized, err := isUserAuthorizedForRule(userName, accessToken, rule)
 			if nil != err {
@@ -94,7 +95,6 @@ func isUserAuthorizedForContainer(userName string, accessToken string, container
 				break
 			}
 		}
-		userIsAuthorized = true
 	} else if len(container.Authz.Rules.ResourcePaths) > 0 {
 		userIsAuthorized, err = isUserAuthorizedForRule(userName, accessToken, container.Authz.Rules)
 		if nil != err {
@@ -131,11 +131,13 @@ func isUserAuthorizedForRule(userName string, accessToken string, rule AuthzVers
 	}
 }
 
-func isUserAuthorizedForPayModels(userName string, allowedPayModels []string) (bool, error) {
+var isUserAuthorizedForPayModels = func(userName string, allowedPayModels []string) (bool, error) {
 	/*
 		If the user is using any of the pay models specified in `allowedPayModels`, return true.
 		Otherwise, return false.
 	*/
+	Config.Logger.Printf("DEBUG: Checking user '%s' pay model against allowed pay models %v", userName, allowedPayModels)
+
 	if len(allowedPayModels) == 0 {
 		// no pay models are allowed => everyone is denied access (although we should never reach this block
 		// if the Authz block passed the `ValidateAuthzConfig` validation)
@@ -166,7 +168,9 @@ func isUserAuthorizedForPayModels(userName string, allowedPayModels []string) (b
 	return true, nil
 }
 
-func isUserAuthorizedForResourcePaths(userName string, accessToken string, resourcePaths []string) (bool, error) {
+var isUserAuthorizedForResourcePaths = func(userName string, accessToken string, resourcePaths []string) (bool, error) {
+	Config.Logger.Printf("DEBUG: Checking user '%s' access to resource paths %v (service 'jupyterhub', method 'launch')", userName, resourcePaths)
+
 	body := "{ \"requests\": ["
 	for _, resource := range resourcePaths {
 		body += fmt.Sprintf("{\"resource\": \"%s\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}},", resource)

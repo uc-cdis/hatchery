@@ -3,16 +3,10 @@ package hatchery
 import (
 	"encoding/json"
 	"fmt"
-	"log"
-	"os"
 	"testing"
 )
 
 func TestValidateAuthzConfigVersion0_1(t *testing.T) {
-	Config = &FullHatcheryConfig{
-		Logger: log.New(os.Stdout, "", log.LstdFlags),
-	}
-
 	testCases := []struct {
 		name       string
 		valid      bool
@@ -177,16 +171,7 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 	}
 }
 
-// func TestIsUserAuthorizedForContainer(t *testing.T) {
-
-// 	t.Errorf("DONE! TODO remove")
-// }
-
 func TestIsUserAuthorizedForPayModels(t *testing.T) {
-	Config = &FullHatcheryConfig{
-		Logger: log.New(os.Stdout, "", log.LstdFlags),
-	}
-
 	testCases := []struct {
 		authorized       bool
 		userPayModel     *PayModel
@@ -253,10 +238,6 @@ func TestIsUserAuthorizedForPayModels(t *testing.T) {
 }
 
 func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
-	Config = &FullHatcheryConfig{
-		Logger: log.New(os.Stdout, "", log.LstdFlags),
-	}
-
 	testCases := []struct {
 		name                 string
 		authorizedInArborist bool
@@ -318,4 +299,178 @@ func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
 	}
 
 	arboristAuthRequest = originalArboristAuthRequest // restore original function
+}
+
+func TestIsUserAuthorizedForContainer(t *testing.T) {
+	testCases := []struct {
+		name                                     string
+		authorized                               bool
+		isUserAuthorizedForResourcePathsResponse bool
+		isUserAuthorizedForPayModelsResponse     bool
+		rules                                    AuthzVersion_0_1
+	}{
+		{
+			name:                                     "User has access to resource paths",
+			authorized:                               true,
+			isUserAuthorizedForResourcePathsResponse: true,
+			rules: AuthzVersion_0_1{
+				ResourcePaths: []string{"/workspace/abc"},
+			},
+		},
+		{
+			name:                                     "User does not have access to resource paths",
+			authorized:                               false,
+			isUserAuthorizedForResourcePathsResponse: false,
+			rules: AuthzVersion_0_1{
+				ResourcePaths: []string{"/workspace/abc"},
+			},
+		},
+		{
+			name:                                 "User has access to pay models",
+			authorized:                           true,
+			isUserAuthorizedForPayModelsResponse: true,
+			rules: AuthzVersion_0_1{
+				PayModels: []string{"Direct Pay"},
+			},
+		},
+		{
+			name:                                 "User does not have access to pay models",
+			authorized:                           false,
+			isUserAuthorizedForPayModelsResponse: false,
+			rules: AuthzVersion_0_1{
+				PayModels: []string{"Direct Pay"},
+			},
+		},
+		{
+			name:                                     "User has access to 1st item in 'or' rule",
+			authorized:                               true,
+			isUserAuthorizedForResourcePathsResponse: true,
+			isUserAuthorizedForPayModelsResponse:     false,
+			rules: AuthzVersion_0_1{
+				Or: []AuthzVersion_0_1{
+					{ResourcePaths: []string{"/workspace/abc"}},
+					{PayModels: []string{"Direct Pay"}},
+				},
+			},
+		},
+		{
+			name:                                     "User has access to 2nd item in 'or' rule",
+			authorized:                               true,
+			isUserAuthorizedForResourcePathsResponse: false,
+			isUserAuthorizedForPayModelsResponse:     true,
+			rules: AuthzVersion_0_1{
+				Or: []AuthzVersion_0_1{
+					{ResourcePaths: []string{"/workspace/abc"}},
+					{PayModels: []string{"Direct Pay"}},
+				},
+			},
+		},
+		{
+			name:                                     "User has access to both items in 'or' rule",
+			authorized:                               true,
+			isUserAuthorizedForResourcePathsResponse: true,
+			isUserAuthorizedForPayModelsResponse:     true,
+			rules: AuthzVersion_0_1{
+				Or: []AuthzVersion_0_1{
+					{ResourcePaths: []string{"/workspace/abc"}},
+					{PayModels: []string{"Direct Pay"}},
+				},
+			},
+		},
+		{
+			name:                                     "User has access to no items in 'or' rule",
+			authorized:                               false,
+			isUserAuthorizedForResourcePathsResponse: false,
+			isUserAuthorizedForPayModelsResponse:     false,
+			rules: AuthzVersion_0_1{
+				Or: []AuthzVersion_0_1{
+					{ResourcePaths: []string{"/workspace/abc"}},
+					{PayModels: []string{"Direct Pay"}},
+				},
+			},
+		},
+		{
+			name:                                     "User has access to 1st item in 'and' rule",
+			authorized:                               false,
+			isUserAuthorizedForResourcePathsResponse: true,
+			isUserAuthorizedForPayModelsResponse:     false,
+			rules: AuthzVersion_0_1{
+				And: []AuthzVersion_0_1{
+					{ResourcePaths: []string{"/workspace/abc"}},
+					{PayModels: []string{"Direct Pay"}},
+				},
+			},
+		},
+		{
+			name:                                     "User has access to 2nd item in 'and' rule",
+			authorized:                               false,
+			isUserAuthorizedForResourcePathsResponse: false,
+			isUserAuthorizedForPayModelsResponse:     true,
+			rules: AuthzVersion_0_1{
+				And: []AuthzVersion_0_1{
+					{ResourcePaths: []string{"/workspace/abc"}},
+					{PayModels: []string{"Direct Pay"}},
+				},
+			},
+		},
+		{
+			name:                                     "User has access to both item in 'and' rule",
+			authorized:                               true,
+			isUserAuthorizedForResourcePathsResponse: true,
+			isUserAuthorizedForPayModelsResponse:     true,
+			rules: AuthzVersion_0_1{
+				And: []AuthzVersion_0_1{
+					{ResourcePaths: []string{"/workspace/abc"}},
+					{PayModels: []string{"Direct Pay"}},
+				},
+			},
+		},
+		{
+			name:                                     "User has access to no items in 'and' rule",
+			authorized:                               false,
+			isUserAuthorizedForResourcePathsResponse: false,
+			isUserAuthorizedForPayModelsResponse:     false,
+			rules: AuthzVersion_0_1{
+				And: []AuthzVersion_0_1{
+					{ResourcePaths: []string{"/workspace/abc"}},
+					{PayModels: []string{"Direct Pay"}},
+				},
+			},
+		},
+	}
+
+	originalIsUserAuthorizedForPayModels := isUserAuthorizedForPayModels
+	originalIsUserAuthorizedForResourcePaths := isUserAuthorizedForResourcePaths
+	for _, testCase := range testCases {
+		t.Logf("Running test case: '%s'", testCase.name)
+
+		// mock the actual authorization checks (tested in other tests)
+		isUserAuthorizedForPayModels = func(userName string, allowedPayModels []string) (bool, error) {
+			return testCase.isUserAuthorizedForPayModelsResponse, nil
+		}
+		isUserAuthorizedForResourcePaths = func(userName string, accessToken string, resourcePaths []string) (bool, error) {
+			return testCase.isUserAuthorizedForResourcePathsResponse, nil
+		}
+
+		container := Container{
+			Name: "test container",
+			Authz: AuthzConfig{
+				Version: 0.1,
+				Rules:   testCase.rules,
+			},
+		}
+		authorized, err := isUserAuthorizedForContainer("user1", "accessToken", container)
+		if nil != err {
+			t.Errorf("'isUserAuthorizedForContainer' call failed: %v", err)
+			return
+		}
+		if authorized != testCase.authorized {
+			t.Errorf("Expected authorized='%v', but `isUserAuthorizedForContainer` returned 'authorized='%v'", testCase.authorized, authorized)
+			return
+		}
+	}
+
+	// restore original functions
+	isUserAuthorizedForPayModels = originalIsUserAuthorizedForPayModels
+	isUserAuthorizedForResourcePaths = originalIsUserAuthorizedForResourcePaths
 }
