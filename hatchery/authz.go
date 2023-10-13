@@ -62,7 +62,7 @@ func ValidateAuthzConfig(authzConfig AuthzConfig) error {
 	return nil
 }
 
-func isUserAuthorizedForContainer(userName string, accessToken string, container Container) (bool, error) {
+var isUserAuthorizedForContainer = func(userName string, accessToken string, container Container) (bool, error) {
 	if container.Authz.Version == 0 { // default int value "0" is interpreted as "no authz config"
 		return true, nil
 	}
@@ -161,7 +161,7 @@ var isUserAuthorizedForPayModels = func(userName string, allowedPayModels []stri
 	}
 
 	if !stringArrayContains(allowedPayModels, currentPayModelName) {
-		Config.Logger.Printf("Pay model '%s' is not allowed for container", currentPayModelName)
+		Config.Logger.Printf("DEBUG: Pay model '%s' is not allowed for container", currentPayModelName)
 		return false, nil // do not return this pay model as an option
 	}
 

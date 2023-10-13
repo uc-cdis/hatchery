@@ -205,6 +205,10 @@ func TestIsUserAuthorizedForPayModels(t *testing.T) {
 	}
 
 	originalGetCurrentPayModel := getCurrentPayModel
+	defer func() {
+		getCurrentPayModel = originalGetCurrentPayModel // restore original function
+	}()
+
 	for _, testCase := range testCases {
 		userPayModelName := "nil"
 		if testCase.userPayModel != nil {
@@ -233,8 +237,6 @@ func TestIsUserAuthorizedForPayModels(t *testing.T) {
 			return
 		}
 	}
-
-	getCurrentPayModel = originalGetCurrentPayModel // restore original function
 }
 
 func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
@@ -264,6 +266,10 @@ func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
 	expectedRequestBody := "{ \"requests\": [{\"resource\": \"/workspace/abc\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}},{\"resource\": \"/workspace/xyz\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}}]}"
 
 	originalArboristAuthRequest := arboristAuthRequest
+	defer func() {
+		arboristAuthRequest = originalArboristAuthRequest // restore original function
+	}()
+
 	for _, testCase := range testCases {
 		t.Logf("Running test case: '%s'", testCase.name)
 
@@ -297,8 +303,6 @@ func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
 			return
 		}
 	}
-
-	arboristAuthRequest = originalArboristAuthRequest // restore original function
 }
 
 func TestIsUserAuthorizedForContainer(t *testing.T) {
@@ -441,6 +445,12 @@ func TestIsUserAuthorizedForContainer(t *testing.T) {
 
 	originalIsUserAuthorizedForPayModels := isUserAuthorizedForPayModels
 	originalIsUserAuthorizedForResourcePaths := isUserAuthorizedForResourcePaths
+	defer func() {
+		// restore original functions
+		isUserAuthorizedForPayModels = originalIsUserAuthorizedForPayModels
+		isUserAuthorizedForResourcePaths = originalIsUserAuthorizedForResourcePaths
+	}()
+
 	for _, testCase := range testCases {
 		t.Logf("Running test case: '%s'", testCase.name)
 
@@ -469,8 +479,4 @@ func TestIsUserAuthorizedForContainer(t *testing.T) {
 			return
 		}
 	}
-
-	// restore original functions
-	isUserAuthorizedForPayModels = originalIsUserAuthorizedForPayModels
-	isUserAuthorizedForResourcePaths = originalIsUserAuthorizedForResourcePaths
 }

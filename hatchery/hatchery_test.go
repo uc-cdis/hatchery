@@ -854,3 +854,64 @@ func Test_TerminateEndpoint(t *testing.T) {
 	getWorkspaceStatus = original_getWorkspaceStatus
 	resetCurrentPaymodel = original_resetCurrentPaymodel
 }
+
+func TestOptionsEndpointAuthorization(t *testing.T) {
+	Config.ContainersMap = map[string]Container{
+		"container_a": {
+			Name: "Container without authz",
+		},
+		"container_b": {
+			Name: "Container with authz the user can access",
+			Authz: AuthzConfig{
+				Version: 0.1,
+				Rules: AuthzVersion_0_1{
+					ResourcePaths: []string{"/my-container"},
+				},
+			},
+		},
+		"container_c": {
+			Name: "Container with authz the user cannot access",
+			Authz: AuthzConfig{
+				Version: 0.1,
+				Rules: AuthzVersion_0_1{
+					ResourcePaths: []string{"/my-container"},
+				},
+			},
+		},
+	}
+
+	// mock the actual authorization checks (tested in `authz_test.go`)
+	originalIsUserAuthorizedForContainer := isUserAuthorizedForContainer
+	isUserAuthorizedForContainer = func(userName string, accessToken string, container Container) (bool, error) {
+		if strings.Contains(container.Name, "cannot") {
+			return false, nil
+		}
+		return true, nil
+	}
+	defer func() {
+		isUserAuthorizedForContainer = originalIsUserAuthorizedForContainer // restore original function
+	}()
+
+	url := "/options"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Errorf("Error creating request: %v", err.Error())
+		return
+	}
+	w := httptest.NewRecorder()
+	handler := http.HandlerFunc(options)
+	handler.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("Error when hitting /options endpoint: got status code %v", w.Code)
+		return
+	}
+
+	if !strings.Contains(w.Body.String(), "container_a") || !strings.Contains(w.Body.String(), "container_b") {
+		t.Errorf("The /options endpoint should have returned authorized containers, but it didn't: %v", w.Body)
+		return
+	}
+	if strings.Contains(w.Body.String(), "container_c") {
+		t.Errorf("The /options endpoint should not have returned unauthorized containers, but it did: %v", w.Body)
+		return
+	}
+}

@@ -12,6 +12,7 @@ package hatchery
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"testing"
@@ -20,8 +21,8 @@ import (
 func TestMain(m *testing.M) {
 	fmt.Println("Setting up tests...")
 	Config = &FullHatcheryConfig{
-		Logger: log.New(os.Stdout, "", log.LstdFlags), // Print all logs (for dev purposes)
-		// Logger: log.New(io.Discard, "", log.LstdFlags), // Discard all logs TODO uncomment
+		// Logger: log.New(os.Stdout, "", log.LstdFlags), // Print all logs (for dev purposes)
+		Logger: log.New(io.Discard, "", log.LstdFlags), // Discard all logs
 	}
 	code := m.Run()
 	os.Exit(code)
