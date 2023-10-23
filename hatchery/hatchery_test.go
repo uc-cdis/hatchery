@@ -93,6 +93,12 @@ func Test_GetWorkspaceStatus(t *testing.T) {
 	original_getPayModelsForUser := getPayModelsForUser
 	original_statusK8sPod := statusK8sPod
 	original_statusEcs := statusEcs
+	defer func() {
+		// restore original functions
+		getPayModelsForUser = original_getPayModelsForUser
+		statusK8sPod = original_statusK8sPod
+		statusEcs = original_statusEcs
+	}()
 
 	for _, testcase := range testCases {
 		t.Logf("Testing GetWorkspaceStatus when %s", testcase.name)
@@ -121,11 +127,6 @@ func Test_GetWorkspaceStatus(t *testing.T) {
 			t.Errorf("\nassertion error while testing `GetCurrentPayModel` when %s : \nWant:%+v\nGot:%+v", testcase.name, testcase.want, got)
 		}
 	}
-
-	//restoring original functions to avoid breaking other tests
-	getPayModelsForUser = original_getPayModelsForUser
-	statusK8sPod = original_statusK8sPod
-	statusEcs = original_statusEcs
 }
 
 /*
@@ -192,6 +193,11 @@ func Test_SetpaymodelEndpoint(t *testing.T) {
 	// Backing up original functions before mocking
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_setCurrentPaymodel := setCurrentPaymodel
+	defer func() {
+		// restore original functions
+		getWorkspaceStatus = original_getWorkspaceStatus
+		setCurrentPaymodel = original_setCurrentPaymodel
+	}()
 
 	for _, testcase := range testCases {
 		t.Logf("Testing SetPaymodels when %s", testcase.name)
@@ -233,10 +239,6 @@ func Test_SetpaymodelEndpoint(t *testing.T) {
 				w.Body.String(), testcase.want)
 		}
 	}
-
-	// Restoring
-	getWorkspaceStatus = original_getWorkspaceStatus
-	setCurrentPaymodel = original_setCurrentPaymodel
 }
 
 /*
@@ -304,6 +306,12 @@ func Test_ResetpaymodelsEndpoint(t *testing.T) {
 	// Backing up original functions before mocking
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_resetCurrentPaymodel := resetCurrentPaymodel
+	defer func() {
+		// restore original functions
+		getWorkspaceStatus = original_getWorkspaceStatus
+		resetCurrentPaymodel = original_resetCurrentPaymodel
+	}()
+
 	for _, testcase := range testCases {
 		t.Logf("Testing ResetPaymodels when %s", testcase.name)
 
@@ -341,9 +349,6 @@ func Test_ResetpaymodelsEndpoint(t *testing.T) {
 				w.Body.String(), testcase.want)
 		}
 	}
-	// Restoring
-	getWorkspaceStatus = original_getWorkspaceStatus
-	resetCurrentPaymodel = original_resetCurrentPaymodel
 }
 
 /*
@@ -517,6 +522,13 @@ func Test_LaunchEndpoint(t *testing.T) {
 	original_launchEcsWorkspaceWrapper := launchEcsWorkspaceWrapper
 	original_createExternalK8sPod := createExternalK8sPod
 	original_getPayModelsForUser := getPayModelsForUser
+	defer func() {
+		// restore original functions
+		createLocalK8sPod = original_createLocalK8sPod
+		launchEcsWorkspaceWrapper = original_launchEcsWorkspaceWrapper
+		createExternalK8sPod = original_createExternalK8sPod
+		getPayModelsForUser = original_getPayModelsForUser
+	}()
 
 	for _, testcase := range testCases {
 		t.Logf("Testing Launch Endpoint when %s", testcase.name)
@@ -598,12 +610,6 @@ func Test_LaunchEndpoint(t *testing.T) {
 			}
 		}
 	}
-
-	//Restoring
-	createLocalK8sPod = original_createLocalK8sPod
-	launchEcsWorkspaceWrapper = original_launchEcsWorkspaceWrapper
-	createExternalK8sPod = original_createExternalK8sPod
-	getPayModelsForUser = original_getPayModelsForUser
 }
 
 func TestLaunchEndpointAuthorization(t *testing.T) {
@@ -812,6 +818,14 @@ func Test_TerminateEndpoint(t *testing.T) {
 	original_getCurrentPayModel := getCurrentPayModel
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_resetCurrentPaymodel := resetCurrentPaymodel
+	defer func() {
+		// restore original functions
+		deleteK8sPod = original_deleteK8sPod
+		terminateEcsWorkspace = original_terminateEcsWorkspace
+		getCurrentPayModel = original_getCurrentPayModel
+		getWorkspaceStatus = original_getWorkspaceStatus
+		resetCurrentPaymodel = original_resetCurrentPaymodel
+	}()
 
 	for _, testcase := range testCases {
 		t.Logf("Testing Terminate Endpoint when %s", testcase.name)
@@ -917,12 +931,6 @@ func Test_TerminateEndpoint(t *testing.T) {
 			}
 		}
 	}
-	// Restoring
-	deleteK8sPod = original_deleteK8sPod
-	terminateEcsWorkspace = original_terminateEcsWorkspace
-	getCurrentPayModel = original_getCurrentPayModel
-	getWorkspaceStatus = original_getWorkspaceStatus
-	resetCurrentPaymodel = original_resetCurrentPaymodel
 }
 
 func TestOptionsEndpointAuthorization(t *testing.T) {
