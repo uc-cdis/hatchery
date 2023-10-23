@@ -3,6 +3,7 @@ package hatchery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -605,6 +606,75 @@ func Test_LaunchEndpoint(t *testing.T) {
 	getPayModelsForUser = original_getPayModelsForUser
 }
 
+func TestLaunchEndpointAuthorization(t *testing.T) {
+	Config.ContainersMap = map[string]Container{
+		"container_a": {
+			Name: "Container without authz (accessible by default)",
+		},
+		"container_b": {
+			Name: "Container with authz the user can access",
+			Authz: AuthzConfig{
+				Version: 0.1,
+				Rules: AuthzVersion_0_1{
+					ResourcePaths: []string{"/my-container"},
+				},
+			},
+		},
+		"container_c": {
+			Name: "Container with authz the user cannot access",
+			Authz: AuthzConfig{
+				Version: 0.1,
+				Rules: AuthzVersion_0_1{
+					ResourcePaths: []string{"/my-container"},
+				},
+			},
+		},
+	}
+
+	// mock the actual authorization checks (tested in `authz_test.go`)
+	originalIsUserAuthorizedForContainer := isUserAuthorizedForContainer
+	isUserAuthorizedForContainer = func(userName string, accessToken string, container Container) (bool, error) {
+		if strings.Contains(container.Name, "cannot") {
+			return false, nil
+		}
+		return true, nil
+	}
+	// mock the pod launch
+	originalCreateLocalK8sPod := createLocalK8sPod
+	createLocalK8sPod = func(ctx context.Context, hash, userName, accessToken string, envVars []k8sv1.EnvVar) error {
+		return nil
+	}
+	defer func() {
+		// restore original functions
+		isUserAuthorizedForContainer = originalIsUserAuthorizedForContainer
+		createLocalK8sPod = originalCreateLocalK8sPod
+	}()
+
+	for containerId, container := range Config.ContainersMap {
+		t.Logf("Running test case: '%s'", container.Name)
+
+		url := fmt.Sprintf("/launch?id=%s", containerId)
+		req, err := http.NewRequest("POST", url, nil)
+		if err != nil {
+			t.Errorf("Error creating request: %v", err.Error())
+			return
+		}
+		w := httptest.NewRecorder()
+		handler := http.HandlerFunc(launch)
+		handler.ServeHTTP(w, req)
+
+		if !strings.Contains(container.Name, "cannot") && (w.Code != 200 || w.Body.String() != "Success") {
+			t.Errorf("The /launch endpoint should have allowed launching an authorized container, but it didn't: %v %v", w.Code, w.Body)
+			return
+		}
+		if strings.Contains(container.Name, "cannot") && w.Code != 401 {
+			t.Errorf("The /launch endpoint should not have allowed launching an unauthorized container, but it did: %v %v", w.Code, w.Body)
+			return
+		}
+	}
+
+}
+
 /*
 * terminate
 ** mimic .calls() function in python
@@ -858,7 +928,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 func TestOptionsEndpointAuthorization(t *testing.T) {
 	Config.ContainersMap = map[string]Container{
 		"container_a": {
-			Name: "Container without authz",
+			Name: "Container without authz (accessible by default)",
 		},
 		"container_b": {
 			Name: "Container with authz the user can access",
