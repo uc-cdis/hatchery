@@ -673,7 +673,7 @@ func TestLaunchEndpointAuthorization(t *testing.T) {
 			t.Errorf("The /launch endpoint should have allowed launching an authorized container, but it didn't: %v %v", w.Code, w.Body)
 			return
 		}
-		if strings.Contains(container.Name, "cannot") && w.Code != 401 {
+		if strings.Contains(container.Name, "cannot") && (w.Code != 401 || strings.TrimSuffix(w.Body.String(), "\n") != "You do not have authorization to run this container") {
 			t.Errorf("The /launch endpoint should not have allowed launching an unauthorized container, but it did: %v %v", w.Code, w.Body)
 			return
 		}
