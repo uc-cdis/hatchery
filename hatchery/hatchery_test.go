@@ -230,12 +230,12 @@ func Test_SetpaymodelEndpoint(t *testing.T) {
 
 		/* Assert */
 		if testcase.wantStatus != w.Code {
-			t.Errorf("handler returned wrong status code: got %v want %v",
+			t.Errorf("handler returned wrong status code:\ngot: '%v'\nwant: '%v'",
 				w.Code, testcase.wantStatus)
 		}
 
 		if testcase.want != strings.TrimSpace(w.Body.String()) {
-			t.Errorf("handler returned wrong response: \ngot %v\nwant %v",
+			t.Errorf("handler returned wrong response:\ngot: '%v'\nwant: '%v'",
 				w.Body.String(), testcase.want)
 		}
 	}
@@ -340,12 +340,12 @@ func Test_ResetpaymodelsEndpoint(t *testing.T) {
 
 		/* Assert */
 		if testcase.wantStatus != w.Code {
-			t.Errorf("handler returned wrong status code: got %v want %v",
+			t.Errorf("handler returned wrong status code:\ngot: '%v'\nwant: '%v'",
 				w.Code, testcase.wantStatus)
 		}
 
 		if testcase.want != strings.TrimSpace(w.Body.String()) {
-			t.Errorf("handler returned wrong response: \ngot %v\nwant %v",
+			t.Errorf("handler returned wrong response:\ngot: '%v'\nwant: '%v'",
 				w.Body.String(), testcase.want)
 		}
 	}
@@ -392,7 +392,7 @@ func Test_LaunchEndpoint(t *testing.T) {
 		},
 		{
 			name:       "MissingLaunchID",
-			want:       "Missing ID argument",
+			want:       "Missing 'id' parameter",
 			wantStatus: http.StatusBadRequest,
 			mockRequest: &RequestBody{
 				Method: "POST",
@@ -530,6 +530,12 @@ func Test_LaunchEndpoint(t *testing.T) {
 		getPayModelsForUser = original_getPayModelsForUser
 	}()
 
+	Config.ContainersMap = map[string]Container{
+		"random_id": {
+			Name: "Hatchery test container",
+		},
+	}
+
 	for _, testcase := range testCases {
 		t.Logf("Testing Launch Endpoint when %s", testcase.name)
 
@@ -590,12 +596,12 @@ func Test_LaunchEndpoint(t *testing.T) {
 		/* Assert */
 		waitGroup.Wait() // we wait for any go routines to finish before making assertions
 		if testcase.wantStatus != w.Code {
-			t.Errorf("handler returned wrong status code: got %v want %v",
+			t.Errorf("handler returned wrong status code:\ngot: '%v'\nwant: '%v'",
 				w.Code, testcase.wantStatus)
 		}
 
 		if testcase.want != strings.TrimSpace(w.Body.String()) {
-			t.Errorf("handler returned wrong response: \ngot %v\nwant %v",
+			t.Errorf("handler returned wrong response:\ngot: '%v'\nwant: '%v'",
 				w.Body.String(), testcase.want)
 		}
 
@@ -661,6 +667,7 @@ func TestLaunchEndpointAuthorization(t *testing.T) {
 
 		url := fmt.Sprintf("/launch?id=%s", containerId)
 		req, err := http.NewRequest("POST", url, nil)
+		req.Header.Set("REMOTE_USER", "testUser")
 		if err != nil {
 			t.Errorf("Error creating request: %v", err.Error())
 			return
@@ -678,7 +685,6 @@ func TestLaunchEndpointAuthorization(t *testing.T) {
 			return
 		}
 	}
-
 }
 
 /*
@@ -899,12 +905,12 @@ func Test_TerminateEndpoint(t *testing.T) {
 		/* Assert */
 		waitGroup.Wait() // we wait for any go routines to finish before making assertions
 		if testcase.wantStatus != w.Code {
-			t.Errorf("handler returned wrong status code: got %v want %v",
+			t.Errorf("handler returned wrong status code:\ngot: '%v'\nwant: '%v'",
 				w.Code, testcase.wantStatus)
 		}
 
 		if testcase.want != strings.TrimSpace(w.Body.String()) {
-			t.Errorf("handler returned wrong response: \ngot %v\nwant %v",
+			t.Errorf("handler returned wrong response:\ngot: '%v'\nwant: '%v'",
 				w.Body.String(), testcase.want)
 		}
 
