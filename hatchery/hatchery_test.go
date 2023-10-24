@@ -23,6 +23,8 @@ import (
 		* returns paymodels with current paymodel.ecs == false
 */
 func Test_GetWorkspaceStatus(t *testing.T) {
+	defer SetupTest()()
+
 	mockStatusK8sPod := &WorkspaceStatus{
 		Status: "Running K8s Pod",
 	}
@@ -138,6 +140,8 @@ func Test_GetWorkspaceStatus(t *testing.T) {
 		* status with status.Status == "Not Found" should call setCurrentPayModel and return the mock currentPayModel
 */
 func Test_SetpaymodelEndpoint(t *testing.T) {
+	defer SetupTest()()
+
 	type RequestBody struct {
 		Method string
 		id     string
@@ -250,6 +254,8 @@ func Test_SetpaymodelEndpoint(t *testing.T) {
 		* status with status.Status == "Not Found" should call "resetCurrentPayModel" and return the mock currentPayModel
 */
 func Test_ResetpaymodelsEndpoint(t *testing.T) {
+	defer SetupTest()()
+
 	type RequestBody struct {
 		Method string
 		id     string
@@ -366,6 +372,8 @@ func Test_ResetpaymodelsEndpoint(t *testing.T) {
 		* allPayModels.CurrentPayModel.Ecs = false  and allPayModels.CurrentPayModel.Local = true createExternalK8sPod must be called once
 */
 func Test_LaunchEndpoint(t *testing.T) {
+	defer SetupTest()()
+
 	type RequestBody struct {
 		Method   string
 		id       string
@@ -619,6 +627,8 @@ func Test_LaunchEndpoint(t *testing.T) {
 }
 
 func TestLaunchEndpointAuthorization(t *testing.T) {
+	defer SetupTest()()
+
 	Config.ContainersMap = map[string]Container{
 		"container_a": {
 			Name: "Container without authz (accessible by default)",
@@ -705,6 +715,8 @@ func TestLaunchEndpointAuthorization(t *testing.T) {
 			* Not found the second time to see resetCurrentPaymodel being called exactly once.
 */
 func Test_TerminateEndpoint(t *testing.T) {
+	defer SetupTest()()
+
 	type RequestBody struct {
 		Method   string
 		username string
@@ -940,6 +952,8 @@ func Test_TerminateEndpoint(t *testing.T) {
 }
 
 func TestOptionsEndpointAuthorization(t *testing.T) {
+	defer SetupTest()()
+
 	Config.ContainersMap = map[string]Container{
 		"container_a": {
 			Name: "Container without authz (accessible by default)",

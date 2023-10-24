@@ -6,6 +6,8 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
+	defer SetupTest()()
+
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
 		t.Errorf("failed to load config, got: %v", err)

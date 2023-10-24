@@ -7,6 +7,8 @@ import (
 )
 
 func TestValidateAuthzConfigVersion0_1(t *testing.T) {
+	defer SetupTest()()
+
 	testCases := []struct {
 		name       string
 		valid      bool
@@ -159,6 +161,8 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 }
 
 func TestIsUserAuthorizedForPayModels(t *testing.T) {
+	defer SetupTest()()
+
 	testCases := []struct {
 		authorized       bool
 		userPayModel     *PayModel
@@ -227,6 +231,8 @@ func TestIsUserAuthorizedForPayModels(t *testing.T) {
 }
 
 func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
+	defer SetupTest()()
+
 	testCases := []struct {
 		name                 string
 		authorizedInArborist bool
@@ -293,6 +299,8 @@ func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
 }
 
 func TestIsUserAuthorizedForContainer(t *testing.T) {
+	defer SetupTest()()
+
 	testCases := []struct {
 		name                                     string
 		authorized                               bool
