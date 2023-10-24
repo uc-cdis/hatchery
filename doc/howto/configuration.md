@@ -40,12 +40,10 @@ An example manifest entry may look like
         "friends": [],
         "authz": {
             "version": 0.1,
-            "rules": {
-                "or": [
-                    {"resource_paths": ["/workspace/jupyter-container"]},
-                    {"pay_models": ["Direct Pay", "None"]}
-                ]
-            }
+            "or": [
+                {"resource_paths": ["/workspace/jupyter-container"]},
+                {"pay_models": ["Direct Pay", "None"]}
+            ]
         },
         "nextflow": {
             "enabled": true,

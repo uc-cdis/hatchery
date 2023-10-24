@@ -33,12 +33,10 @@ The authorization block consists of a set of rules. "Or" and "and" logics are su
 ```
 "authz": {
     "version": 0.1,
-    "rules": {
-        "or": [
-            {"resource_paths": ["/workspace/jupyter-container"]},
-            {"pay_models": ["Direct Pay", "None"]}
-        ]
-    }
+    "or": [
+        {"resource_paths": ["/workspace/jupyter-container"]},
+        {"pay_models": ["Direct Pay", "None"]}
+    ]
 }
 ```
 
@@ -52,15 +50,16 @@ Valid `pay_models` values:
 
 - Authorize based on access to resource paths only:
 ```
-"rules": { "resource_paths": ["/workspace/abc"] }
+"authz": { "version": 0.1, "resource_paths": ["/workspace/abc"] }
 ```
 - Authorize based on pay model type only:
 ```
-"rules": { "pay_models": ["Direct Pay"] }
+"authz": { "version": 0.1, "pay_models": ["Direct Pay"] }
 ```
 - Authorize based on *both* pay model type *and* access to resource paths (a user can launch this container if they meet *both* requirements):
 ```
-"rules": {
+"authz": {
+    "version": 0.1,
     "and": [
         {"resource_paths": ["/workspace/abc"]},
         {"pay_models": ["Direct Pay"]}
@@ -69,7 +68,8 @@ Valid `pay_models` values:
 ```
 - Authorize based on *either* pay model type *or* access to resource paths (a user can launch this container if they meet *either* requirement):
 ```
-"rules": {
+"authz": {
+    "version": 0.1,
     "or": [
         {"resource_paths": ["/workspace/abc"]},
         {"pay_models": ["Direct Pay"]}
@@ -82,16 +82,21 @@ Valid `pay_models` values:
 - Empty values:
 ```
 // invalid
-"rules": {}
+"authz": {}
 ```
 ```
 // invalid
-"rules": { "resource_paths": [] }
+"authz": { "version": 0.1 }
+```
+```
+// invalid
+"authz": { "version": 0.1, "resource_paths": [] }
 ```
 - Multiple keys at the same rule level:
 ```
 // invalid
-"rules": {
+"authz": {
+    "version": 0.1,
     "or": [
         {"resource_paths": ["/workspace/abc"]},
         {"pay_models": ["Direct Pay"]}
@@ -102,7 +107,8 @@ Valid `pay_models` values:
 - Nested rules are not supported yet:
 ```
 // invalid
-"rules": {
+"authz": {
+    "version": 0.1,
     "or": [
         {"resource_paths": ["/workspace/a"]},
         {

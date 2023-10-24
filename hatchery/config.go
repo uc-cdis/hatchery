@@ -147,7 +147,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		for _, info := range data.Config.MoreConfigs {
 			if info.AppType == "dockstore-compose:1.0.0" {
 				if info.Name == "" {
-					return nil, fmt.Errorf("Empty name for more-configs app at: %v", info.Path)
+					return nil, fmt.Errorf("empty name for more-configs app at: %v", info.Path)
 				}
 				data.Logger.Printf("loading config from %v", info.Path)
 				composeModel, err := DockstoreComposeFromFile(info.Path)
@@ -170,12 +170,10 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	}
 
 	for _, container := range data.Config.Containers {
-		if container.Authz.Version != 0 { // default int value "0" is interpreted as "no authz config"
-			err = ValidateAuthzConfig(container.Authz)
-			if nil != err {
-				data.Logger.Printf("Container '%s' has an invalid 'authz' configuration: %v", container.Name, err)
-				return nil, err
-			}
+		err = ValidateAuthzConfig(data.Logger, container.Authz)
+		if nil != err {
+			data.Logger.Printf("Container '%s' has an invalid 'authz' configuration: %v", container.Name, err)
+			return nil, err
 		}
 		jsonBytes, _ := json.Marshal(container)
 		hash := fmt.Sprintf("%x", md5.Sum([]byte(jsonBytes)))

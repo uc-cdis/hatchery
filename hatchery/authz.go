@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 )
 
 type AuthzConfig struct {
-	Version float32          `json:"version"`
-	Rules   AuthzVersion_0_1 `json:"rules"`
+	Version          float32 `json:"version"`
+	AuthzVersion_0_1 AuthzVersion_0_1
 }
 
 type AuthzVersion_0_1 struct {
@@ -25,24 +26,64 @@ type AuthRequestResponse struct {
 	Auth bool `json:"auth"`
 }
 
-func ValidateAuthzConfig(authzConfig AuthzConfig) error {
-	if authzConfig.Version != 0.1 {
-		return fmt.Errorf("Container authz config version '%v' is not valid", authzConfig.Version)
+/*
+	Authorization configuration parsing and validation
+*/
+
+func (authzConfig *AuthzConfig) UnmarshalJSON(data []byte) error {
+	/*
+		This custom unmarshal function allows us to parse the json config into the appropriate struct
+		depending on the `authz.version` value (eg struct AuthzVersion_0_1 when authz.version=0.1)
+	*/
+	var v interface{}
+	if err := json.Unmarshal(data, &v); err != nil {
+		return fmt.Errorf("could not parse 'authz' config: %v", err)
+	}
+	configObject := v.(map[string]interface{})
+
+	if configObject["version"] == nil {
+		// When there is no `authz` field, `authz.version` is unmarshalled to the default int
+		// value "0" which is interpreted as "no authz config".
+		// Here there is an `authz` field but no `authz.version`: assume it's a misconfiguration.
+		return fmt.Errorf("missing 'version' field in 'authz' config: %v", string(data))
+	} else {
+		authzConfig.Version = float32(configObject["version"].(float64))
 	}
 
+	// parse json data into the appropriate struct
+	if authzConfig.Version == 0.1 {
+		if err := json.Unmarshal([]byte(data), &authzConfig.AuthzVersion_0_1); err != nil {
+			return fmt.Errorf("could not parse 'authz' config into AuthzVersion_0_1 struct: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func ValidateAuthzConfig(logger *log.Logger, authzConfig AuthzConfig) error {
+	if authzConfig.Version == 0 { // default int value "0" is interpreted as "no authz config"
+		return nil
+	} else if authzConfig.Version == 0.1 {
+		return ValidateAuthzConfigVersion_0_1(authzConfig.AuthzVersion_0_1)
+	} else {
+		return fmt.Errorf("Container authz config version '%v' is not valid", authzConfig.Version)
+	}
+}
+
+func ValidateAuthzConfigVersion_0_1(authzConfig AuthzVersion_0_1) error {
 	// check that only 1 of and/or/resource_paths/pay_models is set in the same block.
 	// NOTE: if we implement support for nested rules, we should validate each nested level this way
 	isOrStmt, isAndStmt, isResourcePathsStmt, isPayModelsStmt := 0, 0, 0, 0
-	if len(authzConfig.Rules.Or) > 0 {
+	if len(authzConfig.Or) > 0 {
 		isOrStmt = 1
 	}
-	if len(authzConfig.Rules.And) > 0 {
+	if len(authzConfig.And) > 0 {
 		isAndStmt = 1
 	}
-	if len(authzConfig.Rules.ResourcePaths) > 0 {
+	if len(authzConfig.ResourcePaths) > 0 {
 		isResourcePathsStmt = 1
 	}
-	if len(authzConfig.Rules.PayModels) > 0 {
+	if len(authzConfig.PayModels) > 0 {
 		isPayModelsStmt = 1
 	}
 	sum := isOrStmt + isAndStmt + isResourcePathsStmt + isPayModelsStmt
@@ -52,7 +93,7 @@ func ValidateAuthzConfig(authzConfig AuthzConfig) error {
 
 	// although the `AuthzVersion_0_1` struct allows it, nesting and/or rules is not supported yet
 	if isOrStmt == 1 || isAndStmt == 1 {
-		for _, rule := range append(authzConfig.Rules.Or, authzConfig.Rules.And...) {
+		for _, rule := range append(authzConfig.Or, authzConfig.And...) {
 			if len(rule.Or) > 0 || len(rule.And) > 0 {
 				return fmt.Errorf("nesting 'and' and 'or' authorization rules is not supported")
 			}
@@ -62,18 +103,31 @@ func ValidateAuthzConfig(authzConfig AuthzConfig) error {
 	return nil
 }
 
+/*
+	Container authorization checks
+*/
+
 var isUserAuthorizedForContainer = func(userName string, accessToken string, container Container) (bool, error) {
 	if container.Authz.Version == 0 { // default int value "0" is interpreted as "no authz config"
 		return true, nil
 	}
 
 	Config.Logger.Printf("DEBUG: Checking user '%s' access to container '%s'", userName, container.Name)
+	if container.Authz.Version == 0.1 {
+		return IsUserAuthorizedForContainerVersion_0_1(userName, accessToken, container.Name, container.Authz.AuthzVersion_0_1)
+	} else {
+		// this should never happen, it would get caught by `ValidateAuthzConfig`
+		return false, fmt.Errorf("Container authz config version '%v' is not valid", container.Authz.Version)
+	}
+}
+
+func IsUserAuthorizedForContainerVersion_0_1(userName string, accessToken string, containerName string, containerAuthz AuthzVersion_0_1) (bool, error) {
 	var err error
 	var userIsAuthorized bool
 
-	if len(container.Authz.Rules.Or) > 0 {
+	if len(containerAuthz.Or) > 0 {
 		userIsAuthorized = false
-		for _, rule := range container.Authz.Rules.Or {
+		for _, rule := range containerAuthz.Or {
 			authorized, err := isUserAuthorizedForRule(userName, accessToken, rule)
 			if nil != err {
 				return false, err
@@ -83,9 +137,9 @@ var isUserAuthorizedForContainer = func(userName string, accessToken string, con
 				break
 			}
 		}
-	} else if len(container.Authz.Rules.And) > 0 {
+	} else if len(containerAuthz.And) > 0 {
 		userIsAuthorized = true
-		for _, rule := range container.Authz.Rules.And {
+		for _, rule := range containerAuthz.And {
 			authorized, err := isUserAuthorizedForRule(userName, accessToken, rule)
 			if nil != err {
 				return false, err
@@ -95,13 +149,13 @@ var isUserAuthorizedForContainer = func(userName string, accessToken string, con
 				break
 			}
 		}
-	} else if len(container.Authz.Rules.ResourcePaths) > 0 {
-		userIsAuthorized, err = isUserAuthorizedForRule(userName, accessToken, container.Authz.Rules)
+	} else if len(containerAuthz.ResourcePaths) > 0 {
+		userIsAuthorized, err = isUserAuthorizedForRule(userName, accessToken, containerAuthz)
 		if nil != err {
 			return false, err
 		}
-	} else if len(container.Authz.Rules.PayModels) > 0 {
-		userIsAuthorized, err = isUserAuthorizedForRule(userName, accessToken, container.Authz.Rules)
+	} else if len(containerAuthz.PayModels) > 0 {
+		userIsAuthorized, err = isUserAuthorizedForRule(userName, accessToken, containerAuthz)
 		if nil != err {
 			return false, err
 		}
@@ -115,7 +169,7 @@ var isUserAuthorizedForContainer = func(userName string, accessToken string, con
 	if !userIsAuthorized {
 		logPartial = "not "
 	}
-	Config.Logger.Printf("INFO: User '%s' is %sauthorized to run container '%s'", userName, logPartial, container.Name)
+	Config.Logger.Printf("INFO: User '%s' is %sauthorized to run container '%s'", userName, logPartial, containerName)
 	return userIsAuthorized, nil
 }
 

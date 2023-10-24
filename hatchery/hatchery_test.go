@@ -627,7 +627,7 @@ func TestLaunchEndpointAuthorization(t *testing.T) {
 			Name: "Container with authz the user can access",
 			Authz: AuthzConfig{
 				Version: 0.1,
-				Rules: AuthzVersion_0_1{
+				AuthzVersion_0_1: AuthzVersion_0_1{
 					ResourcePaths: []string{"/my-container"},
 				},
 			},
@@ -636,7 +636,7 @@ func TestLaunchEndpointAuthorization(t *testing.T) {
 			Name: "Container with authz the user cannot access",
 			Authz: AuthzConfig{
 				Version: 0.1,
-				Rules: AuthzVersion_0_1{
+				AuthzVersion_0_1: AuthzVersion_0_1{
 					ResourcePaths: []string{"/my-container"},
 				},
 			},
@@ -948,7 +948,7 @@ func TestOptionsEndpointAuthorization(t *testing.T) {
 			Name: "Container with authz the user can access",
 			Authz: AuthzConfig{
 				Version: 0.1,
-				Rules: AuthzVersion_0_1{
+				AuthzVersion_0_1: AuthzVersion_0_1{
 					ResourcePaths: []string{"/my-container"},
 				},
 			},
@@ -957,7 +957,7 @@ func TestOptionsEndpointAuthorization(t *testing.T) {
 			Name: "Container with authz the user cannot access",
 			Authz: AuthzConfig{
 				Version: 0.1,
-				Rules: AuthzVersion_0_1{
+				AuthzVersion_0_1: AuthzVersion_0_1{
 					ResourcePaths: []string{"/my-container"},
 				},
 			},

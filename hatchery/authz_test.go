@@ -17,12 +17,10 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: true,
 			jsonConfig: `{
 				"version": 0.1,
-				"rules": {
-					"or": [
-						{"resource_paths": ["/workspace/abc"]},
-						{"pay_models": ["Direct Pay"]}
-					]
-				}
+				"or": [
+					{"resource_paths": ["/workspace/abc"]},
+					{"pay_models": ["Direct Pay"]}
+				]
 			}`,
 		},
 		{
@@ -30,11 +28,9 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: true,
 			jsonConfig: `{
 				"version": 0.1,
-				"rules": {
-					"and": [
-						{"resource_paths": ["/workspace/abc"]}
-					]
-				}
+				"and": [
+					{"resource_paths": ["/workspace/abc"]}
+				]
 			}`,
 		},
 		{
@@ -42,13 +38,11 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: true,
 			jsonConfig: `{
 				"version": 0.1,
-				"rules": {
-					"and": [
-						{"resource_paths": ["/workspace/a"]},
-						{"resource_paths": ["/workspace/b"]},
-						{"resource_paths": ["/workspace/c"]}
-					]
-				}
+				"and": [
+					{"resource_paths": ["/workspace/a"]},
+					{"resource_paths": ["/workspace/b"]},
+					{"resource_paths": ["/workspace/c"]}
+				]
 			}`,
 		},
 		{
@@ -56,7 +50,7 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: true,
 			jsonConfig: `{
 				"version": 0.1,
-				"rules": { "resource_paths": ["/workspace/abc"] }
+				"resource_paths": ["/workspace/abc"]
 			}`,
 		},
 		{
@@ -64,7 +58,7 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: true,
 			jsonConfig: `{
 				"version": 0.1,
-				"rules": { "pay_models": ["Direct Pay"] }
+				"pay_models": ["Direct Pay"]
 			}`,
 		},
 		{
@@ -72,7 +66,7 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: false,
 			jsonConfig: `{
 				"version": 2,
-				"rules": { "pay_models": ["Direct Pay"] }
+				"pay_models": ["Direct Pay"]
 			}`,
 		},
 		{
@@ -80,7 +74,7 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: false,
 			jsonConfig: `{
 				"version": 0.1,
-				"rules": { "resource_paths": [] }
+				"resource_paths": []
 			}`,
 		},
 		{
@@ -88,7 +82,7 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: false,
 			jsonConfig: `{
 				"version": 0.1,
-				"rules": { "pay_models": [] }
+				"pay_models": []
 			}`,
 		},
 		{
@@ -96,21 +90,18 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: false,
 			jsonConfig: `{
 				"version": 0.1,
-				"rules": {
-					"or": [
-						{"resource_paths": ["/workspace/abc"]},
-						{"pay_models": ["Direct Pay"]}
-					],
-					"pay_models": ["Direct Pay"]
-				}
+				"or": [
+					{"resource_paths": ["/workspace/abc"]},
+					{"pay_models": ["Direct Pay"]}
+				],
+				"pay_models": ["Direct Pay"]
 			}`,
 		},
 		{
-			name:  "No keys on first level",
+			name:  "No authorization rules",
 			valid: false,
 			jsonConfig: `{
-				"version": 0.1,
-				"rules": {}
+				"version": 0.1
 			}`,
 		},
 		{
@@ -118,17 +109,15 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: false,
 			jsonConfig: `{
 				"version": 0.1,
-				"rules": {
-					"or": [
-						{"resource_paths": ["/workspace/a"]},
-						{
-							"and": [
-								{"resource_paths": ["/workspace/b"]},
-								{"pay_models": ["Direct Pay"]}
-							]
-						}
-					]
-				}
+				"or": [
+					{"resource_paths": ["/workspace/a"]},
+					{
+						"and": [
+							{"resource_paths": ["/workspace/b"]},
+							{"pay_models": ["Direct Pay"]}
+						]
+					}
+				]
 			}`,
 		},
 		{
@@ -136,17 +125,15 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			valid: false,
 			jsonConfig: `{
 				"version": 0.1,
-				"rules": {
-					"and": [
-						{"resource_paths": ["/workspace/a"]},
-						{
-							"or": [
-								{"resource_paths": ["/workspace/b"]},
-								{"pay_models": ["Direct Pay"]}
-							]
-						}
-					]
-				}
+				"and": [
+					{"resource_paths": ["/workspace/a"]},
+					{
+						"or": [
+							{"resource_paths": ["/workspace/b"]},
+							{"pay_models": ["Direct Pay"]}
+						]
+					}
+				]
 			}`,
 		},
 	}
@@ -159,7 +146,7 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 			t.Errorf("failed to load authz config: %v", err)
 			return
 		}
-		err = ValidateAuthzConfig(config)
+		err = ValidateAuthzConfig(Config.Logger, config)
 		if testCase.valid && nil != err {
 			t.Errorf("config is valid but the validation did not accept it: %v", err)
 			return
@@ -465,8 +452,8 @@ func TestIsUserAuthorizedForContainer(t *testing.T) {
 		container := Container{
 			Name: "test container",
 			Authz: AuthzConfig{
-				Version: 0.1,
-				Rules:   testCase.rules,
+				Version:          0.1,
+				AuthzVersion_0_1: testCase.rules,
 			},
 		}
 		authorized, err := isUserAuthorizedForContainer("user1", "accessToken", container)
