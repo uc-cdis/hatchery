@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+/*
+to add a new `authz` version:
+  - create a new `AuthzVersion_XXX` type, add it to `AuthzConfig` and update `UnmarshalJSON` to unmarshall
+    the config to that type;
+  - create a new `validateAuthzConfigVersion_XXX` function and call it in `ValidateAuthzConfig`;
+  - create a new `isUserAuthorizedForContainerVersion_XXX` function and call it in `isUserAuthorizedForContainer`.
+*/
+
 type AuthzConfig struct {
 	Version          float32 `json:"version"`
 	AuthzVersion_0_1 AuthzVersion_0_1
@@ -64,13 +72,13 @@ func ValidateAuthzConfig(logger *log.Logger, authzConfig AuthzConfig) error {
 	if authzConfig.Version == 0 { // default int value "0" is interpreted as "no authz config"
 		return nil
 	} else if authzConfig.Version == 0.1 {
-		return ValidateAuthzConfigVersion_0_1(authzConfig.AuthzVersion_0_1)
+		return validateAuthzConfigVersion_0_1(authzConfig.AuthzVersion_0_1)
 	} else {
 		return fmt.Errorf("Container authz config version '%v' is not valid", authzConfig.Version)
 	}
 }
 
-func ValidateAuthzConfigVersion_0_1(authzConfig AuthzVersion_0_1) error {
+func validateAuthzConfigVersion_0_1(authzConfig AuthzVersion_0_1) error {
 	// check that only 1 of and/or/resource_paths/pay_models is set in the same block.
 	// NOTE: if we implement support for nested rules, we should validate each nested level this way
 	isOrStmt, isAndStmt, isResourcePathsStmt, isPayModelsStmt := 0, 0, 0, 0
@@ -114,14 +122,14 @@ var isUserAuthorizedForContainer = func(userName string, accessToken string, con
 
 	Config.Logger.Printf("DEBUG: Checking user '%s' access to container '%s'", userName, container.Name)
 	if container.Authz.Version == 0.1 {
-		return IsUserAuthorizedForContainerVersion_0_1(userName, accessToken, container.Name, container.Authz.AuthzVersion_0_1)
+		return isUserAuthorizedForContainerVersion_0_1(userName, accessToken, container.Name, container.Authz.AuthzVersion_0_1)
 	} else {
 		// this should never happen, it would get caught by `ValidateAuthzConfig`
 		return false, fmt.Errorf("Container authz config version '%v' is not valid", container.Authz.Version)
 	}
 }
 
-func IsUserAuthorizedForContainerVersion_0_1(userName string, accessToken string, containerName string, containerAuthz AuthzVersion_0_1) (bool, error) {
+func isUserAuthorizedForContainerVersion_0_1(userName string, accessToken string, containerName string, containerAuthz AuthzVersion_0_1) (bool, error) {
 	var err error
 	var userIsAuthorized bool
 

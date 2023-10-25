@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildPodFromJSON(t *testing.T) {
-	defer SetupTest()()
+	defer SetupAndTeardownTest()()
 
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
@@ -38,7 +38,7 @@ func TestBuildPodFromJSON(t *testing.T) {
 }
 
 func TestBuildPodFromDockstore(t *testing.T) {
-	defer SetupTest()()
+	defer SetupAndTeardownTest()()
 
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {

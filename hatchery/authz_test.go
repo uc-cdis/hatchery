@@ -7,7 +7,7 @@ import (
 )
 
 func TestValidateAuthzConfigVersion0_1(t *testing.T) {
-	defer SetupTest()()
+	defer SetupAndTeardownTest()()
 
 	testCases := []struct {
 		name       string
@@ -161,7 +161,7 @@ func TestValidateAuthzConfigVersion0_1(t *testing.T) {
 }
 
 func TestIsUserAuthorizedForPayModels(t *testing.T) {
-	defer SetupTest()()
+	defer SetupAndTeardownTest()()
 
 	testCases := []struct {
 		authorized       bool
@@ -231,7 +231,7 @@ func TestIsUserAuthorizedForPayModels(t *testing.T) {
 }
 
 func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
-	defer SetupTest()()
+	defer SetupAndTeardownTest()()
 
 	testCases := []struct {
 		name                 string
@@ -299,7 +299,7 @@ func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
 }
 
 func TestIsUserAuthorizedForContainer(t *testing.T) {
-	defer SetupTest()()
+	defer SetupAndTeardownTest()()
 
 	testCases := []struct {
 		name                                     string

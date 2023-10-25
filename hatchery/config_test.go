@@ -6,7 +6,7 @@ import (
 )
 
 func TestLoadConfig(t *testing.T) {
-	defer SetupTest()()
+	defer SetupAndTeardownTest()()
 
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
