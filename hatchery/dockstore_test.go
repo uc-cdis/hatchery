@@ -8,6 +8,8 @@ import (
 )
 
 func TestDockstoreComposeLoad(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	path := "../testData/dockstore/docker-compose.yml"
 	composeModel, err := DockstoreComposeFromFile(path)
 	if nil != err {
@@ -60,6 +62,8 @@ func TestDockstoreComposeLoad(t *testing.T) {
 }
 
 func TestDockstoreComposeTranslate(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	path := "../testData/dockstore/docker-compose.yml"
 	composeModel, err := DockstoreComposeFromFile(path)
 	if nil != err {
@@ -84,6 +88,8 @@ func TestDockstoreComposeTranslate(t *testing.T) {
 }
 
 func TestFirefoxAppTranslate(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	path := "../testData/dockstore/firefox-app.yml"
 	composeModel, err := DockstoreComposeFromFile(path)
 	if nil != err {

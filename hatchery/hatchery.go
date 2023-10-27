@@ -48,7 +48,6 @@ func home(w http.ResponseWriter, r *http.Request) {
 	htmlFooter := `</body>
 	</html>`
 	fmt.Fprintln(w, htmlFooter)
-
 }
 
 func getCurrentUserName(r *http.Request) (userName string) {
@@ -210,6 +209,9 @@ func resetPaymodels(w http.ResponseWriter, r *http.Request) {
 }
 
 func options(w http.ResponseWriter, r *http.Request) {
+	userName := getCurrentUserName(r)
+	accessToken := getBearerToken(r)
+
 	type container struct {
 		Name          string `json:"name"`
 		CPULimit      string `json:"cpu-limit"`
@@ -219,6 +221,16 @@ func options(w http.ResponseWriter, r *http.Request) {
 	}
 	var options []container
 	for k, v := range Config.ContainersMap {
+		// filter out workspace options that the user is not allowed to run
+		allowed, err := isUserAuthorizedForContainer(userName, accessToken, v)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			continue // do not return containers that the user is not allowed to run
+		}
+
 		c := container{
 			Name:        v.Name,
 			CPULimit:    v.CPULimit,
@@ -256,9 +268,13 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	accessToken := getBearerToken(r)
 
 	hash := r.URL.Query().Get("id")
-
 	if hash == "" {
-		http.Error(w, "Missing ID argument", http.StatusBadRequest)
+		http.Error(w, "Missing 'id' parameter", http.StatusBadRequest)
+		return
+	}
+	_, ok := Config.ContainersMap[hash]
+	if !ok {
+		http.Error(w, fmt.Sprintf("Invalid 'id' parameter '%s'", hash), http.StatusBadRequest)
 		return
 	}
 
@@ -267,7 +283,15 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No username found. Launch forbidden", http.StatusBadRequest)
 		return
 	}
-	allpaymodels, err := getPayModelsForUser(userName)
+
+	allowed, err := isUserAuthorizedForContainer(userName, accessToken, Config.ContainersMap[hash])
+	if err != nil {
+		Config.Logger.Printf("Unable to check if user is authorized to launch this container. Assuming unthorized. Details: %v", err)
+	}
+	if err != nil || !allowed {
+		http.Error(w, "You do not have authorization to run this container", http.StatusUnauthorized)
+		return
+	}
 
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar
@@ -306,6 +330,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
 
+	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}

@@ -3,8 +3,7 @@ package hatchery
 import (
 	"context"
 	"errors"
-	"io"
-	"log"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -24,6 +23,8 @@ import (
 		* returns paymodels with current paymodel.ecs == false
 */
 func Test_GetWorkspaceStatus(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	mockStatusK8sPod := &WorkspaceStatus{
 		Status: "Running K8s Pod",
 	}
@@ -94,6 +95,12 @@ func Test_GetWorkspaceStatus(t *testing.T) {
 	original_getPayModelsForUser := getPayModelsForUser
 	original_statusK8sPod := statusK8sPod
 	original_statusEcs := statusEcs
+	defer func() {
+		// restore original functions
+		getPayModelsForUser = original_getPayModelsForUser
+		statusK8sPod = original_statusK8sPod
+		statusEcs = original_statusEcs
+	}()
 
 	for _, testcase := range testCases {
 		t.Logf("Testing GetWorkspaceStatus when %s", testcase.name)
@@ -122,11 +129,6 @@ func Test_GetWorkspaceStatus(t *testing.T) {
 			t.Errorf("\nassertion error while testing `GetCurrentPayModel` when %s : \nWant:%+v\nGot:%+v", testcase.name, testcase.want, got)
 		}
 	}
-
-	//restoring original functions to avoid breaking other tests
-	getPayModelsForUser = original_getPayModelsForUser
-	statusK8sPod = original_statusK8sPod
-	statusEcs = original_statusEcs
 }
 
 /*
@@ -138,6 +140,8 @@ func Test_GetWorkspaceStatus(t *testing.T) {
 		* status with status.Status == "Not Found" should call setCurrentPayModel and return the mock currentPayModel
 */
 func Test_SetpaymodelEndpoint(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	type RequestBody struct {
 		Method string
 		id     string
@@ -193,14 +197,16 @@ func Test_SetpaymodelEndpoint(t *testing.T) {
 	// Backing up original functions before mocking
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_setCurrentPaymodel := setCurrentPaymodel
+	defer func() {
+		// restore original functions
+		getWorkspaceStatus = original_getWorkspaceStatus
+		setCurrentPaymodel = original_setCurrentPaymodel
+	}()
 
 	for _, testcase := range testCases {
 		t.Logf("Testing SetPaymodels when %s", testcase.name)
 
 		/* Setup */
-		Config = &FullHatcheryConfig{
-			Logger: log.New(io.Discard, "", log.LstdFlags), // Discard any logs in the tests
-		}
 		getWorkspaceStatus = func(context.Context, string, string) (*WorkspaceStatus, error) {
 			return testcase.currentStatus, nil
 		}
@@ -228,19 +234,15 @@ func Test_SetpaymodelEndpoint(t *testing.T) {
 
 		/* Assert */
 		if testcase.wantStatus != w.Code {
-			t.Errorf("handler returned wrong status code: got %v want %v",
+			t.Errorf("handler returned wrong status code:\ngot: '%v'\nwant: '%v'",
 				w.Code, testcase.wantStatus)
 		}
 
 		if testcase.want != strings.TrimSpace(w.Body.String()) {
-			t.Errorf("handler returned wrong response: \ngot %v\nwant %v",
+			t.Errorf("handler returned wrong response:\ngot: '%v'\nwant: '%v'",
 				w.Body.String(), testcase.want)
 		}
 	}
-
-	// Restoring
-	getWorkspaceStatus = original_getWorkspaceStatus
-	setCurrentPaymodel = original_setCurrentPaymodel
 }
 
 /*
@@ -252,6 +254,8 @@ func Test_SetpaymodelEndpoint(t *testing.T) {
 		* status with status.Status == "Not Found" should call "resetCurrentPayModel" and return the mock currentPayModel
 */
 func Test_ResetpaymodelsEndpoint(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	type RequestBody struct {
 		Method string
 		id     string
@@ -308,6 +312,12 @@ func Test_ResetpaymodelsEndpoint(t *testing.T) {
 	// Backing up original functions before mocking
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_resetCurrentPaymodel := resetCurrentPaymodel
+	defer func() {
+		// restore original functions
+		getWorkspaceStatus = original_getWorkspaceStatus
+		resetCurrentPaymodel = original_resetCurrentPaymodel
+	}()
+
 	for _, testcase := range testCases {
 		t.Logf("Testing ResetPaymodels when %s", testcase.name)
 
@@ -336,18 +346,15 @@ func Test_ResetpaymodelsEndpoint(t *testing.T) {
 
 		/* Assert */
 		if testcase.wantStatus != w.Code {
-			t.Errorf("handler returned wrong status code: got %v want %v",
+			t.Errorf("handler returned wrong status code:\ngot: '%v'\nwant: '%v'",
 				w.Code, testcase.wantStatus)
 		}
 
 		if testcase.want != strings.TrimSpace(w.Body.String()) {
-			t.Errorf("handler returned wrong response: \ngot %v\nwant %v",
+			t.Errorf("handler returned wrong response:\ngot: '%v'\nwant: '%v'",
 				w.Body.String(), testcase.want)
 		}
 	}
-	// Restoring
-	getWorkspaceStatus = original_getWorkspaceStatus
-	resetCurrentPaymodel = original_resetCurrentPaymodel
 }
 
 /*
@@ -365,6 +372,8 @@ func Test_ResetpaymodelsEndpoint(t *testing.T) {
 		* allPayModels.CurrentPayModel.Ecs = false  and allPayModels.CurrentPayModel.Local = true createExternalK8sPod must be called once
 */
 func Test_LaunchEndpoint(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	type RequestBody struct {
 		Method   string
 		id       string
@@ -391,7 +400,7 @@ func Test_LaunchEndpoint(t *testing.T) {
 		},
 		{
 			name:       "MissingLaunchID",
-			want:       "Missing ID argument",
+			want:       "Missing 'id' parameter",
 			wantStatus: http.StatusBadRequest,
 			mockRequest: &RequestBody{
 				Method: "POST",
@@ -521,14 +530,22 @@ func Test_LaunchEndpoint(t *testing.T) {
 	original_launchEcsWorkspaceWrapper := launchEcsWorkspaceWrapper
 	original_createExternalK8sPod := createExternalK8sPod
 	original_getPayModelsForUser := getPayModelsForUser
+	defer func() {
+		// restore original functions
+		createLocalK8sPod = original_createLocalK8sPod
+		launchEcsWorkspaceWrapper = original_launchEcsWorkspaceWrapper
+		createExternalK8sPod = original_createExternalK8sPod
+		getPayModelsForUser = original_getPayModelsForUser
+	}()
+
+	Config.ContainersMap = map[string]Container{
+		"random_id": {
+			Name: "Hatchery test container",
+		},
+	}
 
 	for _, testcase := range testCases {
 		t.Logf("Testing Launch Endpoint when %s", testcase.name)
-
-		/* Setup */
-		Config = &FullHatcheryConfig{
-			Logger: log.New(io.Discard, "", log.LstdFlags), // Discard any logs in the tests
-		}
 
 		// waitGroup is needed since one of the mocked methods is called as a go routine internally
 		var waitGroup sync.WaitGroup
@@ -587,12 +604,12 @@ func Test_LaunchEndpoint(t *testing.T) {
 		/* Assert */
 		waitGroup.Wait() // we wait for any go routines to finish before making assertions
 		if testcase.wantStatus != w.Code {
-			t.Errorf("handler returned wrong status code: got %v want %v",
+			t.Errorf("handler returned wrong status code:\ngot: '%v'\nwant: '%v'",
 				w.Code, testcase.wantStatus)
 		}
 
 		if testcase.want != strings.TrimSpace(w.Body.String()) {
-			t.Errorf("handler returned wrong response: \ngot %v\nwant %v",
+			t.Errorf("handler returned wrong response:\ngot: '%v'\nwant: '%v'",
 				w.Body.String(), testcase.want)
 		}
 
@@ -607,12 +624,77 @@ func Test_LaunchEndpoint(t *testing.T) {
 			}
 		}
 	}
+}
 
-	//Restoring
-	createLocalK8sPod = original_createLocalK8sPod
-	launchEcsWorkspaceWrapper = original_launchEcsWorkspaceWrapper
-	createExternalK8sPod = original_createExternalK8sPod
-	getPayModelsForUser = original_getPayModelsForUser
+func TestLaunchEndpointAuthorization(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	Config.ContainersMap = map[string]Container{
+		"container_a": {
+			Name: "Container without authz (accessible by default)",
+		},
+		"container_b": {
+			Name: "Container with authz the user can access",
+			Authz: AuthzConfig{
+				Version: 0.1,
+				AuthzVersion_0_1: AuthzVersion_0_1{
+					ResourcePaths: []string{"/my-container"},
+				},
+			},
+		},
+		"container_c": {
+			Name: "Container with authz the user cannot access",
+			Authz: AuthzConfig{
+				Version: 0.1,
+				AuthzVersion_0_1: AuthzVersion_0_1{
+					ResourcePaths: []string{"/my-container"},
+				},
+			},
+		},
+	}
+
+	// mock the actual authorization checks (tested in `authz_test.go`)
+	originalIsUserAuthorizedForContainer := isUserAuthorizedForContainer
+	isUserAuthorizedForContainer = func(userName string, accessToken string, container Container) (bool, error) {
+		if strings.Contains(container.Name, "cannot") {
+			return false, nil
+		}
+		return true, nil
+	}
+	// mock the pod launch
+	originalCreateLocalK8sPod := createLocalK8sPod
+	createLocalK8sPod = func(ctx context.Context, hash, userName, accessToken string, envVars []k8sv1.EnvVar) error {
+		return nil
+	}
+	defer func() {
+		// restore original functions
+		isUserAuthorizedForContainer = originalIsUserAuthorizedForContainer
+		createLocalK8sPod = originalCreateLocalK8sPod
+	}()
+
+	for containerId, container := range Config.ContainersMap {
+		t.Logf("Running test case: '%s'", container.Name)
+
+		url := fmt.Sprintf("/launch?id=%s", containerId)
+		req, err := http.NewRequest("POST", url, nil)
+		req.Header.Set("REMOTE_USER", "testUser")
+		if err != nil {
+			t.Errorf("Error creating request: %v", err.Error())
+			return
+		}
+		w := httptest.NewRecorder()
+		handler := http.HandlerFunc(launch)
+		handler.ServeHTTP(w, req)
+
+		if !strings.Contains(container.Name, "cannot") && (w.Code != 200 || w.Body.String() != "Success") {
+			t.Errorf("The /launch endpoint should have allowed launching an authorized container, but it didn't: %v %v", w.Code, w.Body)
+			return
+		}
+		if strings.Contains(container.Name, "cannot") && (w.Code != 401 || strings.TrimSuffix(w.Body.String(), "\n") != "You do not have authorization to run this container") {
+			t.Errorf("The /launch endpoint should not have allowed launching an unauthorized container, but it did: %v %v", w.Code, w.Body)
+			return
+		}
+	}
 }
 
 /*
@@ -633,6 +715,8 @@ func Test_LaunchEndpoint(t *testing.T) {
 			* Not found the second time to see resetCurrentPaymodel being called exactly once.
 */
 func Test_TerminateEndpoint(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	type RequestBody struct {
 		Method   string
 		username string
@@ -752,14 +836,19 @@ func Test_TerminateEndpoint(t *testing.T) {
 	original_getCurrentPayModel := getCurrentPayModel
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_resetCurrentPaymodel := resetCurrentPaymodel
+	defer func() {
+		// restore original functions
+		deleteK8sPod = original_deleteK8sPod
+		terminateEcsWorkspace = original_terminateEcsWorkspace
+		getCurrentPayModel = original_getCurrentPayModel
+		getWorkspaceStatus = original_getWorkspaceStatus
+		resetCurrentPaymodel = original_resetCurrentPaymodel
+	}()
 
 	for _, testcase := range testCases {
 		t.Logf("Testing Terminate Endpoint when %s", testcase.name)
 
 		/* Setup */
-		Config = &FullHatcheryConfig{
-			Logger: log.New(io.Discard, "", log.LstdFlags), // Discard any logs in the tests
-		}
 		workspaceTerminationPending := testcase.waitToTerminate
 		workspaceStatusCallCounter := 0
 		goRoutineCalled := testcase.calledFunctionName != "" && !testcase.throwError
@@ -828,12 +917,12 @@ func Test_TerminateEndpoint(t *testing.T) {
 		/* Assert */
 		waitGroup.Wait() // we wait for any go routines to finish before making assertions
 		if testcase.wantStatus != w.Code {
-			t.Errorf("handler returned wrong status code: got %v want %v",
+			t.Errorf("handler returned wrong status code:\ngot: '%v'\nwant: '%v'",
 				w.Code, testcase.wantStatus)
 		}
 
 		if testcase.want != strings.TrimSpace(w.Body.String()) {
-			t.Errorf("handler returned wrong response: \ngot %v\nwant %v",
+			t.Errorf("handler returned wrong response:\ngot: '%v'\nwant: '%v'",
 				w.Body.String(), testcase.want)
 		}
 
@@ -860,10 +949,67 @@ func Test_TerminateEndpoint(t *testing.T) {
 			}
 		}
 	}
-	// Restoring
-	deleteK8sPod = original_deleteK8sPod
-	terminateEcsWorkspace = original_terminateEcsWorkspace
-	getCurrentPayModel = original_getCurrentPayModel
-	getWorkspaceStatus = original_getWorkspaceStatus
-	resetCurrentPaymodel = original_resetCurrentPaymodel
+}
+
+func TestOptionsEndpointAuthorization(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	Config.ContainersMap = map[string]Container{
+		"container_a": {
+			Name: "Container without authz (accessible by default)",
+		},
+		"container_b": {
+			Name: "Container with authz the user can access",
+			Authz: AuthzConfig{
+				Version: 0.1,
+				AuthzVersion_0_1: AuthzVersion_0_1{
+					ResourcePaths: []string{"/my-container"},
+				},
+			},
+		},
+		"container_c": {
+			Name: "Container with authz the user cannot access",
+			Authz: AuthzConfig{
+				Version: 0.1,
+				AuthzVersion_0_1: AuthzVersion_0_1{
+					ResourcePaths: []string{"/my-container"},
+				},
+			},
+		},
+	}
+
+	// mock the actual authorization checks (tested in `authz_test.go`)
+	originalIsUserAuthorizedForContainer := isUserAuthorizedForContainer
+	isUserAuthorizedForContainer = func(userName string, accessToken string, container Container) (bool, error) {
+		if strings.Contains(container.Name, "cannot") {
+			return false, nil
+		}
+		return true, nil
+	}
+	defer func() {
+		isUserAuthorizedForContainer = originalIsUserAuthorizedForContainer // restore original function
+	}()
+
+	url := "/options"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Errorf("Error creating request: %v", err.Error())
+		return
+	}
+	w := httptest.NewRecorder()
+	handler := http.HandlerFunc(options)
+	handler.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("Error when hitting /options endpoint: got status code %v", w.Code)
+		return
+	}
+
+	if !strings.Contains(w.Body.String(), "container_a") || !strings.Contains(w.Body.String(), "container_b") {
+		t.Errorf("The /options endpoint should have returned authorized containers, but it didn't: %v", w.Body)
+		return
+	}
+	if strings.Contains(w.Body.String(), "container_c") {
+		t.Errorf("The /options endpoint should not have returned unauthorized containers, but it did: %v", w.Body)
+		return
+	}
 }

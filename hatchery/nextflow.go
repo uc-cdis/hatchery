@@ -1376,7 +1376,7 @@ func deleteUserAccessKeys(nextflowUserName string, iamSvc *iam.IAM) error {
 			Config.Logger.Printf("Warning: Unable to delete access key '%s' for user '%s' - continuing: %v", *key.AccessKeyId, nextflowUserName, err)
 		}
 	}
-	Config.Logger.Printf("Debug: Deleted access keys for Nextflow AWS user '%s'", nextflowUserName)
+	Config.Logger.Printf("Debug: Deleted all access keys for Nextflow AWS user '%s'", nextflowUserName)
 	return nil
 }
 
