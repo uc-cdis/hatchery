@@ -11,6 +11,17 @@ import (
 	"os"
 )
 
+// Configuration specific to Nextflow containers
+type NextflowConfig struct {
+	Enabled           bool     `json:"enabled"`
+	JobImageWhitelist []string `json:"job-image-whitelist"`
+	S3BucketWhitelist []string `json:"s3-bucket-whitelist"`
+	InstanceAMI       string   `json:"instance-ami"`
+	InstanceType      string   `json:"instance-type"`
+	InstanceMinVCpus  int32    `json:"instance-min-vcpus"`
+	InstanceMaxVCpus  int32    `json:"instance-max-vcpus"`
+}
+
 // Container Struct to hold the configuration for Pod Container
 type Container struct {
 	Name               string            `json:"name"`
@@ -34,6 +45,8 @@ type Container struct {
 	Gen3VolumeLocation string            `json:"gen3-volume-location"`
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
+	NextflowConfig     NextflowConfig    `json:"nextflow"`
+	Authz              AuthzConfig       `json:"authz"`
 }
 
 // SidecarContainer holds fuse sidecar configuration
@@ -126,12 +139,16 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	data.Logger.Printf("loaded config: %v", string(plan))
 	data.ContainersMap = make(map[string]Container)
 	data.PayModelMap = make(map[string]PayModel)
-	_ = json.Unmarshal(plan, &data.Config)
+	err = json.Unmarshal(plan, &data.Config)
+	if nil != err {
+		data.Logger.Printf("Unable to unmarshal configuration: %v", err)
+		return nil, err
+	}
 	if nil != data.Config.MoreConfigs && 0 < len(data.Config.MoreConfigs) {
 		for _, info := range data.Config.MoreConfigs {
 			if info.AppType == "dockstore-compose:1.0.0" {
 				if info.Name == "" {
-					return nil, fmt.Errorf("Empty name for more-configs app at: %v", info.Path)
+					return nil, fmt.Errorf("empty name for more-configs app at: %v", info.Path)
 				}
 				data.Logger.Printf("loading config from %v", info.Path)
 				composeModel, err := DockstoreComposeFromFile(info.Path)
@@ -152,7 +169,13 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 			}
 		}
 	}
+
 	for _, container := range data.Config.Containers {
+		err = ValidateAuthzConfig(data.Logger, container.Authz)
+		if nil != err {
+			data.Logger.Printf("Container '%s' has an invalid 'authz' configuration: %v", container.Name, err)
+			return nil, err
+		}
 		jsonBytes, _ := json.Marshal(container)
 		hash := fmt.Sprintf("%x", md5.Sum([]byte(jsonBytes)))
 		data.ContainersMap[hash] = container

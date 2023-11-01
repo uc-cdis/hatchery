@@ -6,6 +6,8 @@ import (
 )
 
 func Test_GetCurrentPayModel(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	configWithDbTable := &FullHatcheryConfig{
 		Config: HatcheryConfig{
 			PayModelsDynamodbTable: "random_non_empty_string",
@@ -142,6 +144,8 @@ func Test_GetCurrentPayModel(t *testing.T) {
 	}
 }
 func Test_GetPayModelsForUser(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	configWithDbTable := &FullHatcheryConfig{
 		Config: HatcheryConfig{
 			PayModelsDynamodbTable: "random_non_empty_string",

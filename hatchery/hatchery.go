@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
+	k8sv1 "k8s.io/api/core/v1"
 )
 
 // Config package-global shared hatchery config
@@ -82,15 +83,17 @@ func home(w http.ResponseWriter, r *http.Request) {
 	htmlFooter := `</body>
 	</html>`
 	fmt.Fprintln(w, htmlFooter)
-
 }
 
 func getCurrentUserName(r *http.Request) (userName string) {
-	return r.Header.Get("REMOTE_USER")
+	user := r.Header.Get("REMOTE_USER")
+	if user == "" {
+		Config.Logger.Printf("Warning: No username in header REMOTE_USER!")
+	}
+	return user
 }
 
 var getWorkspaceStatus = func(ctx context.Context, userName string, accessToken string) (*WorkspaceStatus, error) {
-
 	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
 		return nil, err
@@ -245,6 +248,9 @@ func resetPaymodels(w http.ResponseWriter, r *http.Request) {
 }
 
 func options(w http.ResponseWriter, r *http.Request) {
+	userName := getCurrentUserName(r)
+	accessToken := getBearerToken(r)
+
 	type container struct {
 		Name          string `json:"name"`
 		CPULimit      string `json:"cpu-limit"`
@@ -254,6 +260,16 @@ func options(w http.ResponseWriter, r *http.Request) {
 	}
 	var options []container
 	for k, v := range Config.ContainersMap {
+		// filter out workspace options that the user is not allowed to run
+		allowed, err := isUserAuthorizedForContainer(userName, accessToken, v)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if !allowed {
+			continue // do not return containers that the user is not allowed to run
+		}
+
 		c := container{
 			Name:        v.Name,
 			CPULimit:    v.CPULimit,
@@ -291,9 +307,13 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	accessToken := getBearerToken(r)
 
 	hash := r.URL.Query().Get("id")
-
 	if hash == "" {
-		http.Error(w, "Missing ID argument", http.StatusBadRequest)
+		http.Error(w, "Missing 'id' parameter", http.StatusBadRequest)
+		return
+	}
+	_, ok := Config.ContainersMap[hash]
+	if !ok {
+		http.Error(w, fmt.Sprintf("Invalid 'id' parameter '%s'", hash), http.StatusBadRequest)
 		return
 	}
 
@@ -302,13 +322,59 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No username found. Launch forbidden", http.StatusBadRequest)
 		return
 	}
-	allpaymodels, err := getPayModelsForUser(userName)
 
+	allowed, err := isUserAuthorizedForContainer(userName, accessToken, Config.ContainersMap[hash])
+	if err != nil {
+		Config.Logger.Printf("Unable to check if user is authorized to launch this container. Assuming unthorized. Details: %v", err)
+	}
+	if err != nil || !allowed {
+		http.Error(w, "You do not have authorization to run this container", http.StatusUnauthorized)
+		return
+	}
+
+	var envVars []k8sv1.EnvVar
+	var envVarsEcs []EnvVar
+	if Config.ContainersMap[hash].NextflowConfig.Enabled {
+		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
+		nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName, Config.ContainersMap[hash].NextflowConfig)
+		if err != nil {
+			Config.Logger.Printf("Error creating Nextflow AWS resources in AWS for user '%s': %v", userName, err)
+			http.Error(w, "Unable to create AWS resources for Nextflow", http.StatusInternalServerError)
+			return
+		}
+		envVars = append(
+			envVars,
+			k8sv1.EnvVar{
+				Name:  "AWS_ACCESS_KEY_ID",
+				Value: nextflowKeyId,
+			},
+			k8sv1.EnvVar{
+				Name:  "AWS_SECRET_ACCESS_KEY",
+				Value: nextflowKeySecret,
+			},
+		)
+		envVarsEcs = append(
+			envVarsEcs,
+			EnvVar{
+				Key:   "AWS_ACCESS_KEY_ID",
+				Value: nextflowKeyId,
+			},
+			EnvVar{
+				Key:   "AWS_SECRET_ACCESS_KEY",
+				Value: nextflowKeySecret,
+			},
+		)
+		// TODO do we need to set AWS_DEFAULT_REGION too?
+	} else {
+		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
+	}
+
+	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
-	if allpaymodels == nil { //Commons with no concept of paymodels
-		err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
+	if allpaymodels == nil { // Commons with no concept of paymodels
+		err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
 	} else {
 		payModel := allpaymodels.CurrentPayModel
 		if payModel == nil {
@@ -316,7 +382,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Current Paymodel is not set. Launch forbidden", http.StatusInternalServerError)
 			return
 		} else if payModel.Local {
-			err = createLocalK8sPod(r.Context(), hash, userName, accessToken)
+			err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
 		} else if payModel.Ecs {
 
 			if payModel.Status != "active" {
@@ -331,11 +397,11 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			// Sending a 200 response straight away, but starting the launch in a goroutine
 			// TODO: Do more sanity checks before returning 200.
 			w.WriteHeader(http.StatusOK)
-			go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel)
+			go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel, envVarsEcs)
 			fmt.Fprintf(w, "Launch accepted")
 			return
 		} else {
-			err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel)
+			err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel, envVars)
 		}
 	}
 	if err != nil {
@@ -359,12 +425,21 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	Config.Logger.Printf("Terminating workspace for user %s", userName)
+
+	// delete nextflow resources. There is no way to know if the actual workspace being
+	// terminated is a nextflow workspace or not, so always attempt to delete
+	Config.Logger.Printf("Info: Deleting Nextflow resources in AWS...")
+	err := cleanUpNextflowResources(userName)
+	if err != nil {
+		Config.Logger.Printf("Unable to delete AWS resources for Nextflow... continuing anyway")
+	}
+
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
 	if payModel != nil && payModel.Ecs {
-		_, err := terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
+		_, err = terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -468,9 +543,8 @@ var statusEcs = func(ctx context.Context, userName string, accessToken string, a
 
 // Wrapper function to launch ECS workspace in a goroutine.
 // Terminates workspace if launch fails for whatever reason
-var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken string, payModel PayModel) {
-
-	err := launchEcsWorkspace(userName, hash, accessToken, payModel)
+var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar) {
+	err := launchEcsWorkspace(userName, hash, accessToken, payModel, envVars)
 	if err != nil {
 		Config.Logger.Printf("Error: %s", err)
 		// Terminate ECS workspace if launch fails.

@@ -6,6 +6,8 @@ import (
 )
 
 func TestBuildPodFromJSON(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
 		t.Errorf("failed to load config, got: %v", err)
@@ -36,6 +38,8 @@ func TestBuildPodFromJSON(t *testing.T) {
 }
 
 func TestBuildPodFromDockstore(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
 		t.Errorf("failed to load config, got: %v", err)

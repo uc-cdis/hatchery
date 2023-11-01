@@ -20,24 +20,46 @@ An example manifest entry may look like
       "command": ["su", "-c", "/home/jovyan/sidecarDockerrun.sh", "-s", "/bin/sh", "jovyan"],
       "lifecycle-pre-stop": ["su", "-c", "cd /data; for f in *; do fusermount -u $f; rm -rf $f; done", "-s", "/bin/sh", "jovyan"]
     },
-    "containers": [{
-      "target-port": 8888,
-      "cpu-limit": "1.0",
-      "memory-limit": "512Mi",
-      "name": "Jupyter Notebook Bio Python",
-      "image": "quay.io/occ_data/jupyternotebook:1.7.2",
-      "env": {},
-      "args": ["--NotebookApp.base_url=/lw-workspace/proxy/","--NotebookApp.password=''","--NotebookApp.token=''"],
-      "command": ["start-notebook.sh"],
-      "path-rewrite": "/lw-workspace/proxy/",
-      "use-tls": "false",
-      "ready-probe": "/lw-workspace/proxy/",
-      "user-uid": 1000,
-      "fs-gid": 100,
-      "user-volume-location": "/home/jovyan/pd",
-      "gen3-volume-location": "/home/jovyan/.gen3"
-      "friends": []
-    }]
+    "containers": [
+      {
+        "target-port": 8888,
+        "cpu-limit": "1.0",
+        "memory-limit": "512Mi",
+        "name": "Jupyter Notebook Bio Python",
+        "image": "quay.io/occ_data/jupyternotebook:1.7.2",
+        "env": {},
+        "args": ["--NotebookApp.base_url=/lw-workspace/proxy/","--NotebookApp.password=''","--NotebookApp.token=''"],
+        "command": ["start-notebook.sh"],
+        "path-rewrite": "/lw-workspace/proxy/",
+        "use-tls": "false",
+        "ready-probe": "/lw-workspace/proxy/",
+        "user-uid": 1000,
+        "fs-gid": 100,
+        "user-volume-location": "/home/jovyan/pd",
+        "gen3-volume-location": "/home/jovyan/.gen3",
+        "friends": [],
+        "authz": {
+            "version": 0.1,
+            "or": [
+                {"resource_paths": ["/workspace/jupyter-container"]},
+                {"pay_models": ["Direct Pay", "None"]}
+            ]
+        },
+        "nextflow": {
+            "enabled": true,
+            "job-image-whitelist": [
+              "quay.io/cdis/*:*"
+            ],
+            "s3-bucket-whitelist": [
+              "ngi-igenomes"
+            ],
+            "instance-ami": "ami-03392f075059ae3ba",
+            "instance-type": "SPOT",
+            "instance-min-vcpus": 0,
+            "instance-max-vcpus": 9
+        }
+      }
+    ]
   }
 ```
 
@@ -71,4 +93,10 @@ An example manifest entry may look like
     * `gen3-volume-location` the location where the user's API key file will be put into
     * `lifecycle-pre-stop` a string array as the container prestop command.
     * `lifecycle-post-start` a string array as the container poststart command.
-    * `friends` is a list of kubernetes containers to deploy alongside the main container and the sidecar in the kubernetes pod
+    * `friends` is a list of kubernetes containers to deploy alongside the main container and the sidecar in the kubernetes pod.
+    * `authz` describes access rules for this container. See the [Authorization documentation](/doc/explanation/authorization.md) for more details.
+    * `nextflow` is for configuration specific to Nextflow containers. See the [Nextflow workspaces documentation](/doc/explanation/nextflow.md) for more details.
+      * `enabled` is false by default; if true, automatically create AWS resources required to run Nextflow workflows in AWS Batch.
+      * `job-image-whitelist` are the only images that are allowed as Nextflow workflow containers. It supports wildcards `?` for a single character and `*` for multiple characters. Warning: setting the whitelist as an empty list allows all images!
+      * `s3-bucket-whitelist` are public buckets that Nextflow jobs are allowed to get data objects from. Access to actions "s3:GetObject" and "s3:ListBucket" for `arn:aws:s3:::<bucket>` and `arn:aws:s3:::<bucket>/*` will be granted.
+      * `instance-ami`, `instance-type` ("EC2", "SPOT", "FARGATE" or "FARGATE_SPOT"), `instance-min-vcpus` and `instance-max-vcpus` are AWS Batch Compute Environment settings.

@@ -161,3 +161,84 @@ func (creds *CREDS) CreateEcsTaskExecutionRole() (*string, error) {
 
 	return ecsTaskExecutionRoleArn, nil
 }
+
+func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string, tags []*iam.Tag, policyDocument *string) (string, error) {
+	/* Create the policy if it does not exist. If it does, there can only be up to 5 versions, so
+	delete old versions and then update the policy. */
+	policyResult, err := iamSvc.CreatePolicy(&iam.CreatePolicyInput{
+		PolicyName:     &policyName,
+		PolicyDocument: policyDocument,
+		Path:           pathPrefix, // so we can use the path later to get the policy ARN
+		Tags:           tags,
+	})
+	policyArn := ""
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
+				Config.Logger.Printf("Policy '%s' already exists. Deleting old versions and updating it...", policyName)
+
+				// find the policy's ARN
+				listPoliciesResult, err := iamSvc.ListPolicies(&iam.ListPoliciesInput{
+					PathPrefix: pathPrefix,
+				})
+				if err != nil {
+					Config.Logger.Printf("Error getting existing policy '%s': %v", policyName, err)
+					return "", err
+				}
+				for _, policy := range listPoliciesResult.Policies {
+					if *policy.PolicyName == policyName {
+						policyArn = *policy.Arn
+						break
+					}
+				}
+				if policyArn == "" {
+					return "", fmt.Errorf("Unable to find ARN for existing policy '%s'", policyName)
+				}
+
+				// there can only be up to 5 versions, so delete old versions
+				listVersionsResult, err := iamSvc.ListPolicyVersions(&iam.ListPolicyVersionsInput{
+					PolicyArn: &policyArn,
+				})
+				if err != nil {
+					Config.Logger.Printf("Error getting policy '%s' versions: %v", policyName, err)
+					return "", err
+				}
+				for _, version := range listVersionsResult.Versions {
+					if *version.IsDefaultVersion {
+						continue
+					}
+					Config.Logger.Printf("Deleting policy '%s' version '%s'", policyName, *version.VersionId)
+					_, err = iamSvc.DeletePolicyVersion(&iam.DeletePolicyVersionInput{
+						PolicyArn: &policyArn,
+						VersionId: version.VersionId,
+					})
+					if err != nil {
+						Config.Logger.Printf("Warning: Unable to delete policy '%s' version '%s': %v", policyName, *version.VersionId, err)
+					}
+				}
+
+				// update the policy
+				_, err = iamSvc.CreatePolicyVersion(&iam.CreatePolicyVersionInput{
+					PolicyArn:      &policyArn,
+					PolicyDocument: policyDocument,
+					SetAsDefault:   aws.Bool(true),
+				})
+				if err != nil {
+					Config.Logger.Printf("Error updating policy '%s': %v", policyName, err)
+					return "", err
+				}
+			} else {
+				Config.Logger.Printf("Error creating policy '%s': %v", policyName, aerr)
+				Config.Logger.Printf("Policy document: '%s'", *policyDocument)
+				return "", err
+			}
+		} else {
+			Config.Logger.Printf("Error creating policy '%s': %v", policyName, err)
+			return "", err
+		}
+	} else {
+		Config.Logger.Printf("Created policy '%s'", policyName)
+		policyArn = *policyResult.Policy.Arn
+	}
+	return policyArn, nil
+}

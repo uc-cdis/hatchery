@@ -669,16 +669,19 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	return pod, nil
 }
 
-var createLocalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string) error {
+var createLocalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, envVars []k8sv1.EnvVar) error {
 	hatchApp := Config.ContainersMap[hash]
 	Config.Logger.Printf("Creating a Local K8s Pod")
-	var extraVars []k8sv1.EnvVar
+
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
-		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
+		Config.Logger.Printf("Failed to get API key for user '%v', Error: %v", userName, err)
 		return err
 	}
 	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
+
+	var extraVars []k8sv1.EnvVar
+	extraVars = append(extraVars, envVars...)
 
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "API_KEY",
@@ -792,7 +795,7 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 	return nil
 }
 
-var createExternalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, payModel PayModel) error {
+var createExternalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, payModel PayModel, envVars []k8sv1.EnvVar) error {
 	hatchApp := Config.ContainersMap[hash]
 	Config.Logger.Printf("Creating a External K8s Pod")
 	podClient, err := NewEKSClientset(ctx, userName, payModel)
@@ -803,7 +806,7 @@ var createExternalK8sPod = func(ctx context.Context, hash string, userName strin
 
 	apiKey, err := getAPIKeyWithContext(ctx, accessToken)
 	if err != nil {
-		Config.Logger.Printf("Failed to get API key for user %v, Error: %v", userName, err)
+		Config.Logger.Printf("Failed to get API key for user '%v', Error: %v", userName, err)
 		return err
 	}
 	Config.Logger.Printf("Created API key for user %v, key ID: %v", userName, apiKey.KeyID)
@@ -825,6 +828,7 @@ var createExternalK8sPod = func(ctx context.Context, hash string, userName strin
 	}
 
 	var extraVars []k8sv1.EnvVar
+	extraVars = append(extraVars, envVars...)
 
 	extraVars = append(extraVars, k8sv1.EnvVar{
 		Name:  "WTS_OVERRIDE_URL",
