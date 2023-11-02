@@ -9,7 +9,7 @@ reverse proxy - ambassador - user apps
       \ hatchery
 ```
 
-TODO: make a diagram or steel one from Fantix
+TODO: add a diagram
 
 ## Security
 
