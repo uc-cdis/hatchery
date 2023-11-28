@@ -1,10 +1,12 @@
 package hatchery
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -411,8 +413,10 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	keySecret := *accessKeyResult.AccessKey.SecretAccessKey
 	Config.Logger.Printf("Created access key '%v' for user '%s'", keyId, nextflowUserName)
 
-	// once we mount the configuration automatically, we can remove this log
-	Config.Logger.Printf("CONFIGURATION: Batch queue: '%s'. Job role: '%s'. Workdir: '%s'.", batchJobQueueName, nextflowJobsRoleArn, fmt.Sprintf("s3://%s/%s", bucketName, userName))
+	err = createNextflowWelcomePage(batchJobQueueName, nextflowJobsRoleArn, fmt.Sprintf("s3://%s/%s", bucketName, userName))
+	if err != nil {
+		return "", "", fmt.Errorf("unable to create welcome page in Jupyter: %v", err)
+	}
 
 	return keyId, keySecret, nil
 }
@@ -1419,5 +1423,63 @@ func stopSquidInstance(hostname string, userName string, ec2svc *ec2.EC2) error 
 			return err
 		}
 	}
+	return nil
+}
+
+func createNextflowWelcomePage(queueName string, jobsRoleArn string, workDir string) error {
+	Config.Logger.Printf("Creating welcome page with configuration: Batch queue: '%s'. Job role: '%s'. Workdir: '%s'.", queueName, jobsRoleArn, workDir)
+
+	welcomeContents := `<!doctypehtml><html lang=en><title>Nextflow Workspace</title><link href="https://fonts.googleapis.com/icon?family=Source+Sans+Pro"rel=stylesheet><style>body{font-family:"Source Sans Pro",sans-serif;background:#f5f5f5;margin:0;padding:0 20px 20px 20px;font-size:14px;line-height:1.6em;letter-spacing:.02rem}h1.header{margin:20px 10px 16px;border-bottom:solid #421c52 2px;font-size:32px;font-weight:600;line-height:2em;letter-spacing:0;color:#000}.content{padding:10px}</style><h1 class=header>Welcome to the Nextflow Workspace</h1><div class=content><p><strong>This is your personal workspace. The "pd" folder represents your persistent drive:</strong><ul><li>The files you save here will still be available when you come back after terminating your workspace session.<li>Any personal files outside of this folder will be lost.</ul><h2 class=header>Get started with Nextflow</h2><p>If you are new to Nextflow, visit <a href=https://www.nextflow.io>nextflow.io</a> for detailed information.<p>This workspace is set up to run Nextflow workflows in AWS Batch. Your Nextflow configuration must include the Batch queue, IAM role ARN and work directory that were created for you. The configuration below will allow you to run simple workflows and can be adapted to your needs.<p><strong>nextflow.config</strong><pre>
+plugins {
+	id 'nf-amazon'
+}
+process {
+	executor = 'awsbatch'
+	queue = 'QUEUE NAME'
+	container = ''
+}
+aws {
+	batch {
+		cliPath = '/home/ec2-user/miniconda/bin/aws'
+		jobRole = 'JOB ROLE ARN'
+	}
+}
+workDir = 'S3 BUCKET AND PREFIX'
+</pre><p><strong>Run in terminal:</strong><pre>
+nextflow run hello
+</pre></div>`
+
+	// curl PUT 'http://localhost:8888/api/contents/README.md' --header 'Content-Type: text/plain'
+	// --data '{
+	// 	"type": "file",
+	// 	"format": "text",
+	// 	"content": "Nextflow\nConfiguration"
+	// }'
+
+	// url := "http://localhost:8888/api/contents/welcome.html"
+	url := getAmbassadorURL() + "api/contents/welcome.html"
+	body := fmt.Sprintf("{ \"type\": \"file\", \"format\": \"text\", \"content\": \"%s\" }", welcomeContents)
+	req, err := http.NewRequest("PUT", url, bytes.NewBufferString(body))
+	if err != nil {
+		Config.Logger.Printf("Error occurred while generating HTTP request: %v", err)
+		return err
+	}
+	// headers := map[string]string{
+	// 	"Authorization": fmt.Sprintf("Bearer %s", accessToken),
+	// }
+	// for k, v := range headers {
+	// 	req.Header.Add(k, v)
+	// }
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		Config.Logger.Printf("Error occurred while making HTTP request: %v", err)
+		return err
+	}
+	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		return fmt.Errorf("failed to create welcome page in Jupyter. Status code: %v", resp.StatusCode)
+	}
+	defer resp.Body.Close()
+
 	return nil
 }
