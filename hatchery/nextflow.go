@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -1479,6 +1480,8 @@ nextflow run hello
 		return err
 	}
 	if resp.StatusCode != 200 && resp.StatusCode != 201 {
+		b, _ := io.ReadAll(resp.Body)
+		Config.Logger.Print(string(b))
 		return fmt.Errorf("failed to create welcome page in Jupyter. Status code: %v", resp.StatusCode)
 	}
 	defer resp.Body.Close()
