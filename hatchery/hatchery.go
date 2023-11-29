@@ -297,7 +297,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	var envVarsEcs []EnvVar
 	if Config.ContainersMap[hash].NextflowConfig.Enabled {
 		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
-		nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName, Config.ContainersMap[hash].NextflowConfig)
+		nextflowKeyId, nextflowKeySecret, err := createNextflowResources(r.Context(), accessToken, userName, Config.ContainersMap[hash].NextflowConfig)
 		if err != nil {
 			Config.Logger.Printf("Error creating Nextflow AWS resources in AWS for user '%s': %v", userName, err)
 			http.Error(w, "Unable to create AWS resources for Nextflow", http.StatusInternalServerError)
