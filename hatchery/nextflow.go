@@ -1432,25 +1432,26 @@ func stopSquidInstance(hostname string, userName string, ec2svc *ec2.EC2) error 
 func createNextflowWelcomePage(ctx context.Context, accessToken string, queueName string, jobsRoleArn string, workDir string) error {
 	Config.Logger.Printf("Creating welcome page with configuration: Batch queue: '%s'. Job role: '%s'. Workdir: '%s'.", queueName, jobsRoleArn, workDir)
 
-	welcomeContents := `<!doctypehtml><html lang=en><title>Nextflow Workspace</title><link href="https://fonts.googleapis.com/icon?family=Source+Sans+Pro"rel=stylesheet><style>body{font-family:"Source Sans Pro",sans-serif;background:#f5f5f5;margin:0;padding:0 20px 20px 20px;font-size:14px;line-height:1.6em;letter-spacing:.02rem}h1.header{margin:20px 10px 16px;border-bottom:solid #421c52 2px;font-size:32px;font-weight:600;line-height:2em;letter-spacing:0;color:#000}.content{padding:10px}</style><h1 class=header>Welcome to the Nextflow Workspace</h1><div class=content><p><strong>This is your personal workspace. The "pd" folder represents your persistent drive:</strong><ul><li>The files you save here will still be available when you come back after terminating your workspace session.<li>Any personal files outside of this folder will be lost.</ul><h2 class=header>Get started with Nextflow</h2><p>If you are new to Nextflow, visit <a href=https://www.nextflow.io>nextflow.io</a> for detailed information.<p>This workspace is set up to run Nextflow workflows in AWS Batch. Your Nextflow configuration must include the Batch queue, IAM role ARN and work directory that were created for you. The configuration below will allow you to run simple workflows and can be adapted to your needs.<p><strong>nextflow.config</strong><pre>
-plugins {
-	id 'nf-amazon'
-}
-process {
-	executor = 'awsbatch'
-	queue = 'QUEUE NAME'
-	container = ''
-}
-aws {
-	batch {
-		cliPath = '/home/ec2-user/miniconda/bin/aws'
-		jobRole = 'JOB ROLE ARN'
-	}
-}
-workDir = 'S3 BUCKET AND PREFIX'
-</pre><p><strong>Run in terminal:</strong><pre>
-nextflow run hello
-</pre></div>`
+	// 	welcomeContents := `<!doctypehtml><html lang=en><title>Nextflow Workspace</title><link href="https://fonts.googleapis.com/icon?family=Source+Sans+Pro"rel=stylesheet><style>body{font-family:"Source Sans Pro",sans-serif;background:#f5f5f5;margin:0;padding:0 20px 20px 20px;font-size:14px;line-height:1.6em;letter-spacing:.02rem}h1.header{margin:20px 10px 16px;border-bottom:solid #421c52 2px;font-size:32px;font-weight:600;line-height:2em;letter-spacing:0;color:#000}.content{padding:10px}</style><h1 class=header>Welcome to the Nextflow Workspace</h1><div class=content><p><strong>This is your personal workspace. The "pd" folder represents your persistent drive:</strong><ul><li>The files you save here will still be available when you come back after terminating your workspace session.<li>Any personal files outside of this folder will be lost.</ul><h2 class=header>Get started with Nextflow</h2><p>If you are new to Nextflow, visit <a href=https://www.nextflow.io>nextflow.io</a> for detailed information.<p>This workspace is set up to run Nextflow workflows in AWS Batch. Your Nextflow configuration must include the Batch queue, IAM role ARN and work directory that were created for you. The configuration below will allow you to run simple workflows and can be adapted to your needs.<p><strong>nextflow.config</strong><pre>
+	// plugins {
+	// 	id 'nf-amazon'
+	// }
+	// process {
+	// 	executor = 'awsbatch'
+	// 	queue = 'QUEUE NAME'
+	// 	container = ''
+	// }
+	// aws {
+	// 	batch {
+	// 		cliPath = '/home/ec2-user/miniconda/bin/aws'
+	// 		jobRole = 'JOB ROLE ARN'
+	// 	}
+	// }
+	// workDir = 'S3 BUCKET AND PREFIX'
+	// </pre><p><strong>Run in terminal:</strong><pre>
+	// nextflow run hello
+	// </pre></div>`
+	welcomeContents := "Nextflow contents"
 
 	// curl PUT 'http://localhost:8888/api/contents/README.md' --header 'Content-Type: text/plain'
 	// --data '{
