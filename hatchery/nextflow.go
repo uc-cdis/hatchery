@@ -414,10 +414,12 @@ func createNextflowResources(ctx context.Context, accessToken string, userName s
 	keySecret := *accessKeyResult.AccessKey.SecretAccessKey
 	Config.Logger.Printf("Created access key '%v' for user '%s'", keyId, nextflowUserName)
 
-	err = createNextflowWelcomePage(ctx, accessToken, batchJobQueueName, nextflowJobsRoleArn, fmt.Sprintf("s3://%s/%s", bucketName, userName))
-	if err != nil {
-		return "", "", fmt.Errorf("unable to create welcome page in Jupyter: %v", err)
-	}
+	// err = createNextflowWelcomePage(ctx, accessToken, batchJobQueueName, nextflowJobsRoleArn, fmt.Sprintf("s3://%s/%s", bucketName, userName))
+	// if err != nil {
+	// 	// TODO remove log, uncomment error return
+	// 	// Config.Logger.Printf("unable to create welcome page in Jupyter: %v", err)
+	// 	return "", "", fmt.Errorf("unable to create welcome page in Jupyter: %v", err)
+	// }
 
 	return keyId, keySecret, nil
 }
