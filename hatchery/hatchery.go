@@ -212,10 +212,10 @@ func options(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	accessToken := getBearerToken(r)
 
-	err := createNextflowWelcomePage(r.Context(), accessToken, "batchJobQueueName", "nextflowJobsRoleArn", fmt.Sprintf("s3://%s/%s", "bucketName", userName))
-	if err != nil {
-		Config.Logger.Printf("unable to create welcome page in Jupyter: %v", err)
-	}
+	// err := createNextflowWelcomePage(r.Context(), accessToken, "batchJobQueueName", "nextflowJobsRoleArn", fmt.Sprintf("s3://%s/%s", "bucketName", userName))
+	// if err != nil {
+	// 	Config.Logger.Printf("unable to create welcome page in Jupyter: %v", err)
+	// }
 
 	type container struct {
 		Name          string `json:"name"`

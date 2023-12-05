@@ -6,7 +6,7 @@ Hatchery creates Kubernetes Pods for workspace services. Workspace services must
 
 ### Explanation
 * [Hatchery overview](doc/explanation/hatcheryOverview.md)
-* [API documentation](doc/explanation/hatcheryApi.md)
+* [API documentation](http://petstore.swagger.io/?url=https://raw.githubusercontent.com/uc-cdis/hatchery/master/openapis/openapi.yaml)
 * [Configuring Dockstore apps](doc/explanation/dockstore.md)
 
 ### How-to
