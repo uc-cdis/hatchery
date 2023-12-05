@@ -295,7 +295,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Unable to check if user is authorized to launch this container. Assuming unthorized. Details: %v", err)
 	}
 	if err != nil || !allowed {
-		http.Error(w, "You do not have authorization to run this container", http.StatusUnauthorized)
+		http.Error(w, "You do not have authorization to run this container", http.StatusForbidden)
 		return
 	}
 
@@ -523,19 +523,33 @@ var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken s
 }
 
 func mountFiles(w http.ResponseWriter, r *http.Request) {
-	// userName := getCurrentUserName(r)
-	// accessToken := getBearerToken(r)
+	userName := getCurrentUserName(r)
+	if userName == "" {
+		http.Error(w, "Please login", http.StatusUnauthorized)
+		return
+	}
 
-	welcomeContents := `<!doctypehtml><html lang=en><title>Nextflow Workspace</title><link href="https://fonts.googleapis.com/icon?family=Source+Sans+Pro"rel=stylesheet><style>body{font-family:"Source Sans Pro",sans-serif;background:#f5f5f5;margin:0;padding:0 20px 20px 20px;font-size:14px;line-height:1.6em;letter-spacing:.02rem}h1.header{margin:20px 10px 16px;border-bottom:solid #421c52 2px;font-size:32px;font-weight:600;line-height:2em;letter-spacing:0;color:#000}.content{padding:10px}</style><h1 class=header>Welcome to the Nextflow Workspace</h1><div class=content><p><strong>This is your personal workspace. The "pd" folder represents your persistent drive:</strong><ul><li>The files you save here will still be available when you come back after terminating your workspace session.<li>Any personal files outside of this folder will be lost.</ul><h2 class=header>Get started with Nextflow</h2><p>If you are new to Nextflow, visit <a href=https://www.nextflow.io>nextflow.io</a> for detailed information.<p>This workspace is set up to run Nextflow workflows in AWS Batch. Your Nextflow configuration must include the Batch queue, IAM role ARN and work directory that were created for you. The configuration below will allow you to run simple workflows and can be adapted to your needs.<p><strong>nextflow.config</strong></div>`
+	// TODO only if workspace is nextflow flavor
+	// how to get an env var from the container?
+
+	nextflowWelcomeContents, err := createNextflowWelcomePage(userName)
+	if err != nil {
+		Config.Logger.Printf("unable to create Nextflow welcome page: %v", err)
+	}
 
 	type file struct {
-		Name    string `json:"name"`
-		Content string `json:"content"`
+		FilePath string `json:"file_path"`
+		Contents string `json:"contents"`
 	}
 	var result = []file{
 		{
-			Name:    "welcome.html",
-			Content: welcomeContents,
+			FilePath: "nextflow-welcome.html",
+			Contents: nextflowWelcomeContents,
+		},
+		// TODO remove below
+		{
+			FilePath: "subdir/test.txt",
+			Contents: "test file",
 		},
 	}
 
