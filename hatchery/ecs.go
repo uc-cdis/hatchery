@@ -491,7 +491,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 				ReadOnly:      aws.Bool(false),
 			},
 			{
-				ContainerPath: aws.String("/home/jovyan/mounted-files"),
+				ContainerPath: aws.String("/home/jovyan"),
 				SourceVolume:  aws.String("mounted-files"),
 				ReadOnly:      aws.Bool(false),
 			},
