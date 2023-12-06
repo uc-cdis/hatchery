@@ -104,14 +104,9 @@ func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint str
 	client := &http.Client{Timeout: 10 * time.Second}
 	var req *http.Request
 	var err error
-	Config.Logger.Print("MakeARequestWithContext")
 	if body == nil {
 		req, err = http.NewRequestWithContext(ctx, method, apiEndpoint, nil)
 	} else {
-		Config.Logger.Printf("MakeARequestWithContext ctx %v", ctx)
-		Config.Logger.Printf("MakeARequestWithContext method %v", method)
-		Config.Logger.Printf("MakeARequestWithContext apiEndpoint %v", apiEndpoint)
-		Config.Logger.Printf("MakeARequestWithContext body %v", body)
 		req, err = http.NewRequestWithContext(ctx, method, apiEndpoint, body)
 	}
 
@@ -119,7 +114,6 @@ func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint str
 		return nil, errors.New("Error occurred during generating HTTP request: " + err.Error())
 	}
 	for k, v := range headers {
-		Config.Logger.Printf("MakeARequestWithContext Header %v: %v", k, v)
 		req.Header.Add(k, v)
 	}
 	resp, err := client.Do(req)

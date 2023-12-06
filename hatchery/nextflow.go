@@ -1,7 +1,6 @@
 package hatchery
 
 import (
-	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -31,7 +30,7 @@ General TODOS:
 */
 
 // create the AWS resources required to launch nextflow workflows
-func createNextflowResources(ctx context.Context, accessToken string, userName string, nextflowConfig NextflowConfig) (string, string, error) {
+func createNextflowResources(userName string, nextflowConfig NextflowConfig) (string, string, error) {
 	var err error
 
 	// credentials and AWS services init
@@ -411,13 +410,6 @@ func createNextflowResources(ctx context.Context, accessToken string, userName s
 	keyId := *accessKeyResult.AccessKey.AccessKeyId
 	keySecret := *accessKeyResult.AccessKey.SecretAccessKey
 	Config.Logger.Printf("Created access key '%v' for user '%s'", keyId, nextflowUserName)
-
-	// err = createNextflowWelcomePage(ctx, accessToken, batchJobQueueName, nextflowJobsRoleArn, fmt.Sprintf("s3://%s/%s", bucketName, userName))
-	// if err != nil {
-	// 	// TODO remove log, uncomment error return
-	// 	// Config.Logger.Printf("unable to create welcome page in Jupyter: %v", err)
-	// 	return "", "", fmt.Errorf("unable to create welcome page in Jupyter: %v", err)
-	// }
 
 	return keyId, keySecret, nil
 }
@@ -1497,45 +1489,6 @@ workDir = '%s'
 nextflow run hello
 	</pre>
     </div>`, queueName, jobsRoleArn, workDir)
-	// welcomeContents := "Nextflow contents"
 
 	return welcomeContents, nil
-
-	// curl PUT 'http://localhost:8888/api/contents/README.md' --header 'Content-Type: text/plain'
-	// --data '{
-	// 	"type": "file",
-	// 	"format": "text",
-	// 	"content": "Nextflow\nConfiguration"
-	// }'
-
-	// // url := "http://localhost:8888/api/contents/welcome.html"
-	// url := getAmbassadorURL() + "api/contents/welcome.html"
-	// body := fmt.Sprintf("{ \"type\": \"file\", \"format\": \"text\", \"content\": \"%s\" }", welcomeContents)
-	// // req, err := http.NewRequest("PUT", url, bytes.NewBufferString(body))
-	// // if err != nil {
-	// // 	Config.Logger.Printf("Error occurred while generating HTTP request: %v", err)
-	// // 	return err
-	// // }
-	// // // headers := map[string]string{
-	// // // 	"Authorization": fmt.Sprintf("Bearer %s", accessToken),
-	// // // }
-	// // // for k, v := range headers {
-	// // // 	req.Header.Add(k, v)
-	// // // }
-	// // client := &http.Client{Timeout: 10 * time.Second}
-	// // resp, err := client.Do(req)
-
-	// resp, err := MakeARequestWithContext(ctx, "PUT", url, accessToken, "application/json", nil, bytes.NewBufferString(body))
-	// if err != nil {
-	// 	Config.Logger.Printf("Error occurred while making HTTP request: %v", err)
-	// 	return err
-	// }
-	// if resp.StatusCode != 200 && resp.StatusCode != 201 {
-	// 	b, _ := io.ReadAll(resp.Body)
-	// 	Config.Logger.Print(string(b))
-	// 	return fmt.Errorf("failed to create welcome page in Jupyter. Status code: %v", resp.StatusCode)
-	// }
-	// defer resp.Body.Close()
-
-	// return nil
 }
