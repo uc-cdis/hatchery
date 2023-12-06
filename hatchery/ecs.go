@@ -469,9 +469,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 			{
 				Name: aws.String("gen3"),
 			},
-			{
-				Name: aws.String("mounted-files"),
-			},
 		},
 		MountPoints: []*ecs.MountPoint{
 			// TODO: make these path respect the container def in hatchery config
@@ -488,11 +485,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 			{
 				ContainerPath: aws.String("/home/jovyan/.gen3"),
 				SourceVolume:  aws.String("gen3"),
-				ReadOnly:      aws.Bool(false),
-			},
-			{
-				ContainerPath: aws.String("/home/jovyan"),
-				SourceVolume:  aws.String("mounted-files"),
 				ReadOnly:      aws.Bool(false),
 			},
 		},
@@ -514,10 +506,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 				{
 					ContainerPath: aws.String("/.gen3"),
 					SourceVolume:  aws.String("gen3"),
-				},
-				{
-					ContainerPath: aws.String("/mounted-files"),
-					SourceVolume:  aws.String("mounted-files"),
 				},
 			},
 		},

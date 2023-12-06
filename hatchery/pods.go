@@ -443,10 +443,6 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			Name:         "gen3",
 			VolumeSource: k8sv1.VolumeSource{},
 		},
-		{
-			Name:         "mounted-files",
-			VolumeSource: k8sv1.VolumeSource{},
-		},
 	}
 
 	if mountSharedMemory {
@@ -495,10 +491,6 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		{
 			MountPath: "/.gen3",
 			Name:      "gen3",
-		},
-		{
-			MountPath: "/mounted-files",
-			Name:      "mounted-files",
 		},
 	}
 

@@ -522,6 +522,7 @@ var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken s
 	}
 }
 
+// The files returned by this endpoint are mounted to the `/data` dir by the `ecs-ws-sidecar`
 func mountFiles(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	if userName == "" {
@@ -530,8 +531,8 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO only if workspace is nextflow flavor
-	// how to get an env var from the container?
-
+	// set up workspace_id env var
+	// how to get the env var from the container here?
 	nextflowWelcomeContents, err := createNextflowWelcomePage(userName)
 	if err != nil {
 		Config.Logger.Printf("unable to create Nextflow welcome page: %v", err)
@@ -545,11 +546,6 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		{
 			FilePath: "nextflow-welcome.html",
 			Contents: nextflowWelcomeContents,
-		},
-		// TODO remove below
-		{
-			FilePath: "subdir/test.txt",
-			Contents: "test file",
 		},
 	}
 
