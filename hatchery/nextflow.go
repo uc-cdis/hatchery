@@ -34,8 +34,6 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	var err error
 
 	// credentials and AWS services init
-	var awsConfig aws.Config
-	var awsAccountId string
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return "", "", err
@@ -43,22 +41,9 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1"),
 	}))
-	if payModel != nil && payModel.Ecs {
-		Config.Logger.Printf("Info: pay model enabled for user '%s': creating Nextflow resources in user's AWS account", userName)
-		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
-		awsConfig = aws.Config{
-			Credentials: stscreds.NewCredentials(sess, roleArn),
-		}
-		awsAccountId = payModel.AWSAccountId
-	} else {
-		Config.Logger.Printf("Info: pay model disabled for user '%s': creating Nextflow resources in main AWS account", userName)
-		awsConfig = aws.Config{}
-		Config.Logger.Printf("Getting AWS account ID...")
-		awsAccountId, err = getAwsAccountId(sess, &awsConfig)
-		if err != nil {
-			Config.Logger.Printf("Error getting AWS account ID: %v", err)
-			return "", "", err
-		}
+	awsAccountId, awsConfig, err := getNextflowAwsSettings(sess, payModel, userName, "creating")
+	if err != nil {
+		return "", "", err
 	}
 	Config.Logger.Printf("AWS account ID: '%v'", awsAccountId)
 	batchSvc := batch.New(sess, &awsConfig)
@@ -229,7 +214,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 				listRolesResult, err := iamSvc.ListRoles(&iam.ListRolesInput{
 					PathPrefix: pathPrefix,
 				})
-				if err != nil {
+				if err != nil || len(listRolesResult.Roles) == 0 {
 					Config.Logger.Printf("Error getting existing role '%s': %v", roleName, err)
 					return "", "", err
 				}
@@ -412,6 +397,30 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	Config.Logger.Printf("Created access key '%v' for user '%s'", keyId, nextflowUserName)
 
 	return keyId, keySecret, nil
+}
+
+func getNextflowAwsSettings(sess *session.Session, payModel *PayModel, userName string, action string) (string, aws.Config, error) {
+	// credentials and AWS services init
+	var awsConfig aws.Config
+	var awsAccountId string
+	if payModel != nil && payModel.Ecs {
+		Config.Logger.Printf("Info: pay model enabled for user '%s': %s Nextflow resources in user's AWS account", userName, action)
+		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
+		awsConfig = aws.Config{
+			Credentials: stscreds.NewCredentials(sess, roleArn),
+		}
+		awsAccountId = payModel.AWSAccountId
+	} else {
+		Config.Logger.Printf("Info: pay model disabled for user '%s': %s Nextflow resources in main AWS account", userName, action)
+		awsConfig = aws.Config{}
+		Config.Logger.Printf("Debug: Getting AWS account ID...")
+		awsAccountId, err := getAwsAccountId(sess, &awsConfig)
+		if err != nil {
+			Config.Logger.Printf("Error getting AWS account ID: %v", err)
+			return awsAccountId, awsConfig, err
+		}
+	}
+	return awsAccountId, awsConfig, nil
 }
 
 // Create VPC for aws batch compute environment
@@ -1289,27 +1298,12 @@ func cleanUpNextflowResources(userName string) error {
 	}
 
 	// credentials and AWS services init
-	var awsConfig aws.Config
-	var awsAccountId string
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1"),
 	}))
-	if payModel != nil && payModel.Ecs {
-		Config.Logger.Printf("Info: pay model enabled for user '%s': deleting Nextflow resources in user's AWS account", userName)
-		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
-		awsConfig = aws.Config{
-			Credentials: stscreds.NewCredentials(sess, roleArn),
-		}
-		awsAccountId = payModel.AWSAccountId
-	} else {
-		Config.Logger.Printf("Info: pay model disabled for user '%s': deleting Nextflow resources in main AWS account", userName)
-		awsConfig = aws.Config{}
-		Config.Logger.Printf("Debug: Getting AWS account ID...")
-		awsAccountId, err = getAwsAccountId(sess, &awsConfig)
-		if err != nil {
-			Config.Logger.Printf("Error getting AWS account ID: %v", err)
-			return err
-		}
+	awsAccountId, awsConfig, err := getNextflowAwsSettings(sess, payModel, userName, "deleting")
+	if err != nil {
+		return err
 	}
 	Config.Logger.Printf("Debug: AWS account ID: '%v'", awsAccountId)
 	iamSvc := iam.New(sess, &awsConfig)
@@ -1419,56 +1413,45 @@ func stopSquidInstance(hostname string, userName string, ec2svc *ec2.EC2) error 
 	return nil
 }
 
-func createNextflowWelcomePage(username string) (string, error) {
-	// TODO fetch those
-	queueName := "queueName"
-	jobsRoleArn := "jobsRoleArn"
-	workDir := "workDir"
+func generateNextflowConfig(userName string) (string, error) {
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("us-east-1"),
+	}))
+	payModel, err := getCurrentPayModel(userName)
+	if err != nil {
+		return "", err
+	}
+	awsAccountId, awsConfig, err := getNextflowAwsSettings(sess, payModel, userName, "fetching")
+	if err != nil {
+		return "", err
+	}
 
-	Config.Logger.Printf("Creating welcome page with configuration: Batch queue: '%s'. Job role: '%s'. Workdir: '%s'.", queueName, jobsRoleArn, workDir)
+	// get the queue name
+	userName = escapism(userName)
+	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
+	batchJobQueueName := fmt.Sprintf("%s-nf-job-queue-%s", hostname, userName)
 
-	welcomeContents := fmt.Sprintf(`<!doctypehtml>
-  <html lang=en>
-    <title>Nextflow Workspace</title>
-    <link href="https://fonts.googleapis.com/icon?family=Source+Sans+Pro" rel=stylesheet>
-    <style>
-      body {
-        font-family: "Source Sans Pro", sans-serif;
-        background: #f5f5f5;
-        margin: 0;
-        padding: 0 20px 20px 20px;
-        font-size: 14px;
-        line-height: 1.6em;
-        letter-spacing: .02rem
-      }
+	// get the work dir
+	bucketName := fmt.Sprintf("%s-nf-%s", hostname, awsAccountId)
+	workDir := fmt.Sprintf("s3://%s/%s", bucketName, userName)
 
-      h1.header {
-        margin: 20px 10px 16px;
-        border-bottom: solid #421c52 2px;
-        font-size: 32px;
-        font-weight: 600;
-        line-height: 2em;
-        letter-spacing: 0;
-        color: #000
-      }
+	// get the jobs role
+	tag := fmt.Sprintf("%s-hatchery-nf-%s", hostname, userName)
+	pathPrefix := aws.String(fmt.Sprintf("/%s/", tag))
+	iamSvc := iam.New(sess, &awsConfig)
+	listRolesResult, err := iamSvc.ListRoles(&iam.ListRolesInput{
+		PathPrefix: pathPrefix,
+	})
+	if err != nil || len(listRolesResult.Roles) == 0 {
+		Config.Logger.Printf("Error getting role with path prefix '%s', which should already exist: %v", *pathPrefix, err)
+		return "", err
+	}
+	nextflowJobsRoleArn := *listRolesResult.Roles[0].Arn
 
-      .content {
-        padding: 10px
-      }
-    </style>
-    <h1 class=header>Welcome to the Nextflow Workspace</h1>
-    <div class=content>
-      <p><strong>This is your personal workspace. The "pd" folder represents your persistent drive:</strong>
-      <ul>
-        <li>The files you save here will still be available when you come back after terminating your workspace session.
-        <li>Any personal files outside of this folder will be lost.
-      </ul>
-      <h2 class=header>Get started with Nextflow</h2>
-      <p>If you are new to Nextflow, visit <a href=https://www.nextflow.io>nextflow.io</a> for detailed information.
-      <p>This workspace is set up to run Nextflow workflows in AWS Batch. Your Nextflow configuration must include the Batch queue, IAM role ARN and work directory that were created for you. The configuration below will allow you to run simple workflows and can be adapted to your needs.
-      <p><strong>nextflow.config:</strong>
-      <pre>
-plugins {
+	Config.Logger.Printf("Generating Nextflow configuration with: Batch queue: '%s'. Job role: '%s'. Workdir: '%s'.", batchJobQueueName, nextflowJobsRoleArn, workDir)
+
+	configContents := fmt.Sprintf(
+		`plugins {
 	id 'nf-amazon'
 }
 process {
@@ -1482,13 +1465,11 @@ aws {
 		jobRole = '%s'
 	}
 }
-workDir = '%s'
-	</pre>
-      <p><strong>Run in terminal:</strong>
-      <pre>
-nextflow run hello
-	</pre>
-    </div>`, queueName, jobsRoleArn, workDir)
+workDir = '%s'`,
+		batchJobQueueName,
+		nextflowJobsRoleArn,
+		workDir,
+	)
 
-	return welcomeContents, nil
+	return configContents, nil
 }

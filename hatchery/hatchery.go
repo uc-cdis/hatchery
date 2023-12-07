@@ -525,23 +525,25 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO only if workspace is nextflow flavor
-	// set up workspace_id env var
-	// how to get the env var from the container here?
-	nextflowWelcomeContents, err := createNextflowWelcomePage(userName)
-	if err != nil {
-		Config.Logger.Printf("unable to create Nextflow welcome page: %v", err)
-	}
-
 	type file struct {
 		FilePath string `json:"file_path"`
 		Contents string `json:"contents"`
 	}
-	var result = []file{
-		{
-			FilePath: "nextflow-welcome.html",
-			Contents: nextflowWelcomeContents,
-		},
+	result := []file{}
+
+	// TODO only if workspace is nextflow flavor
+	// set up workspace_id env var
+	// how to get the env var from the container here?
+	if true {
+		nextflowSampleConfigContents, err := generateNextflowConfig(userName)
+		if err != nil {
+			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
+		} else {
+			result = append(result, file{
+				FilePath: "sample-nextflow.config",
+				Contents: nextflowSampleConfigContents,
+			})
+		}
 	}
 
 	out, err := json.Marshal(result)
