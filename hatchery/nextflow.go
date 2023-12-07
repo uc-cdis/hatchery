@@ -1175,7 +1175,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 			}
 		}
 		if i == maxIter {
-			return nil, fmt.Errorf("Squid instance is not ready after %v seconds. Exiting", maxIter*iterDelaySecs)
+			return nil, fmt.Errorf("squid instance is not ready after %v seconds. Exiting", maxIter*iterDelaySecs)
 		}
 		Config.Logger.Printf("Info: Squid instance is %s, waiting %vs and checking again", instanceState, iterDelaySecs)
 		time.Sleep(time.Duration(iterDelaySecs) * time.Second)

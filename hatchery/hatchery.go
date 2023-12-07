@@ -525,31 +525,45 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type file struct {
-		FilePath string `json:"file_path"`
-		Contents string `json:"contents"`
+	// handle `/mount-files?id=abc`
+	fileId := r.URL.Query().Get("id")
+	if fileId != "" {
+		out, err := getMountFileContents(fileId, userName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		fmt.Fprint(w, string(out))
+		return
 	}
-	result := []file{}
+
+	// handle `/mount-files` without `id` parameter
+	fileList := []string{}
 
 	// TODO only if workspace is nextflow flavor
 	// set up workspace_id env var
 	// how to get the env var from the container here?
 	if true {
-		nextflowSampleConfigContents, err := generateNextflowConfig(userName)
-		if err != nil {
-			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
-		} else {
-			result = append(result, file{
-				FilePath: "sample-nextflow-config.txt",
-				Contents: nextflowSampleConfigContents,
-			})
-		}
+		fileList = append(fileList, "sample-nextflow-config.txt")
 	}
 
-	out, err := json.Marshal(result)
+	out, err := json.Marshal(fileList)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	fmt.Fprint(w, string(out))
+}
+
+func getMountFileContents(fileId string, userName string) (string, error) {
+	if fileId == "sample-nextflow-config.txt" {
+		out, err := generateNextflowConfig(userName)
+		if err != nil {
+			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
+		}
+		return out, nil
+	} else {
+		return "", fmt.Errorf("unknown id '%s'", fileId)
+	}
 }
