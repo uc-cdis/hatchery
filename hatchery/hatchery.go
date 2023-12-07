@@ -540,7 +540,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		} else {
 			result = append(result, file{
-				FilePath: "sample-nextflow.config",
+				FilePath: "sample-nextflow-config.txt",
 				Contents: nextflowSampleConfigContents,
 			})
 		}
