@@ -88,6 +88,9 @@ paths:
                   file_path:
                     type: string
                     description: The path at which to mount the file. Includes the file name.
+                  workspace_flavor:
+                    type: string
+                    description: The file should only be mounted when the workspace flavor matches this.
         401:
           $ref: '#/components/responses/UnauthorizedError'
   /mount-files?id=:

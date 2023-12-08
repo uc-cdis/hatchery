@@ -261,6 +261,14 @@ func options(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, string(out))
 }
 
+func getWorkspaceFlavor(container Container) string {
+	if container.NextflowConfig.Enabled {
+		return "nextflow"
+	} else {
+		return ""
+	}
+}
+
 func launch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -296,6 +304,17 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar
+	var sidecarEnvVarsEcs []EnvVar
+
+	workspaceFlavor := getWorkspaceFlavor(Config.ContainersMap[hash])
+	sidecarEnvVarsEcs = append(
+		sidecarEnvVarsEcs,
+		EnvVar{
+			Key:   "WORKSPACE_FLAVOR",
+			Value: workspaceFlavor,
+		},
+	)
+
 	if Config.ContainersMap[hash].NextflowConfig.Enabled {
 		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
 		nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName, Config.ContainersMap[hash].NextflowConfig)
@@ -359,7 +378,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			// Sending a 200 response straight away, but starting the launch in a goroutine
 			// TODO: Do more sanity checks before returning 200.
 			w.WriteHeader(http.StatusOK)
-			go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel, envVarsEcs)
+			go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel, envVarsEcs, sidecarEnvVarsEcs)
 			fmt.Fprintf(w, "Launch accepted")
 			return
 		} else {
@@ -505,8 +524,8 @@ var statusEcs = func(ctx context.Context, userName string, accessToken string, a
 
 // Wrapper function to launch ECS workspace in a goroutine.
 // Terminates workspace if launch fails for whatever reason
-var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar) {
-	err := launchEcsWorkspace(userName, hash, accessToken, payModel, envVars)
+var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar, sidecarEnvVars []EnvVar) {
+	err := launchEcsWorkspace(userName, hash, accessToken, payModel, envVars, sidecarEnvVars)
 	if err != nil {
 		Config.Logger.Printf("Error: %s", err)
 		// Terminate ECS workspace if launch fails.
@@ -525,7 +544,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// handle `/mount-files?id=abc`
+	// handle `/mount-files?id=abc` => return file contents
 	fileId := r.URL.Query().Get("id")
 	if fileId != "" {
 		out, err := getMountFileContents(fileId, userName)
@@ -537,18 +556,20 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// handle `/mount-files` without `id` parameter
+	// handle `/mount-files` without `id` parameter => list the files
 	type file struct {
-		FilePath string `json:"file_path"`
+		FilePath        string `json:"file_path"`
+		WorkspaceFlavor string `json:"workspace_flavor"`
 	}
 	fileList := []file{}
 
-	// TODO only if workspace is nextflow flavor
-	// set up workspace_id env var
-	// how to get the env var from the container here?
-	if true {
-		fileList = append(fileList, file{FilePath: "sample-nextflow-config.txt"})
-	}
+	// Ideally we would only return this if the user is running a nextflow workspace. But we have
+	// no way of knowing. Instead, set `WorkspaceFlavor=nextflow` and the sidecar will not mount
+	// the file if env var `WORKSPACE_FLAVOR` is not `nextflow`.
+	fileList = append(fileList, file{
+		FilePath:        "sample-nextflow-config.txt",
+		WorkspaceFlavor: "nextflow",
+	})
 
 	out, err := json.Marshal(fileList)
 	if err != nil {

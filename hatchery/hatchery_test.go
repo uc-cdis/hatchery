@@ -563,7 +563,7 @@ func Test_LaunchEndpoint(t *testing.T) {
 			}
 			return nil
 		}
-		launchEcsWorkspaceWrapper = func(userName, hash, accessToken string, payModel PayModel, envVars []EnvVar) {
+		launchEcsWorkspaceWrapper = func(userName, hash, accessToken string, payModel PayModel, envVars []EnvVar, sidecarEnvVars []EnvVar) {
 			FuncCounter["launchEcsWorkspaceWrapper"] += 1
 			waitGroup.Done() // Assertions are blocked until this line is completed
 		}
