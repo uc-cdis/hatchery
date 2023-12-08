@@ -1013,3 +1013,57 @@ func TestOptionsEndpointAuthorization(t *testing.T) {
 		return
 	}
 }
+
+func TestMountFilesEndpoint(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	// mock the nextflow config generation, which makes calls to AWS
+	fileContents := "here's the output"
+	originalGenerateNextflowConfig := generateNextflowConfig
+	generateNextflowConfig = func(userName string) (string, error) {
+		return fileContents, nil
+	}
+	defer func() {
+		generateNextflowConfig = originalGenerateNextflowConfig // restore original function
+	}()
+
+	// list files
+	url := "/mount-files"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Errorf("Error creating request: %v", err.Error())
+		return
+	}
+	req.Header.Set("REMOTE_USER", "testUser")
+	w := httptest.NewRecorder()
+	handler := http.HandlerFunc(mountFiles)
+	handler.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
+		return
+	}
+	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\"}]"
+	if w.Body.String() != expectedOutput {
+		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, expectedOutput, w.Body)
+		return
+	}
+
+	// get file contents
+	url = "/mount-files?id=sample-nextflow-config.txt"
+	req, err = http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Errorf("Error creating request: %v", err.Error())
+		return
+	}
+	req.Header.Set("REMOTE_USER", "testUser")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
+		return
+	}
+	if w.Body.String() != fileContents {
+		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, fileContents, w.Body)
+		return
+	}
+}

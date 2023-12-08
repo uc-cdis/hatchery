@@ -1413,7 +1413,7 @@ func stopSquidInstance(hostname string, userName string, ec2svc *ec2.EC2) error 
 	return nil
 }
 
-func generateNextflowConfig(userName string) (string, error) {
+var generateNextflowConfig = func(userName string) (string, error) {
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1"),
 	}))

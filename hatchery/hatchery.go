@@ -538,14 +538,16 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// handle `/mount-files` without `id` parameter
-	fileList := []string{}
+	type file struct {
+		FilePath string `json:"file_path"`
+	}
+	fileList := []file{}
 
 	// TODO only if workspace is nextflow flavor
 	// set up workspace_id env var
 	// how to get the env var from the container here?
 	if true {
-		fileList = append(fileList, "sample-nextflow-config.txt")
-		fileList = append(fileList, "test/test2/test3.txt") // TODO remove
+		fileList = append(fileList, file{FilePath: "sample-nextflow-config.txt"})
 	}
 
 	out, err := json.Marshal(fileList)
@@ -564,8 +566,6 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}
 		return out, nil
-	} else if fileId == "test/test2/test3.txt" { // TODO remove
-		return "{\"jsoncontents\": [1, 2, 3]}", nil
 	} else {
 		return "", fmt.Errorf("unknown id '%s'", fileId)
 	}
