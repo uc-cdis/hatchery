@@ -1049,7 +1049,7 @@ func TestMountFilesEndpoint(t *testing.T) {
 	}
 
 	// get file contents
-	url = "/mount-files?id=sample-nextflow-config.txt"
+	url = "/mount-files?file_path=sample-nextflow-config.txt"
 	req, err = http.NewRequest("GET", url, nil)
 	if err != nil {
 		t.Errorf("Error creating request: %v", err.Error())

@@ -550,10 +550,10 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// handle `/mount-files?id=abc` => return file contents
-	fileId := r.URL.Query().Get("id")
-	if fileId != "" {
-		out, err := getMountFileContents(fileId, userName)
+	// handle `/mount-files?file_path=abc` => return file contents
+	filePath := r.URL.Query().Get("file_path")
+	if filePath != "" {
+		out, err := getMountFileContents(filePath, userName)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

@@ -93,7 +93,7 @@ paths:
                     description: The file should only be mounted when the workspace flavor matches this.
         401:
           $ref: '#/components/responses/UnauthorizedError'
-  /mount-files?id=:
+  /mount-files?file_path=foobar:
     get:
       tags:
       - workspace
@@ -101,10 +101,10 @@ paths:
       operationId: get-mount-file
       parameters:
       - in: query
-        name: id
+        name: file_path
         schema:
           type: string
-        description: The ID of the file, as returned by `/mount-files`.
+        description: The file path, as returned by `/mount-files`.
       responses:
         200:
           description: successful operation
