@@ -19,6 +19,14 @@ import (
 // Config package-global shared hatchery config
 var Config *FullHatcheryConfig
 
+type containerOption struct {
+	Name          string `json:"name"`
+	CPULimit      string `json:"cpu-limit"`
+	MemoryLimit   string `json:"memory-limit"`
+	ID            string `json:"id"`
+	IdleTimeLimit int    `json:"idle-time-limit"`
+}
+
 // RegisterHatchery setup endpoints with the http engine
 func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/", home)
@@ -209,18 +217,62 @@ func resetPaymodels(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Current Paymodel has been reset")
 }
 
+func getOptionOutputForContainer(containerId string, containerSettings Container) containerOption {
+	c := containerOption{
+		Name:        containerSettings.Name,
+		CPULimit:    containerSettings.CPULimit,
+		MemoryLimit: containerSettings.MemoryLimit,
+		ID:          containerId,
+	}
+	c.IdleTimeLimit = -1
+	for _, arg := range containerSettings.Args {
+		if strings.Contains(arg, "shutdown_no_activity_timeout=") {
+			argSplit := strings.Split(arg, "=")
+			idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
+			if err == nil {
+				c.IdleTimeLimit = idleTimeLimit * 1000
+			}
+			break
+		}
+	}
+
+	return c
+}
+
 func options(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	accessToken := getBearerToken(r)
 
-	type container struct {
-		Name          string `json:"name"`
-		CPULimit      string `json:"cpu-limit"`
-		MemoryLimit   string `json:"memory-limit"`
-		ID            string `json:"id"`
-		IdleTimeLimit int    `json:"idle-time-limit"`
+	// handle `/options?id=abc` => return the specified option
+	hash := r.URL.Query().Get("id")
+	if hash != "" {
+		containerSettings, ok := Config.ContainersMap[hash]
+		if !ok {
+			http.Error(w, fmt.Sprintf("Invalid 'id' parameter '%s'", hash), http.StatusBadRequest)
+			return
+		}
+		allowed, err := isUserAuthorizedForContainer(userName, accessToken, Config.ContainersMap[hash])
+		if err != nil {
+			Config.Logger.Printf("Unable to check if user is authorized to launch this container. Assuming unthorized. Details: %v", err)
+		}
+		if err != nil || !allowed {
+			// return the same as for an unknown id
+			http.Error(w, fmt.Sprintf("Invalid 'id' parameter '%s'", hash), http.StatusBadRequest)
+			return
+		}
+
+		out, err := json.Marshal(getOptionOutputForContainer(hash, containerSettings))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		fmt.Fprint(w, string(out))
+		return
 	}
-	var options []container
+
+	// handle `/options` without `id` parameter => return all available options
+	var options []containerOption
 	for k, v := range Config.ContainersMap {
 		// filter out workspace options that the user is not allowed to run
 		allowed, err := isUserAuthorizedForContainer(userName, accessToken, v)
@@ -232,23 +284,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 			continue // do not return containers that the user is not allowed to run
 		}
 
-		c := container{
-			Name:        v.Name,
-			CPULimit:    v.CPULimit,
-			MemoryLimit: v.MemoryLimit,
-			ID:          k,
-		}
-		c.IdleTimeLimit = -1
-		for _, arg := range v.Args {
-			if strings.Contains(arg, "shutdown_no_activity_timeout=") {
-				argSplit := strings.Split(arg, "=")
-				idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
-				if err == nil {
-					c.IdleTimeLimit = idleTimeLimit * 1000
-				}
-				break
-			}
-		}
+		c := getOptionOutputForContainer(k, v)
 		options = append(options, c)
 	}
 
@@ -264,6 +300,8 @@ func options(w http.ResponseWriter, r *http.Request) {
 func getWorkspaceFlavor(container Container) string {
 	if container.NextflowConfig.Enabled {
 		return "nextflow"
+	} else if strings.Contains(strings.ToLower(container.Name), "jupyter") {
+		return "jupyter"
 	} else {
 		return ""
 	}
@@ -298,7 +336,8 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Unable to check if user is authorized to launch this container. Assuming unthorized. Details: %v", err)
 	}
 	if err != nil || !allowed {
-		http.Error(w, "You do not have authorization to run this container", http.StatusForbidden)
+		// return the same as for an unknown id
+		http.Error(w, fmt.Sprintf("Invalid 'id' parameter '%s'", hash), http.StatusBadRequest)
 		return
 	}
 
@@ -562,7 +601,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// handle `/mount-files` without `id` parameter => list the files
+	// handle `/mount-files` without `file_path` parameter => list the files
 	type file struct {
 		FilePath        string `json:"file_path"`
 		WorkspaceFlavor string `json:"workspace_flavor"`

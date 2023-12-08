@@ -71,12 +71,34 @@ paths:
                     $ref: '#/components/schemas/Container'
         401:
           $ref: '#/components/responses/UnauthorizedError'
+  /options?id=foobar:
+    get:
+      tags:
+      - workspace
+      summary: Get information about the specified workspace option only
+      operationId: options_id
+      parameters:
+      - in: query
+        name: id
+        schema:
+          type: string
+        description: The ID of the option to get information for
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                items:
+                    $ref: '#/components/schemas/Container'
+        401:
+          $ref: '#/components/responses/UnauthorizedError'
   /mount-files:
     get:
       tags:
       - workspace
       summary: Get the list of files that should be mounted to the workspace
-      operationId: mount-files
+      operationId: mountfiles
       responses:
         200:
           description: successful operation
@@ -98,7 +120,7 @@ paths:
       tags:
       - workspace
       summary: Get the contents of a file that should be mounted to the workspace
-      operationId: get-mount-file
+      operationId: mountfiles_file_path
       parameters:
       - in: query
         name: file_path
