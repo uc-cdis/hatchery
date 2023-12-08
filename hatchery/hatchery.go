@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strconv"
@@ -627,7 +628,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 
 func getMountFileContents(fileId string, userName string) (string, error) {
 	if fileId == "sample-nextflow-config.txt" {
-		out, err := generateNextflowConfig(userName)
+		out, err := generateNextflowConfig(html.UnescapeString(userName))
 		if err != nil {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}
