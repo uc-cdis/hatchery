@@ -304,11 +304,17 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar
-	var sidecarEnvVarsEcs []EnvVar
 
 	workspaceFlavor := getWorkspaceFlavor(Config.ContainersMap[hash])
-	sidecarEnvVarsEcs = append(
-		sidecarEnvVarsEcs,
+	envVars = append(
+		envVars,
+		k8sv1.EnvVar{
+			Name:  "WORKSPACE_FLAVOR",
+			Value: workspaceFlavor,
+		},
+	)
+	envVarsEcs = append(
+		envVarsEcs,
 		EnvVar{
 			Key:   "WORKSPACE_FLAVOR",
 			Value: workspaceFlavor,
@@ -378,7 +384,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			// Sending a 200 response straight away, but starting the launch in a goroutine
 			// TODO: Do more sanity checks before returning 200.
 			w.WriteHeader(http.StatusOK)
-			go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel, envVarsEcs, sidecarEnvVarsEcs)
+			go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel, envVarsEcs)
 			fmt.Fprintf(w, "Launch accepted")
 			return
 		} else {
@@ -524,8 +530,8 @@ var statusEcs = func(ctx context.Context, userName string, accessToken string, a
 
 // Wrapper function to launch ECS workspace in a goroutine.
 // Terminates workspace if launch fails for whatever reason
-var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar, sidecarEnvVars []EnvVar) {
-	err := launchEcsWorkspace(userName, hash, accessToken, payModel, envVars, sidecarEnvVars)
+var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar) {
+	err := launchEcsWorkspace(userName, hash, accessToken, payModel, envVars)
 	if err != nil {
 		Config.Logger.Printf("Error: %s", err)
 		// Terminate ECS workspace if launch fails.

@@ -563,7 +563,7 @@ func Test_LaunchEndpoint(t *testing.T) {
 			}
 			return nil
 		}
-		launchEcsWorkspaceWrapper = func(userName, hash, accessToken string, payModel PayModel, envVars []EnvVar, sidecarEnvVars []EnvVar) {
+		launchEcsWorkspaceWrapper = func(userName, hash, accessToken string, payModel PayModel, envVars []EnvVar) {
 			FuncCounter["launchEcsWorkspaceWrapper"] += 1
 			waitGroup.Done() // Assertions are blocked until this line is completed
 		}
@@ -690,7 +690,7 @@ func TestLaunchEndpointAuthorization(t *testing.T) {
 			t.Errorf("The /launch endpoint should have allowed launching an authorized container, but it didn't: %v %v", w.Code, w.Body)
 			return
 		}
-		if strings.Contains(container.Name, "cannot") && (w.Code != 401 || strings.TrimSuffix(w.Body.String(), "\n") != "You do not have authorization to run this container") {
+		if strings.Contains(container.Name, "cannot") && (w.Code != 403 || strings.TrimSuffix(w.Body.String(), "\n") != "You do not have authorization to run this container") {
 			t.Errorf("The /launch endpoint should not have allowed launching an unauthorized container, but it did: %v %v", w.Code, w.Body)
 			return
 		}
@@ -1042,7 +1042,7 @@ func TestMountFilesEndpoint(t *testing.T) {
 		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
 		return
 	}
-	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\"}]"
+	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\",\"workspace_flavor\":\"nextflow\"}]"
 	if w.Body.String() != expectedOutput {
 		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, expectedOutput, w.Body)
 		return

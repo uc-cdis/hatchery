@@ -38,10 +38,10 @@ type EnvVar struct {
 	Value string
 }
 
-func GetEnvironmentFromEnvVars(envVars []EnvVar) []*ecs.KeyValuePair {
+func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 	var environment []*ecs.KeyValuePair
 
-	for _, envVar := range envVars {
+	for _, envVar := range input.EnvVars {
 		environment = append(environment,
 			&ecs.KeyValuePair{
 				Name:  aws.String(envVar.Key),
@@ -354,7 +354,7 @@ var terminateEcsWorkspace = func(ctx context.Context, userName string, accessTok
 	return fmt.Sprintf("Service '%s' is in status: %s", userToResourceName(userName, "pod"), *delServiceOutput.Service.Status), nil
 }
 
-func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar, sidecarEnvVars []EnvVar) error {
+func launchEcsWorkspace(userName string, hash string, accessToken string, payModel PayModel, envVars []EnvVar) error {
 	// Set up background context, as this runs in a goroutine
 	ctx := context.Background()
 
@@ -508,7 +508,6 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 					SourceVolume:  aws.String("gen3"),
 				},
 			},
-			Environment: GetEnvironmentFromEnvVars(sidecarEnvVars),
 		},
 	}
 	taskDefResult, err := svc.CreateTaskDefinition(&taskDef, userName, hash, payModel.AWSAccountId)
@@ -632,7 +631,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 	}
 
 	containerDefinition := &ecs.ContainerDefinition{
-		Environment:      GetEnvironmentFromEnvVars(input.EnvVars),
+		Environment:      input.Environment(),
 		StopTimeout:      aws.Int64(2),
 		Essential:        aws.Bool(true),
 		MountPoints:      input.MountPoints,
@@ -645,7 +644,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 
 	sidecarContainerDefinition := input.SidecarContainer
 	sidecarContainerDefinition.LogConfiguration = logConfiguration
-	sidecarContainerDefinition.Environment = GetEnvironmentFromEnvVars(input.EnvVars)
+	sidecarContainerDefinition.Environment = input.Environment()
 
 	if input.Port != 0 {
 		containerDefinition.SetPortMappings(
