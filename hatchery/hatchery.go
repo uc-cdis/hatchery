@@ -545,6 +545,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 	// how to get the env var from the container here?
 	if true {
 		fileList = append(fileList, "sample-nextflow-config.txt")
+		fileList = append(fileList, "test/test2/test3.txt") // TODO remove
 	}
 
 	out, err := json.Marshal(fileList)
@@ -563,6 +564,8 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}
 		return out, nil
+	} else if fileId == "test/test2/test3.txt" { // TODO remove
+		return "{\"jsoncontents\": [1, 2, 3]}", nil
 	} else {
 		return "", fmt.Errorf("unknown id '%s'", fileId)
 	}
