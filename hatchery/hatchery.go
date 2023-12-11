@@ -65,6 +65,11 @@ func getCurrentUserName(r *http.Request) (userName string) {
 	if user == "" {
 		Config.Logger.Printf("Warning: No username in header REMOTE_USER!")
 	}
+
+	// escape username to sanitize input from http header
+	// this escapes characters which should not be in usernames anyway (<, >, &, ' and ")
+	user = html.EscapeString(user)
+
 	return user
 }
 
@@ -628,7 +633,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 
 func getMountFileContents(fileId string, userName string) (string, error) {
 	if fileId == "sample-nextflow-config.txt" {
-		out, err := generateNextflowConfig(html.UnescapeString(userName))
+		out, err := generateNextflowConfig(userName)
 		if err != nil {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}
