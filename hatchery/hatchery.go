@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strconv"
@@ -19,6 +20,14 @@ import (
 // Config package-global shared hatchery config
 var Config *FullHatcheryConfig
 
+type containerOption struct {
+	Name          string `json:"name"`
+	CPULimit      string `json:"cpu-limit"`
+	MemoryLimit   string `json:"memory-limit"`
+	ID            string `json:"id"`
+	IdleTimeLimit int    `json:"idle-time-limit"`
+}
+
 // RegisterHatchery setup endpoints with the http engine
 func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/", home)
@@ -26,6 +35,7 @@ func RegisterHatchery(mux *httptrace.ServeMux) {
 	mux.HandleFunc("/terminate", terminate)
 	mux.HandleFunc("/status", status)
 	mux.HandleFunc("/options", options)
+	mux.HandleFunc("/mount-files", mountFiles)
 	mux.HandleFunc("/paymodels", paymodels)
 	mux.HandleFunc("/setpaymodel", setpaymodel)
 	mux.HandleFunc("/resetpaymodels", resetPaymodels)
@@ -55,6 +65,11 @@ func getCurrentUserName(r *http.Request) (userName string) {
 	if user == "" {
 		Config.Logger.Printf("Warning: No username in header REMOTE_USER!")
 	}
+
+	// escape username to sanitize input from http header
+	// this escapes characters which should not be in usernames anyway (<, >, &, ' and ")
+	user = html.EscapeString(user)
+
 	return user
 }
 
@@ -208,18 +223,62 @@ func resetPaymodels(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Current Paymodel has been reset")
 }
 
+func getOptionOutputForContainer(containerId string, containerSettings Container) containerOption {
+	c := containerOption{
+		Name:        containerSettings.Name,
+		CPULimit:    containerSettings.CPULimit,
+		MemoryLimit: containerSettings.MemoryLimit,
+		ID:          containerId,
+	}
+	c.IdleTimeLimit = -1
+	for _, arg := range containerSettings.Args {
+		if strings.Contains(arg, "shutdown_no_activity_timeout=") {
+			argSplit := strings.Split(arg, "=")
+			idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
+			if err == nil {
+				c.IdleTimeLimit = idleTimeLimit * 1000
+			}
+			break
+		}
+	}
+
+	return c
+}
+
 func options(w http.ResponseWriter, r *http.Request) {
 	userName := getCurrentUserName(r)
 	accessToken := getBearerToken(r)
 
-	type container struct {
-		Name          string `json:"name"`
-		CPULimit      string `json:"cpu-limit"`
-		MemoryLimit   string `json:"memory-limit"`
-		ID            string `json:"id"`
-		IdleTimeLimit int    `json:"idle-time-limit"`
+	// handle `/options?id=abc` => return the specified option
+	hash := r.URL.Query().Get("id")
+	if hash != "" {
+		containerSettings, ok := Config.ContainersMap[hash]
+		if !ok {
+			http.Error(w, fmt.Sprintf("Invalid 'id' parameter '%s'", hash), http.StatusBadRequest)
+			return
+		}
+		allowed, err := isUserAuthorizedForContainer(userName, accessToken, Config.ContainersMap[hash])
+		if err != nil {
+			Config.Logger.Printf("Unable to check if user is authorized to launch this container. Assuming unthorized. Details: %v", err)
+		}
+		if err != nil || !allowed {
+			// return the same as for an unknown id
+			http.Error(w, fmt.Sprintf("Invalid 'id' parameter '%s'", hash), http.StatusBadRequest)
+			return
+		}
+
+		out, err := json.Marshal(getOptionOutputForContainer(hash, containerSettings))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		fmt.Fprint(w, string(out))
+		return
 	}
-	var options []container
+
+	// handle `/options` without `id` parameter => return all available options
+	var options []containerOption
 	for k, v := range Config.ContainersMap {
 		// filter out workspace options that the user is not allowed to run
 		allowed, err := isUserAuthorizedForContainer(userName, accessToken, v)
@@ -231,23 +290,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 			continue // do not return containers that the user is not allowed to run
 		}
 
-		c := container{
-			Name:        v.Name,
-			CPULimit:    v.CPULimit,
-			MemoryLimit: v.MemoryLimit,
-			ID:          k,
-		}
-		c.IdleTimeLimit = -1
-		for _, arg := range v.Args {
-			if strings.Contains(arg, "shutdown_no_activity_timeout=") {
-				argSplit := strings.Split(arg, "=")
-				idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
-				if err == nil {
-					c.IdleTimeLimit = idleTimeLimit * 1000
-				}
-				break
-			}
-		}
+		c := getOptionOutputForContainer(k, v)
 		options = append(options, c)
 	}
 
@@ -258,6 +301,16 @@ func options(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprint(w, string(out))
+}
+
+func getWorkspaceFlavor(container Container) string {
+	if container.NextflowConfig.Enabled {
+		return "nextflow"
+	} else if strings.Contains(strings.ToLower(container.Name), "jupyter") {
+		return "jupyter"
+	} else {
+		return ""
+	}
 }
 
 func launch(w http.ResponseWriter, r *http.Request) {
@@ -289,12 +342,30 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Unable to check if user is authorized to launch this container. Assuming unthorized. Details: %v", err)
 	}
 	if err != nil || !allowed {
-		http.Error(w, "You do not have authorization to run this container", http.StatusUnauthorized)
+		// return the same as for an unknown id
+		http.Error(w, fmt.Sprintf("Invalid 'id' parameter '%s'", hash), http.StatusBadRequest)
 		return
 	}
 
 	var envVars []k8sv1.EnvVar
 	var envVarsEcs []EnvVar
+
+	workspaceFlavor := getWorkspaceFlavor(Config.ContainersMap[hash])
+	envVars = append(
+		envVars,
+		k8sv1.EnvVar{
+			Name:  "WORKSPACE_FLAVOR",
+			Value: workspaceFlavor,
+		},
+	)
+	envVarsEcs = append(
+		envVarsEcs,
+		EnvVar{
+			Key:   "WORKSPACE_FLAVOR",
+			Value: workspaceFlavor,
+		},
+	)
+
 	if Config.ContainersMap[hash].NextflowConfig.Enabled {
 		Config.Logger.Printf("Info: Nextflow is enabled: creating Nextflow resources in AWS...")
 		nextflowKeyId, nextflowKeySecret, err := createNextflowResources(userName, Config.ContainersMap[hash].NextflowConfig)
@@ -513,5 +584,61 @@ var launchEcsWorkspaceWrapper = func(userName string, hash string, accessToken s
 		if err != nil {
 			Config.Logger.Printf("Error: %s", err)
 		}
+	}
+}
+
+// The files returned by this endpoint are mounted to the `/data` dir by the `ecs-ws-sidecar`
+func mountFiles(w http.ResponseWriter, r *http.Request) {
+	userName := getCurrentUserName(r)
+	if userName == "" {
+		http.Error(w, "Please login", http.StatusUnauthorized)
+		return
+	}
+
+	// handle `/mount-files?file_path=abc` => return file contents
+	filePath := r.URL.Query().Get("file_path")
+	if filePath != "" {
+		out, err := getMountFileContents(filePath, userName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		fmt.Fprint(w, string(out))
+		return
+	}
+
+	// handle `/mount-files` without `file_path` parameter => list the files
+	type file struct {
+		FilePath        string `json:"file_path"`
+		WorkspaceFlavor string `json:"workspace_flavor"`
+	}
+	fileList := []file{}
+
+	// Ideally we would only return this if the user is running a nextflow workspace. But we have
+	// no way of knowing. Instead, set `WorkspaceFlavor=nextflow` and the sidecar will not mount
+	// the file if env var `WORKSPACE_FLAVOR` is not `nextflow`.
+	fileList = append(fileList, file{
+		FilePath:        "sample-nextflow-config.txt",
+		WorkspaceFlavor: "nextflow",
+	})
+
+	out, err := json.Marshal(fileList)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprint(w, string(out))
+}
+
+func getMountFileContents(fileId string, userName string) (string, error) {
+	if fileId == "sample-nextflow-config.txt" {
+		out, err := generateNextflowConfig(userName)
+		if err != nil {
+			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
+		}
+		return out, nil
+	} else {
+		return "", fmt.Errorf("unknown id '%s'", fileId)
 	}
 }

@@ -34,8 +34,6 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	var err error
 
 	// credentials and AWS services init
-	var awsConfig aws.Config
-	var awsAccountId string
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return "", "", err
@@ -43,22 +41,9 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1"),
 	}))
-	if payModel != nil && payModel.Ecs {
-		Config.Logger.Printf("Info: pay model enabled for user '%s': creating Nextflow resources in user's AWS account", userName)
-		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
-		awsConfig = aws.Config{
-			Credentials: stscreds.NewCredentials(sess, roleArn),
-		}
-		awsAccountId = payModel.AWSAccountId
-	} else {
-		Config.Logger.Printf("Info: pay model disabled for user '%s': creating Nextflow resources in main AWS account", userName)
-		awsConfig = aws.Config{}
-		Config.Logger.Printf("Getting AWS account ID...")
-		awsAccountId, err = getAwsAccountId(sess, &awsConfig)
-		if err != nil {
-			Config.Logger.Printf("Error getting AWS account ID: %v", err)
-			return "", "", err
-		}
+	awsAccountId, awsConfig, err := getNextflowAwsSettings(sess, payModel, userName, "creating")
+	if err != nil {
+		return "", "", err
 	}
 	Config.Logger.Printf("AWS account ID: '%v'", awsAccountId)
 	batchSvc := batch.New(sess, &awsConfig)
@@ -229,7 +214,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 				listRolesResult, err := iamSvc.ListRoles(&iam.ListRolesInput{
 					PathPrefix: pathPrefix,
 				})
-				if err != nil {
+				if err != nil || len(listRolesResult.Roles) == 0 {
 					Config.Logger.Printf("Error getting existing role '%s': %v", roleName, err)
 					return "", "", err
 				}
@@ -411,10 +396,31 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	keySecret := *accessKeyResult.AccessKey.SecretAccessKey
 	Config.Logger.Printf("Created access key '%v' for user '%s'", keyId, nextflowUserName)
 
-	// once we mount the configuration automatically, we can remove this log
-	Config.Logger.Printf("CONFIGURATION: Batch queue: '%s'. Job role: '%s'. Workdir: '%s'.", batchJobQueueName, nextflowJobsRoleArn, fmt.Sprintf("s3://%s/%s", bucketName, userName))
-
 	return keyId, keySecret, nil
+}
+
+func getNextflowAwsSettings(sess *session.Session, payModel *PayModel, userName string, action string) (string, aws.Config, error) {
+	// credentials and AWS services init
+	var awsConfig aws.Config
+	var awsAccountId string
+	if payModel != nil && payModel.Ecs {
+		Config.Logger.Printf("Info: pay model enabled for user '%s': %s Nextflow resources in user's AWS account", userName, action)
+		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
+		awsConfig = aws.Config{
+			Credentials: stscreds.NewCredentials(sess, roleArn),
+		}
+		awsAccountId = payModel.AWSAccountId
+	} else {
+		Config.Logger.Printf("Info: pay model disabled for user '%s': %s Nextflow resources in main AWS account", userName, action)
+		awsConfig = aws.Config{}
+		Config.Logger.Printf("Debug: Getting AWS account ID...")
+		awsAccountId, err := getAwsAccountId(sess, &awsConfig)
+		if err != nil {
+			Config.Logger.Printf("Error getting AWS account ID: %v", err)
+			return awsAccountId, awsConfig, err
+		}
+	}
+	return awsAccountId, awsConfig, nil
 }
 
 // Create VPC for aws batch compute environment
@@ -1169,7 +1175,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 			}
 		}
 		if i == maxIter {
-			return nil, fmt.Errorf("Squid instance is not ready after %v seconds. Exiting", maxIter*iterDelaySecs)
+			return nil, fmt.Errorf("squid instance is not ready after %v seconds. Exiting", maxIter*iterDelaySecs)
 		}
 		Config.Logger.Printf("Info: Squid instance is %s, waiting %vs and checking again", instanceState, iterDelaySecs)
 		time.Sleep(time.Duration(iterDelaySecs) * time.Second)
@@ -1292,27 +1298,12 @@ func cleanUpNextflowResources(userName string) error {
 	}
 
 	// credentials and AWS services init
-	var awsConfig aws.Config
-	var awsAccountId string
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1"),
 	}))
-	if payModel != nil && payModel.Ecs {
-		Config.Logger.Printf("Info: pay model enabled for user '%s': deleting Nextflow resources in user's AWS account", userName)
-		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
-		awsConfig = aws.Config{
-			Credentials: stscreds.NewCredentials(sess, roleArn),
-		}
-		awsAccountId = payModel.AWSAccountId
-	} else {
-		Config.Logger.Printf("Info: pay model disabled for user '%s': deleting Nextflow resources in main AWS account", userName)
-		awsConfig = aws.Config{}
-		Config.Logger.Printf("Debug: Getting AWS account ID...")
-		awsAccountId, err = getAwsAccountId(sess, &awsConfig)
-		if err != nil {
-			Config.Logger.Printf("Error getting AWS account ID: %v", err)
-			return err
-		}
+	awsAccountId, awsConfig, err := getNextflowAwsSettings(sess, payModel, userName, "deleting")
+	if err != nil {
+		return err
 	}
 	Config.Logger.Printf("Debug: AWS account ID: '%v'", awsAccountId)
 	iamSvc := iam.New(sess, &awsConfig)
@@ -1420,4 +1411,66 @@ func stopSquidInstance(hostname string, userName string, ec2svc *ec2.EC2) error 
 		}
 	}
 	return nil
+}
+
+var generateNextflowConfig = func(userName string) (string, error) {
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("us-east-1"),
+	}))
+	payModel, err := getCurrentPayModel(userName)
+	if err != nil {
+		return "", err
+	}
+	awsAccountId, awsConfig, err := getNextflowAwsSettings(sess, payModel, userName, "fetching")
+	if err != nil {
+		return "", err
+	}
+
+	// get the queue name
+	userName = escapism(userName)
+	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
+	batchJobQueueName := fmt.Sprintf("%s-nf-job-queue-%s", hostname, userName)
+
+	// get the work dir
+	bucketName := fmt.Sprintf("%s-nf-%s", hostname, awsAccountId)
+	workDir := fmt.Sprintf("s3://%s/%s", bucketName, userName)
+
+	// get the jobs role
+	tag := fmt.Sprintf("%s-hatchery-nf-%s", hostname, userName)
+	pathPrefix := aws.String(fmt.Sprintf("/%s/", tag))
+	iamSvc := iam.New(sess, &awsConfig)
+	listRolesResult, err := iamSvc.ListRoles(&iam.ListRolesInput{
+		PathPrefix: pathPrefix,
+	})
+	if err != nil || len(listRolesResult.Roles) == 0 {
+		Config.Logger.Printf("Error getting role with path prefix '%s', which should already exist: %v", *pathPrefix, err)
+		return "", err
+	}
+	nextflowJobsRoleArn := *listRolesResult.Roles[0].Arn
+
+	Config.Logger.Printf("Generating Nextflow configuration with: Batch queue: '%s'. Job role: '%s'. Workdir: '%s'.", batchJobQueueName, nextflowJobsRoleArn, workDir)
+
+	// TODO "ubuntu" container may not always be authorized - replace with a public approved container?
+	configContents := fmt.Sprintf(
+		`plugins {
+	id 'nf-amazon'
+}
+process {
+	executor = 'awsbatch'
+	queue = '%s'
+	container = 'ubuntu'
+}
+aws {
+	batch {
+		cliPath = '/home/ec2-user/miniconda/bin/aws'
+		jobRole = '%s'
+	}
+}
+workDir = '%s'`,
+		batchJobQueueName,
+		nextflowJobsRoleArn,
+		workDir,
+	)
+
+	return configContents, nil
 }

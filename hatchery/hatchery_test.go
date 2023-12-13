@@ -690,7 +690,7 @@ func TestLaunchEndpointAuthorization(t *testing.T) {
 			t.Errorf("The /launch endpoint should have allowed launching an authorized container, but it didn't: %v %v", w.Code, w.Body)
 			return
 		}
-		if strings.Contains(container.Name, "cannot") && (w.Code != 401 || strings.TrimSuffix(w.Body.String(), "\n") != "You do not have authorization to run this container") {
+		if strings.Contains(container.Name, "cannot") && (w.Code != 400 || !strings.Contains(strings.TrimSuffix(w.Body.String(), "\n"), "Invalid 'id' parameter")) {
 			t.Errorf("The /launch endpoint should not have allowed launching an unauthorized container, but it did: %v %v", w.Code, w.Body)
 			return
 		}
@@ -990,6 +990,7 @@ func TestOptionsEndpointAuthorization(t *testing.T) {
 		isUserAuthorizedForContainer = originalIsUserAuthorizedForContainer // restore original function
 	}()
 
+	// `options` endpoint without `id` parameter
 	url := "/options"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -1003,13 +1004,98 @@ func TestOptionsEndpointAuthorization(t *testing.T) {
 		t.Errorf("Error when hitting /options endpoint: got status code %v", w.Code)
 		return
 	}
-
 	if !strings.Contains(w.Body.String(), "container_a") || !strings.Contains(w.Body.String(), "container_b") {
 		t.Errorf("The /options endpoint should have returned authorized containers, but it didn't: %v", w.Body)
 		return
 	}
 	if strings.Contains(w.Body.String(), "container_c") {
 		t.Errorf("The /options endpoint should not have returned unauthorized containers, but it did: %v", w.Body)
+		return
+	}
+
+	// `options` endpoint with `id` parameter, authorized
+	url = "/options?id=container_b"
+	req, err = http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Errorf("Error creating request: %v", err.Error())
+		return
+	}
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("Error when hitting /options?id endpoint: got status code %v", w.Code)
+		return
+	}
+	if !strings.Contains(w.Body.String(), "container_b") {
+		t.Errorf("The /options?id endpoint should have returned an authorized container, but it didn't: %v", w.Body)
+		return
+	}
+
+	// `options` endpoint with `id` parameter, unauthorized
+	url = "/options?id=container_c"
+	req, err = http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Errorf("Error creating request: %v", err.Error())
+		return
+	}
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != 400 {
+		t.Errorf("The /options?id endpoint should not have returned an unauthorized container, but it did: %v - %v", w.Code, w.Body)
+		return
+	}
+}
+
+func TestMountFilesEndpoint(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	// mock the nextflow config generation, which makes calls to AWS
+	fileContents := "here's the output"
+	originalGenerateNextflowConfig := generateNextflowConfig
+	generateNextflowConfig = func(userName string) (string, error) {
+		return fileContents, nil
+	}
+	defer func() {
+		generateNextflowConfig = originalGenerateNextflowConfig // restore original function
+	}()
+
+	// list files
+	url := "/mount-files"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Errorf("Error creating request: %v", err.Error())
+		return
+	}
+	req.Header.Set("REMOTE_USER", "testUser")
+	w := httptest.NewRecorder()
+	handler := http.HandlerFunc(mountFiles)
+	handler.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
+		return
+	}
+	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\",\"workspace_flavor\":\"nextflow\"}]"
+	if w.Body.String() != expectedOutput {
+		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, expectedOutput, w.Body)
+		return
+	}
+
+	// get file contents
+	url = "/mount-files?file_path=sample-nextflow-config.txt"
+	req, err = http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Errorf("Error creating request: %v", err.Error())
+		return
+	}
+	req.Header.Set("REMOTE_USER", "testUser")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
+		return
+	}
+	if w.Body.String() != fileContents {
+		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, fileContents, w.Body)
 		return
 	}
 }
