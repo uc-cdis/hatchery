@@ -96,6 +96,7 @@ type HatcheryConfig struct {
 	DisableLocalWS         bool             `json:"disable-local-ws"`
 	PayModels              []PayModel       `json:"pay-models"`
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
+	Gen3UserLicenseTable   string           `json:"gen3-user-license-test"`
 	SubDir                 string           `json:"sub-dir"`
 	Containers             []Container      `json:"containers"`
 	UserVolumeSize         string           `json:"user-volume-size"`
