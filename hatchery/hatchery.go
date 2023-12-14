@@ -401,6 +401,13 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
 
+	// Test the active users function
+	activeUsers, err := getActiveGen3UserLicenses()
+	if err != nil {
+		Config.Logger.Printf(err.Error())
+	}
+	Config.Logger.Printf("Active users %v", activeUsers)
+
 	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
