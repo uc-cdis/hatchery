@@ -134,7 +134,10 @@ func createGen3UserLicense(userId string, licenseId int) (gen3UserLicense Gen3Us
 
 	// marshall Gen3UserLicense into dynamodb item
 	item, err := dynamodbattribute.MarshalMap(newItem)
-
+	if err != nil {
+		Config.Logger.Printf("Error: could not marshal new item: %s", err)
+		return newItem, err
+	}
 	// put item
 	res, err := dynamodbSvc.PutItem(&dynamodb.PutItemInput{
 		TableName: aws.String(Config.Config.Gen3UserLicenseTable),
