@@ -46,6 +46,7 @@ func getActiveGen3UserLicenses() (gen3UserLicenses *[]Gen3UserLicense, err error
 	}))
 	dynamodbSvc := dynamodb.New(sess)
 
+	// TODO: filter by license-type
 	keyEx1 := expression.Key("environment").Equal(expression.Value(targetEnvironment))
 	keyEx2 := expression.Key("isActive").Equal(expression.Value("True"))
 	expr, err := expression.NewBuilder().WithKeyCondition(expression.KeyAnd(keyEx1, keyEx2)).Build()
@@ -103,7 +104,6 @@ func getNextLicenseId(activeGen3UserLicenses *[]Gen3UserLicense, maxLicenseIds i
 func createGen3UserLicense(userId string, licenseId int) (gen3UserLicense Gen3UserLicense, err error) {
 	// Create a new user-license object and put in table
 
-	licenseType := "STATA-HEAL"
 	// Move to config and get from environment variable
 	targetEnvironment := "georget.planx-pla.net"
 	// Maybe also put the global secondary index name in config
@@ -123,7 +123,7 @@ func createGen3UserLicense(userId string, licenseId int) (gen3UserLicense Gen3Us
 
 	// create new Gen3UserLicense
 	newItem := Gen3UserLicense{}
-	newItem.LicenseType = licenseType
+	newItem.LicenseType = Config.Config.Gen3LicenseType
 	newItem.ItemId = itemId
 	newItem.Environment = targetEnvironment
 	newItem.UserId = userId
