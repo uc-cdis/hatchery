@@ -405,13 +405,25 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	Config.Logger.Printf("DynamoDB tables: paymodel=%s, gen3userlicense=%s", Config.Config.PayModelsDynamodbTable, Config.Config.Gen3UserLicenseTable)
 	Config.Logger.Printf("Container name=%s", Config.ContainersMap[hash].Name)
 	if strings.Contains(strings.ToLower(Config.ContainersMap[hash].Name), "gen3-licensed") {
-		Config.Logger.Printf("Running gen3-licensed workspace: %s", Config.ContainersMap[hash].Name)
+		Config.Logger.Printf("Debug: Running gen3-licensed workspace: %s", Config.ContainersMap[hash].Name)
 		// Test the active users function
-		activeUsers, err := getActiveGen3UserLicenses()
+		activeUserLicenses, err := getActiveGen3UserLicenses()
 		if err != nil {
 			Config.Logger.Printf(err.Error())
 		}
-		Config.Logger.Printf("Active users %v", activeUsers)
+		Config.Logger.Printf("Debug: Active user licenses %v", activeUserLicenses)
+		maxLicenseIds := 6
+		nextLicenseId := getNextLicenseId(activeUserLicenses, maxLicenseIds)
+		if nextLicenseId == 0 {
+			Config.Logger.Printf("Error: no available license ids")
+			return
+		}
+		newItem, err := createGen3UserLicense(userName, nextLicenseId)
+		if err != nil {
+			Config.Logger.Printf(err.Error())
+		}
+		Config.Logger.Printf("New item = %v", newItem)
+
 	}
 
 	allpaymodels, err := getPayModelsForUser(userName)
