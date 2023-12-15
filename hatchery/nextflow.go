@@ -580,7 +580,6 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	}
 
 	// the launch template for the compute envrionemtn must be user-specific as well
-	// batchLauncTemplateName := fmt.Sprintf("%s-nf-compute-env-%s", hostname, userName)
 	userData, err := generateUserData(userName)
 	batchLauncTemplate, err := ensureLaunchTemplate(ec2Svc, userName, hostname, userData)
 	if err != nil {
