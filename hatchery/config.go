@@ -96,7 +96,7 @@ type HatcheryConfig struct {
 	DisableLocalWS         bool             `json:"disable-local-ws"`
 	PayModels              []PayModel       `json:"pay-models"`
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
-	Gen3UserLicenseTable   string           `json:"gen3-user-license-test"`
+	Gen3UserLicenseTable   string           `json:"gen3-user-license-dynamodb-table"`
 	SubDir                 string           `json:"sub-dir"`
 	Containers             []Container      `json:"containers"`
 	UserVolumeSize         string           `json:"user-volume-size"`
@@ -188,6 +188,10 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	for _, payModel := range data.Config.PayModels {
 		user := payModel.User
 		data.PayModelMap[user] = payModel
+	}
+
+	if data.Config.Gen3UserLicenseTable == "" {
+		data.Logger.Printf("Warning: no 'gen3-user-license-dynamodb-table' in configuration: will be unable to store gen3-user-license data in DynamoDB")
 	}
 
 	return data, nil
