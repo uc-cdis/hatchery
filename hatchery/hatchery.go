@@ -401,6 +401,9 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
 
+	// debug
+	Config.Logger.Printf("DynamoDB tables: paymodel=%s, gen3userlicense=%s", Config.Config.PayModelsDynamodbTable, Config.Config.Gen3UserLicenseTable)
+	Config.Logger.Printf("Container flavor=%s", workspaceFlavor)
 	// Test the active users function
 	activeUsers, err := getActiveGen3UserLicenses()
 	if err != nil {
