@@ -404,6 +404,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	// debug
 	Config.Logger.Printf("DynamoDB tables: paymodel=%s, gen3userlicense=%s", Config.Config.PayModelsDynamodbTable, Config.Config.Gen3UserLicenseTable)
 	Config.Logger.Printf("Container name=%s", Config.ContainersMap[hash].Name)
+	Config.Logger.Printf("hash value %s", hash)
 	if strings.Contains(strings.ToLower(Config.ContainersMap[hash].Name), "gen3-licensed") {
 		Config.Logger.Printf("Debug: Running gen3-licensed workspace: %s", Config.ContainersMap[hash].Name)
 		// Test the active users function
@@ -480,7 +481,9 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No username found. Unable to terminate", http.StatusBadRequest)
 		return
 	}
-
+	if strings.Contains(strings.ToLower(Config.ContainersMap[hash].Name), "gen3-licensed") {
+		Config.Logger.Printf("Debug: Terminating gen3-licensed workspace: %s", Config.ContainersMap[hash].Name)
+	}
 	Config.Logger.Printf("Terminating workspace for user %s", userName)
 
 	// delete nextflow resources. There is no way to know if the actual workspace being
