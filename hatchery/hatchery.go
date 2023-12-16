@@ -481,9 +481,6 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No username found. Unable to terminate", http.StatusBadRequest)
 		return
 	}
-	if strings.Contains(strings.ToLower(Config.ContainersMap[hash].Name), "gen3-licensed") {
-		Config.Logger.Printf("Debug: Terminating gen3-licensed workspace: %s", Config.ContainersMap[hash].Name)
-	}
 	Config.Logger.Printf("Terminating workspace for user %s", userName)
 
 	// delete nextflow resources. There is no way to know if the actual workspace being
