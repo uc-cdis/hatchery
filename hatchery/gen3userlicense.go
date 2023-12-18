@@ -151,3 +151,51 @@ func createGen3UserLicense(userId string, licenseId int) (gen3UserLicense Gen3Us
 	// Return new gen3-user-license item
 	return newItem, nil
 }
+
+func setGen3UserLicensInactive(itemId string) error {
+	// Update an item to mark as inactive
+
+	// Move to config and get from environment variable
+	targetEnvironment := "georget.planx-pla.net"
+	// Maybe also put the global secondary index name in config
+	Config.Logger.Printf("Ready to update existing user license in table: %s", Config.Config.Gen3UserLicenseTable)
+	isActive := "False"
+
+	sess := session.Must(session.NewSessionWithOptions(session.Options{
+		Config: aws.Config{
+			Region: aws.String("us-east-1"),
+			// Use this endpoint for running locally
+			// Endpoint: aws.String("http://localhost:8000"),
+		},
+	}))
+	dynamodbSvc := dynamodb.New(sess)
+
+	// pull out the input from UpdateItem - this matches paymodel and awsdocs
+	input := &dynamodb.UpdateItemInput{
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":active": {
+				S: aws.String(isActive),
+			},
+		},
+		TableName: aws.String(Config.Config.Gen3UserLicenseTable),
+		// Use the composite primary key: itemId, environment
+		Key: map[string]*dynamodb.AttributeValue{
+			"itemId": {
+				S: aws.String(itemId),
+			},
+			"environment": {
+				S: aws.String(targetEnvironment),
+			},
+		},
+		ReturnValues:     aws.String("UPDATED_NEW"),
+		UpdateExpression: aws.String("set isActive = :active"),
+	}
+
+	_, err := dynamodbSvc.UpdateItem(input)
+	if err != nil {
+		Config.Logger.Printf("Error: could not update item in table: %s\n", err)
+		return err
+	}
+	return nil
+
+}

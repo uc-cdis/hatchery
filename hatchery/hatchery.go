@@ -491,6 +491,29 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Unable to delete AWS resources for Nextflow... continuing anyway")
 	}
 
+	// mark any gen3-licensed sessions as inactive
+	Config.Logger.Printf("Checking for gen3 user-license items for user: %s", userName)
+	// TODO refactor this section to single function call
+	activeUserLicenses, err := getActiveGen3UserLicenses()
+	if err != nil {
+		Config.Logger.Printf(err.Error())
+	}
+	if len(*activeUserLicenses) == 0 {
+		Config.Logger.Printf("No active gen3 user-license sessions for user: %s", userName)
+	} else {
+		Config.Logger.Printf("Debug: Active user licenses %v", activeUserLicenses)
+		for _, v := range *activeUserLicenses {
+			if v.UserId == userName {
+				Config.Logger.Printf("Debug: marking user-license as inactive for itemId %s", v.ItemId)
+				err = setGen3UserLicensInactive(v.ItemId)
+				if err != nil {
+					Config.Logger.Printf(err.Error())
+				}
+			}
+
+		}
+	}
+
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
