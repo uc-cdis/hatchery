@@ -547,6 +547,24 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, use
 		},
 	})
 	if err != nil {
+		// If no launch template exists, create it
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "InvalidLaunchTemplateName.NotFoundException" {
+			Config.Logger.Printf("Debug: Launch template '%s' does not exist, creating it", launchTemplateName)
+			launchTemplate, err := ec2Svc.CreateLaunchTemplate(&ec2.CreateLaunchTemplateInput{
+				LaunchTemplateName: aws.String(launchTemplateName),
+				LaunchTemplateData: &ec2.RequestLaunchTemplateData{
+					UserData: aws.String(userData),
+				},
+			})
+			if err != nil {
+				Config.Logger.Panicf("Error creating launch template '%s': %v", launchTemplateName, err)
+				return nil, err
+			}
+			Config.Logger.Printf("Debug: Created launch template '%s'", launchTemplateName)
+			return launchTemplate.LaunchTemplate.LaunchTemplateName, nil
+		} else {
+			Config.Logger.Printf("Error describing launch template '%s': %v", launchTemplateName, err)
+		}
 		return nil, err
 	}
 
@@ -581,7 +599,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 
 	// the launch template for the compute envrionemtn must be user-specific as well
 	userData, err := generateUserData(userName)
-	batchLauncTemplate, err := ensureLaunchTemplate(ec2Svc, userName, hostname, userData)
+	batchLaunchTemplate, err := ensureLaunchTemplate(ec2Svc, userName, hostname, userData)
 	if err != nil {
 		return "", err
 	}
@@ -683,7 +701,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 					},
 				},
 				LaunchTemplate: &batch.LaunchTemplateSpecification{
-					LaunchTemplateName: batchLauncTemplate,
+					LaunchTemplateName: batchLaunchTemplate,
 					Version:            aws.String("$Latest"),
 				},
 				InstanceRole:       instanceProfileArn,
