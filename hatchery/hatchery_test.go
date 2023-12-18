@@ -727,6 +727,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 		wantStatus          int
 		mockRequest         *RequestBody
 		mockCurrentPayModel *PayModel
+		mockGen3UserLicense *[]Gen3UserLicense
 		waitToTerminate     bool
 		throwError          bool
 		calledFunctionName  string
@@ -756,6 +757,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 				username: "testUser",
 			},
 			mockCurrentPayModel: nil,
+			mockGen3UserLicense: &[]Gen3UserLicense{},
 			calledFunctionName:  "deleteK8sPod",
 		},
 		{
@@ -767,6 +769,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 				username: "testUser",
 			},
 			mockCurrentPayModel: &PayModel{Ecs: false},
+			mockGen3UserLicense: &[]Gen3UserLicense{},
 			calledFunctionName:  "deleteK8sPod",
 		},
 		{
@@ -778,6 +781,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 				username: "testUser",
 			},
 			mockCurrentPayModel: &PayModel{Ecs: true},
+			mockGen3UserLicense: &[]Gen3UserLicense{},
 			calledFunctionName:  "terminateEcsWorkspace",
 		},
 		{
@@ -790,6 +794,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 			},
 			throwError:          true,
 			mockCurrentPayModel: &PayModel{Ecs: false},
+			mockGen3UserLicense: &[]Gen3UserLicense{},
 			calledFunctionName:  "deleteK8sPod",
 		},
 		{
@@ -802,6 +807,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 			},
 			throwError:          true,
 			mockCurrentPayModel: &PayModel{Ecs: true},
+			mockGen3UserLicense: &[]Gen3UserLicense{},
 			calledFunctionName:  "terminateEcsWorkspace",
 		},
 		{
@@ -813,6 +819,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 				username: "testUser",
 			},
 			mockCurrentPayModel: &PayModel{Ecs: false},
+			mockGen3UserLicense: &[]Gen3UserLicense{},
 			waitToTerminate:     true,
 			calledFunctionName:  "deleteK8sPod",
 		},
@@ -825,6 +832,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 				username: "testUser",
 			},
 			mockCurrentPayModel: &PayModel{Ecs: true},
+			mockGen3UserLicense: &[]Gen3UserLicense{},
 			waitToTerminate:     true,
 			calledFunctionName:  "terminateEcsWorkspace",
 		},
@@ -834,6 +842,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 	original_deleteK8sPod := deleteK8sPod
 	original_terminateEcsWorkspace := terminateEcsWorkspace
 	original_getCurrentPayModel := getCurrentPayModel
+	original_getActiveGen3UserLicenses := getActiveGen3UserLicenses
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_resetCurrentPaymodel := resetCurrentPaymodel
 	defer func() {
@@ -841,6 +850,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 		deleteK8sPod = original_deleteK8sPod
 		terminateEcsWorkspace = original_terminateEcsWorkspace
 		getCurrentPayModel = original_getCurrentPayModel
+		getActiveGen3UserLicenses = original_getActiveGen3UserLicenses
 		getWorkspaceStatus = original_getWorkspaceStatus
 		resetCurrentPaymodel = original_resetCurrentPaymodel
 	}()
@@ -894,6 +904,10 @@ func Test_TerminateEndpoint(t *testing.T) {
 		resetCurrentPaymodel = func(string) error {
 			waitGroup.Done()
 			return nil
+		}
+
+		getActiveGen3UserLicenses = func() (*[]Gen3UserLicense, error) {
+			return testcase.mockGen3UserLicense, nil
 		}
 
 		url := "/terminate"

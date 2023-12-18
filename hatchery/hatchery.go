@@ -483,35 +483,33 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	}
 	Config.Logger.Printf("Terminating workspace for user %s", userName)
 
+	// mark any gen3-licensed sessions as inactive
+	Config.Logger.Printf("Checking for gen3 user-license items for user: %s", userName)
+	activeGen3UserLicenses, userlicerr := getActiveGen3UserLicenses()
+	if userlicerr != nil {
+		Config.Logger.Printf(userlicerr.Error())
+	}
+	Config.Logger.Printf("Debug: Active user licenses %v", activeGen3UserLicenses)
+	if len(*activeGen3UserLicenses) == 0 {
+		Config.Logger.Printf("No active gen3 user-license sessions for user: %s", userName)
+	} else {
+		for _, v := range *activeGen3UserLicenses {
+			if v.UserId == userName {
+				Config.Logger.Printf("Debug: updating user-license as inactive for itemId %s", v.ItemId)
+				err := setGen3UserLicensInactive(v.ItemId)
+				if err != nil {
+					Config.Logger.Printf(err.Error())
+				}
+			}
+		}
+	}
+
 	// delete nextflow resources. There is no way to know if the actual workspace being
 	// terminated is a nextflow workspace or not, so always attempt to delete
 	Config.Logger.Printf("Info: Deleting Nextflow resources in AWS...")
 	err := cleanUpNextflowResources(userName)
 	if err != nil {
 		Config.Logger.Printf("Unable to delete AWS resources for Nextflow... continuing anyway")
-	}
-
-	// mark any gen3-licensed sessions as inactive
-	Config.Logger.Printf("Checking for gen3 user-license items for user: %s", userName)
-	// TODO refactor this section to single function call
-	activeUserLicenses, err := getActiveGen3UserLicenses()
-	if err != nil {
-		Config.Logger.Printf(err.Error())
-	}
-	if len(*activeUserLicenses) == 0 {
-		Config.Logger.Printf("No active gen3 user-license sessions for user: %s", userName)
-	} else {
-		Config.Logger.Printf("Debug: Active user licenses %v", activeUserLicenses)
-		for _, v := range *activeUserLicenses {
-			if v.UserId == userName {
-				Config.Logger.Printf("Debug: marking user-license as inactive for itemId %s", v.ItemId)
-				err = setGen3UserLicensInactive(v.ItemId)
-				if err != nil {
-					Config.Logger.Printf(err.Error())
-				}
-			}
-
-		}
 	}
 
 	payModel, err := getCurrentPayModel(userName)

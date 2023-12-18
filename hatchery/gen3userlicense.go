@@ -29,7 +29,7 @@ type Gen3UserLicense struct {
 
 var ErrNoLicenseIds = errors.New("no license ids available")
 
-func getActiveGen3UserLicenses() (gen3UserLicenses *[]Gen3UserLicense, err error) {
+var getActiveGen3UserLicenses = func() (gen3UserLicenses *[]Gen3UserLicense, err error) {
 	// Query the table to get all active user license items
 
 	// Move to config and get from environment variable
@@ -101,7 +101,7 @@ func getNextLicenseId(activeGen3UserLicenses *[]Gen3UserLicense, maxLicenseIds i
 	return 0
 }
 
-func createGen3UserLicense(userId string, licenseId int) (gen3UserLicense Gen3UserLicense, err error) {
+var createGen3UserLicense = func(userId string, licenseId int) (gen3UserLicense Gen3UserLicense, err error) {
 	// Create a new user-license object and put in table
 
 	// Move to config and get from environment variable
@@ -152,7 +152,7 @@ func createGen3UserLicense(userId string, licenseId int) (gen3UserLicense Gen3Us
 	return newItem, nil
 }
 
-func setGen3UserLicensInactive(itemId string) error {
+var setGen3UserLicensInactive = func(itemId string) error {
 	// Update an item to mark as inactive
 
 	// Move to config and get from environment variable
