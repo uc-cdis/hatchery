@@ -528,7 +528,7 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 
 // Function to make sure launch template is created, and configured correctly
 // We need a launch template since we need a user data script to authenticate with private ECR repositories
-func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, userData string) (*string, error) {
+func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string) (*string, error) {
 
 	// user data script to authenticate with private ECR repositories
 	userData, err := generateUserData(userName)
@@ -598,8 +598,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	}
 
 	// the launch template for the compute envrionemtn must be user-specific as well
-	userData, err := generateUserData(userName)
-	batchLaunchTemplate, err := ensureLaunchTemplate(ec2Svc, userName, hostname, userData)
+	batchLaunchTemplate, err := ensureLaunchTemplate(ec2Svc, userName, hostname)
 	if err != nil {
 		return "", err
 	}
@@ -623,7 +622,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 		batchComputeEnvArn = *batchComputeEnv.ComputeEnvironments[0].ComputeEnvironmentArn
 
 		// Launch template name
-		launchTemplateName, err := ensureLaunchTemplate(ec2Svc, userName, hostname, userData)
+		launchTemplateName, err := ensureLaunchTemplate(ec2Svc, userName, hostname)
 		if err != nil {
 			return "", err
 		}
