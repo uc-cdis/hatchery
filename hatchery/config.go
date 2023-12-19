@@ -98,6 +98,8 @@ type HatcheryConfig struct {
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
 	Gen3UserLicenseTable   string           `json:"gen3-user-license-dynamodb-table"`
 	Gen3LicenseType        string           `json:"gen3-user-license-type"`
+	Gen3G3autoName         string           `json:"gen3-g3auto-name"`
+	Gen3G3autoKey          string           `json:"gen3-g3auto-key"`
 	SubDir                 string           `json:"sub-dir"`
 	Containers             []Container      `json:"containers"`
 	UserVolumeSize         string           `json:"user-volume-size"`

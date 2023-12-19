@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -208,15 +209,21 @@ var setGen3UserLicensInactive = func(itemId string) error {
 }
 
 var getLicenseFromKubernetes = func() (licenseString string, err error) {
-	// Read the stata-license string from the g3auto kubernetes secret
-	g3autoName := "stata-workspace-gen3-license-g3auto"
-	g3autoKey := "stata_license.txt"
-	var secretsClient coreV1Types.SecretInterface
+	// Read the gen3-license string from the g3auto kubernetes secret
+	g3autoName := Config.Config.Gen3G3autoName
+	g3autoKey := Config.Config.Gen3G3autoKey
 
-	// TODO get namespace from config
-	namespace := "georget"
+	var namespace string
+	var ok bool
+	if namespace, ok = Config.Config.Sidecar.Env["NAMESPACE"]; ok {
+		Config.Logger.Printf("Searching configured namespace for g3auto secret: %s", namespace)
+	} else {
+		Config.Logger.Printf("Error: namespace is not configured. Will try 'default'")
+		namespace = "default"
+	}
+
+	var secretsClient coreV1Types.SecretInterface
 	var clientset *kubernetes.Clientset
-	// QA has a .kube/config file but dev environments do not
 	kubeConfigPath := os.Getenv("HOME") + "/.kube/config"
 	if _, err := os.Stat(kubeConfigPath); err == nil {
 		// out of cluster, eg local
@@ -245,6 +252,8 @@ var getLicenseFromKubernetes = func() (licenseString string, err error) {
 		Config.Logger.Printf("Error: could not get secret from kubernetes: %s", err)
 	}
 	licenseString = string(secret.Data[g3autoKey])
+	// some g3auto secrets may have multiple strings separated by newlines
+	licenseString = strings.Split(licenseString, "\n")[0]
 
 	return licenseString, nil
 
