@@ -213,7 +213,8 @@ var getLicenseFromKubernetes = func() (licenseString string, err error) {
 	g3autoKey := "stata_license.txt"
 	var secretsClient coreV1Types.SecretInterface
 
-	namespace := "default"
+	// TODO get namespace from config
+	namespace := "georget"
 	var clientset *kubernetes.Clientset
 	// QA has a .kube/config file but dev environments do not
 	kubeConfigPath := os.Getenv("HOME") + "/.kube/config"
@@ -241,7 +242,7 @@ var getLicenseFromKubernetes = func() (licenseString string, err error) {
 	secretsClient = clientset.CoreV1().Secrets(namespace)
 	secret, err := secretsClient.Get(context.TODO(), g3autoName, metaV1.GetOptions{})
 	if err != nil {
-		Config.Logger.Printf("Error: could get secret from kubernetes: %s", err)
+		Config.Logger.Printf("Error: could not get secret from kubernetes: %s", err)
 	}
 	licenseString = string(secret.Data[g3autoKey])
 
