@@ -252,8 +252,10 @@ var getLicenseFromKubernetes = func() (licenseString string, err error) {
 		Config.Logger.Printf("Error: could not get secret from kubernetes: %s", err)
 	}
 	licenseString = string(secret.Data[g3autoKey])
+	Config.Logger.Printf("Debug: string before split %s", licenseString)
 	// some g3auto secrets may have multiple strings separated by newlines
 	licenseString = strings.Split(licenseString, "\n")[0]
+	Config.Logger.Printf("Debug: string after split %s", licenseString)
 
 	return licenseString, nil
 
