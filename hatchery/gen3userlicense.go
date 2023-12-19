@@ -200,7 +200,7 @@ var setGen3UserLicensInactive = func(itemId string) error {
 
 	_, err := dynamodbSvc.UpdateItem(input)
 	if err != nil {
-		Config.Logger.Printf("Error: could not update item in table: %s\n", err)
+		Config.Logger.Printf("Error: could not update item in table: %s", err)
 		return err
 	}
 	return nil
@@ -240,7 +240,10 @@ var getLicenseFromKubernetes = func() (licenseString string, err error) {
 	}
 	secretsClient = clientset.CoreV1().Secrets(namespace)
 	secret, err := secretsClient.Get(context.TODO(), g3autoName, metaV1.GetOptions{})
-	licenseString = fmt.Sprintf("%s", secret.Data[g3autoKey])
+	if err != nil {
+		Config.Logger.Printf("Error: could get secret from kubernetes: %s", err)
+	}
+	licenseString = string(secret.Data[g3autoKey])
 
 	return licenseString, nil
 
