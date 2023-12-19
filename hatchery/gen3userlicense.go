@@ -1,8 +1,10 @@
 package hatchery
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -11,7 +13,12 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 	"github.com/google/uuid"
-	//coreV1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
+	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	coreV1Types "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 // TODO: move this to hatchery config
@@ -197,5 +204,44 @@ var setGen3UserLicensInactive = func(itemId string) error {
 		return err
 	}
 	return nil
+
+}
+
+var getLicenseFromKubernetes = func() (licenseString string, err error) {
+	// Read the stata-license string from the g3auto kubernetes secret
+	g3autoName := "stata-workspace-gen3-license-g3auto"
+	g3autoKey := "stata_license.txt"
+	var secretsClient coreV1Types.SecretInterface
+
+	namespace := "default"
+	var clientset *kubernetes.Clientset
+	// QA has a .kube/config file but dev environments do not
+	kubeConfigPath := os.Getenv("HOME") + "/.kube/config"
+	if _, err := os.Stat(kubeConfigPath); err == nil {
+		// out of cluster, eg local
+		config, err := clientcmd.BuildConfigFromFlags("", kubeConfigPath)
+		if err != nil {
+			panic(err.Error())
+		}
+		clientset, err = kubernetes.NewForConfig(config)
+		if err != nil {
+			panic(err.Error())
+		}
+	} else {
+		// in cluster
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			panic(err.Error())
+		}
+		clientset, err = kubernetes.NewForConfig(config)
+		if err != nil {
+			panic(err.Error())
+		}
+	}
+	secretsClient = clientset.CoreV1().Secrets(namespace)
+	secret, err := secretsClient.Get(context.TODO(), g3autoName, metaV1.GetOptions{})
+	licenseString = fmt.Sprintf("%s", secret.Data[g3autoKey])
+
+	return licenseString, nil
 
 }

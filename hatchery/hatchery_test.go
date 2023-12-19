@@ -1088,7 +1088,8 @@ func TestMountFilesEndpoint(t *testing.T) {
 		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
 		return
 	}
-	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\",\"workspace_flavor\":\"nextflow\"}]"
+	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\",\"workspace_flavor\":\"nextflow\"}," +
+		"{\"file_path\":\"stata.lic\",\"workspace_flavor\":\"gen3-licensed\"}]"
 	if w.Body.String() != expectedOutput {
 		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, expectedOutput, w.Body)
 		return

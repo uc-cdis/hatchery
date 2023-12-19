@@ -306,6 +306,8 @@ func options(w http.ResponseWriter, r *http.Request) {
 func getWorkspaceFlavor(container Container) string {
 	if container.NextflowConfig.Enabled {
 		return "nextflow"
+	} else if strings.Contains(strings.ToLower(container.Name), "gen3-licensed") {
+		return "gen3-licensed"
 	} else if strings.Contains(strings.ToLower(container.Name), "jupyter") {
 		return "jupyter"
 	} else {
@@ -667,6 +669,10 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		FilePath:        "sample-nextflow-config.txt",
 		WorkspaceFlavor: "nextflow",
 	})
+	fileList = append(fileList, file{
+		FilePath:        "stata.lic",
+		WorkspaceFlavor: "gen3-licensed",
+	})
 
 	out, err := json.Marshal(fileList)
 	if err != nil {
@@ -682,6 +688,12 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 		out, err := generateNextflowConfig(userName)
 		if err != nil {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
+		}
+		return out, nil
+	} else if fileId == "stata.lic" {
+		out, err := getLicenseFromKubernetes()
+		if err != nil {
+			Config.Logger.Printf("unable to get Stata license from kubernetes: %v", err)
 		}
 		return out, nil
 	} else {
