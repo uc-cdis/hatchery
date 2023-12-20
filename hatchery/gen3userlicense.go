@@ -43,6 +43,7 @@ var getActiveGen3UserLicenses = func() (gen3UserLicenses *[]Gen3UserLicense, err
 	targetEnvironment := os.Getenv("GEN3_CACHE_HOSTNAME")
 	// Maybe also put the global secondary index name in config
 	Config.Logger.Printf("Ready to query table for active users: %s", Config.Config.Gen3UserLicenseTable)
+	Config.Logger.Printf("Environment = %s", targetEnvironment)
 
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
@@ -114,6 +115,7 @@ var createGen3UserLicense = func(userId string, licenseId int) (gen3UserLicense 
 	targetEnvironment := os.Getenv("GEN3_CACHE_HOSTNAME")
 	// Maybe also put the global secondary index name in config
 	Config.Logger.Printf("Ready to put item for new user license in table: %s", Config.Config.Gen3UserLicenseTable)
+	Config.Logger.Printf("Environment = %s", targetEnvironment)
 
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
@@ -164,6 +166,8 @@ var setGen3UserLicensInactive = func(itemId string) error {
 	targetEnvironment := os.Getenv("GEN3_CACHE_HOSTNAME")
 	// Maybe also put the global secondary index name in config
 	Config.Logger.Printf("Ready to update existing user license in table: %s", Config.Config.Gen3UserLicenseTable)
+	Config.Logger.Printf("Environment = %s", targetEnvironment)
+
 	isActive := "False"
 
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
