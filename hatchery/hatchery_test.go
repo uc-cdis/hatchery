@@ -1072,6 +1072,8 @@ func TestMountFilesEndpoint(t *testing.T) {
 	defer func() {
 		generateNextflowConfig = originalGenerateNextflowConfig // restore original function
 	}()
+	// mock license file path config
+	Config.Config.Gen3LicenseFilePath = "license_path.txt"
 
 	// list files
 	url := "/mount-files"
@@ -1089,7 +1091,7 @@ func TestMountFilesEndpoint(t *testing.T) {
 		return
 	}
 	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\",\"workspace_flavor\":\"nextflow\"}," +
-		"{\"file_path\":\"stata.lic\",\"workspace_flavor\":\"gen3-licensed\"}]"
+		"{\"file_path\":\"license_path.txt\",\"workspace_flavor\":\"gen3-licensed\"}]"
 	if w.Body.String() != expectedOutput {
 		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, expectedOutput, w.Body)
 		return

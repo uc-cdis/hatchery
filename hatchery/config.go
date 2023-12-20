@@ -100,6 +100,7 @@ type HatcheryConfig struct {
 	Gen3LicenseType        string           `json:"gen3-user-license-type"`
 	Gen3G3autoName         string           `json:"gen3-g3auto-name"`
 	Gen3G3autoKey          string           `json:"gen3-g3auto-key"`
+	Gen3LicenseFilePath    string           `json:"gen3-license-file-path"`
 	SubDir                 string           `json:"sub-dir"`
 	Containers             []Container      `json:"containers"`
 	UserVolumeSize         string           `json:"user-volume-size"`

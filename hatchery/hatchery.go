@@ -670,7 +670,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		WorkspaceFlavor: "nextflow",
 	})
 	fileList = append(fileList, file{
-		FilePath:        "stata.lic",
+		FilePath:        Config.Config.Gen3LicenseFilePath,
 		WorkspaceFlavor: "gen3-licensed",
 	})
 
