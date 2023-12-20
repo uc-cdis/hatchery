@@ -40,7 +40,7 @@ var ErrNoLicenseIds = errors.New("no license ids available")
 var getActiveGen3UserLicenses = func() (gen3UserLicenses *[]Gen3UserLicense, err error) {
 	// Query the table to get all active user license items
 
-	targetEnvironment := os.Getenv("GEN3_CACHE_HOSTNAME")
+	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	// Maybe also put the global secondary index name in config
 	Config.Logger.Printf("Ready to query table for active users: %s", Config.Config.Gen3UserLicenseTable)
 	Config.Logger.Printf("Environment = %s", targetEnvironment)
@@ -112,7 +112,7 @@ func getNextLicenseId(activeGen3UserLicenses *[]Gen3UserLicense, maxLicenseIds i
 var createGen3UserLicense = func(userId string, licenseId int) (gen3UserLicense Gen3UserLicense, err error) {
 	// Create a new user-license object and put in table
 
-	targetEnvironment := os.Getenv("GEN3_CACHE_HOSTNAME")
+	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	// Maybe also put the global secondary index name in config
 	Config.Logger.Printf("Ready to put item for new user license in table: %s", Config.Config.Gen3UserLicenseTable)
 	Config.Logger.Printf("Environment = %s", targetEnvironment)
@@ -163,7 +163,7 @@ var createGen3UserLicense = func(userId string, licenseId int) (gen3UserLicense 
 var setGen3UserLicensInactive = func(itemId string) error {
 	// Update an item to mark as inactive
 
-	targetEnvironment := os.Getenv("GEN3_CACHE_HOSTNAME")
+	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	// Maybe also put the global secondary index name in config
 	Config.Logger.Printf("Ready to update existing user license in table: %s", Config.Config.Gen3UserLicenseTable)
 	Config.Logger.Printf("Environment = %s", targetEnvironment)
