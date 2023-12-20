@@ -54,7 +54,7 @@ var getActiveGen3UserLicenses = func() (gen3UserLicenses *[]Gen3UserLicense, err
 	dynamodbSvc := dynamodb.New(sess)
 
 	// TODO: filter by license-type
-	keyEx1 := expression.Key("environment").Equal(expression.Value(targetEnvironment))
+	keyEx1 := expression.Key("environment").Equal(expression.Value(aws.String(targetEnvironment)))
 	keyEx2 := expression.Key("isActive").Equal(expression.Value("True"))
 	expr, err := expression.NewBuilder().WithKeyCondition(expression.KeyAnd(keyEx1, keyEx2)).Build()
 	if err != nil {
