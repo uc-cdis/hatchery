@@ -196,6 +196,39 @@ var setGen3UserLicensInactive = func(itemId string) error {
 
 }
 
+var getKubeClientSet = func() (clientset *kubernetes.Clientset, err error) {
+	// Get the kubernetes client set
+	kubeConfigPath := os.Getenv("HOME") + "/.kube/config"
+	if _, err := os.Stat(kubeConfigPath); err == nil {
+		// out of cluster, eg local
+		config, err := clientcmd.BuildConfigFromFlags("", kubeConfigPath)
+		if err != nil {
+			Config.Logger.Printf("Error: Could not build config for out of cluster client, %s", err)
+			return nil, err
+		}
+		clientset, err = kubernetes.NewForConfig(config)
+		if err != nil {
+			Config.Logger.Printf("Error: Could not create clientset for out of cluster client, %s", err)
+			return nil, err
+		}
+	} else {
+		// in cluster
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			Config.Logger.Printf("Error: Could not build config for in cluster client, %s", err)
+			return nil, err
+		}
+		clientset, err = kubernetes.NewForConfig(config)
+		if err != nil {
+			Config.Logger.Printf("Error: Could not create clientset for in cluster client, %s", err)
+			return nil, err
+		}
+	}
+
+	return clientset, nil
+
+}
+
 var getLicenseFromKubernetes = func() (licenseString string, err error) {
 	// Read the gen3-license string from the g3auto kubernetes secret
 	g3autoName := Config.Config.Gen3G3autoName
@@ -212,32 +245,16 @@ var getLicenseFromKubernetes = func() (licenseString string, err error) {
 
 	var secretsClient coreV1Types.SecretInterface
 	var clientset *kubernetes.Clientset
-	kubeConfigPath := os.Getenv("HOME") + "/.kube/config"
-	if _, err := os.Stat(kubeConfigPath); err == nil {
-		// out of cluster, eg local
-		config, err := clientcmd.BuildConfigFromFlags("", kubeConfigPath)
-		if err != nil {
-			panic(err.Error())
-		}
-		clientset, err = kubernetes.NewForConfig(config)
-		if err != nil {
-			panic(err.Error())
-		}
-	} else {
-		// in cluster
-		config, err := rest.InClusterConfig()
-		if err != nil {
-			panic(err.Error())
-		}
-		clientset, err = kubernetes.NewForConfig(config)
-		if err != nil {
-			panic(err.Error())
-		}
+	clientset, err = getKubeClientSet()
+	if err != nil {
+		Config.Logger.Printf("Error: could not get kubernetes client: %s", err)
+		return "", err
 	}
 	secretsClient = clientset.CoreV1().Secrets(namespace)
 	secret, err := secretsClient.Get(context.TODO(), g3autoName, metaV1.GetOptions{})
 	if err != nil {
 		Config.Logger.Printf("Error: could not get secret from kubernetes: %s", err)
+		return "", err
 	}
 	licenseString = string(secret.Data[g3autoKey])
 	// some g3auto secrets may have multiple strings separated by newlines
