@@ -22,19 +22,6 @@ import (
 	coreV1Types "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
-// TODO: move this to hatchery config
-type Gen3UserLicense struct {
-	ItemId      string `json:"itemId"`
-	Environment string `json:"environment"`
-	LicenseType string `json:"licenseType"`
-	// try changing to bool
-	IsActive           string `json:"isActive"`
-	UserId             string `json:"userId"`
-	LicenseId          int    `json:"licenseId"`
-	FirstUsedTimestamp int    `json:"firstUsedTimestamp"`
-	LastUsedTimestamp  int    `json:"lastUsedTimestamp"`
-}
-
 var ErrNoLicenseIds = errors.New("no license ids available")
 
 var getActiveGen3UserLicenses = func() (gen3UserLicenses *[]Gen3UserLicense, err error) {

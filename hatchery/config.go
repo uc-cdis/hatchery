@@ -89,6 +89,18 @@ type AllPayModels struct {
 	PayModels       []PayModel `json:"all_pay_models"`
 }
 
+type Gen3UserLicense struct {
+	ItemId      string `json:"itemId"`
+	Environment string `json:"environment"`
+	LicenseType string `json:"licenseType"`
+	// try changing to bool
+	IsActive           string `json:"isActive"`
+	UserId             string `json:"userId"`
+	LicenseId          int    `json:"licenseId"`
+	FirstUsedTimestamp int    `json:"firstUsedTimestamp"`
+	LastUsedTimestamp  int    `json:"lastUsedTimestamp"`
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace          string           `json:"user-namespace"`
