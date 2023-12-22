@@ -573,7 +573,7 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string) (*s
 		Config.Logger.Printf("Debug: Launch template '%s' already exists", launchTemplateName)
 		return launchTemplate.LaunchTemplates[0].LaunchTemplateName, nil
 	}
-	return nil, errors.New("More than one launch template with the same name exists")
+	return nil, fmt.Errorf("More than one launch template with the same name exist: %v", launchTemplate.LaunchTemplates)
 }
 
 // Create AWS Batch compute environment
