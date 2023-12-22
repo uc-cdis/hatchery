@@ -557,7 +557,7 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string) (*s
 				},
 			})
 			if err != nil {
-				Config.Logger.Panicf("Error creating launch template '%s': %v", launchTemplateName, err)
+				Config.Logger.Printf("Error creating launch template '%s': %v", launchTemplateName, err)
 				return nil, err
 			}
 			Config.Logger.Printf("Debug: Created launch template '%s'", launchTemplateName)
@@ -568,25 +568,12 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string) (*s
 		return nil, err
 	}
 
-	if len(launchTemplate.LaunchTemplates) == 0 {
-		Config.Logger.Printf("Debug: Launch templates '%s'", launchTemplate)
-		launchTemplate, err := ec2Svc.CreateLaunchTemplate(&ec2.CreateLaunchTemplateInput{
-			LaunchTemplateName: aws.String(launchTemplateName),
-			LaunchTemplateData: &ec2.RequestLaunchTemplateData{
-				UserData: aws.String(userData),
-			},
-		})
-		if err != nil {
-			Config.Logger.Panicf("Error creating launch template '%s': %v", launchTemplateName, err)
-			return nil, err
-		}
-		Config.Logger.Printf("Debug: Created launch template '%s'", launchTemplateName)
-		return launchTemplate.LaunchTemplate.LaunchTemplateName, nil
-	} else {
+	if len(launchTemplate.LaunchTemplates) == 1 {
 		// TODO: Make sure user data in the existing launch template matches the user data we want
 		Config.Logger.Printf("Debug: Launch template '%s' already exists", launchTemplateName)
 		return launchTemplate.LaunchTemplates[0].LaunchTemplateName, nil
 	}
+	return nil, errors.New("More than one launch template with the same name exists")
 }
 
 // Create AWS Batch compute environment
@@ -597,8 +584,8 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 		return "", err
 	}
 
-	// the launch template for the compute envrionemtn must be user-specific as well
-	batchLaunchTemplate, err := ensureLaunchTemplate(ec2Svc, userName, hostname)
+	// the launch template for the compute envrionment must be user-specific as well
+	launchTemplateName, err := ensureLaunchTemplate(ec2Svc, userName, hostname)
 	if err != nil {
 		return "", err
 	}
@@ -620,12 +607,6 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	if len(batchComputeEnv.ComputeEnvironments) > 0 {
 		Config.Logger.Printf("Debug: Batch compute environment '%s' already exists, updating it", batchComputeEnvName)
 		batchComputeEnvArn = *batchComputeEnv.ComputeEnvironments[0].ComputeEnvironmentArn
-
-		// Launch template name
-		launchTemplateName, err := ensureLaunchTemplate(ec2Svc, userName, hostname)
-		if err != nil {
-			return "", err
-		}
 
 		// wait for the compute env to be ready to be updated
 		err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc)
@@ -700,7 +681,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 					},
 				},
 				LaunchTemplate: &batch.LaunchTemplateSpecification{
-					LaunchTemplateName: batchLaunchTemplate,
+					LaunchTemplateName: launchTemplateName,
 					Version:            aws.String("$Latest"),
 				},
 				InstanceRole:       instanceProfileArn,
