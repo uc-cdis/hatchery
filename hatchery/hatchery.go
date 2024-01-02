@@ -694,6 +694,9 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 		// Could use config values here, "gen3-license-file-path" and "gen3-user-license-type"
 	} else if fileId == "stata.lic" {
 		clientset, err := getKubeClientSet()
+		if err != nil {
+			Config.Logger.Printf("unable to get kube client set: %v", err)
+		}
 		out, err := getLicenseFromKubernetes(clientset)
 		if err != nil {
 			Config.Logger.Printf("unable to get Stata license from kubernetes: %v", err)

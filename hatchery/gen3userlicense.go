@@ -19,7 +19,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	coreV1Types "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 var ErrNoLicenseIds = errors.New("no license ids available")
@@ -239,8 +238,8 @@ var getLicenseFromKubernetes = func(clientset kubernetes.Interface) (licenseStri
 		namespace = "default"
 	}
 
-	var secretsClient coreV1Types.SecretInterface
-	secretsClient = clientset.CoreV1().Secrets(namespace)
+	//var secretsClient coreV1Types.SecretInterface
+	secretsClient := clientset.CoreV1().Secrets(namespace)
 	secret, err := secretsClient.Get(context.TODO(), g3autoName, metaV1.GetOptions{})
 	if err != nil {
 		Config.Logger.Printf("Error: could not get secret from kubernetes: %s", err)
