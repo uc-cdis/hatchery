@@ -416,6 +416,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			Config.Logger.Printf(err.Error())
 		}
 		Config.Logger.Printf("Debug: Active user licenses %v", activeUserLicenses)
+		// Check for config max
 		nextLicenseId := getNextLicenseId(activeUserLicenses, Config.Config.Gen3LicenseMaxIds)
 		if nextLicenseId == 0 {
 			Config.Logger.Printf("Error: no available license ids")
