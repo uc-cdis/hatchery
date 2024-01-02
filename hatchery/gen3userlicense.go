@@ -24,14 +24,8 @@ import (
 
 var ErrNoLicenseIds = errors.New("no license ids available")
 
-var getActiveGen3UserLicenses = func() (gen3UserLicenses *[]Gen3UserLicense, err error) {
-	// Query the table to get all active user license items
-
-	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
-	// Maybe also put the global secondary index name in config
-	Config.Logger.Printf("Ready to query table for active users: %s", Config.Config.Gen3UserLicenseTable)
-	Config.Logger.Printf("Environment = %s", targetEnvironment)
-
+var initializeDbConfig = func() *DbConfig {
+	// Create a new dynamoDB client
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{
 			Region: aws.String("us-east-1"),
@@ -39,7 +33,18 @@ var getActiveGen3UserLicenses = func() (gen3UserLicenses *[]Gen3UserLicense, err
 			// Endpoint: aws.String("http://localhost:8000"),
 		},
 	}))
-	dynamodbSvc := dynamodb.New(sess)
+	return &DbConfig{
+		DynamoDb: dynamodb.New(sess),
+	}
+}
+
+var getActiveGen3UserLicenses = func(dbconfig *DbConfig) (gen3UserLicenses *[]Gen3UserLicense, err error) {
+	// Query the table to get all active user license items
+
+	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
+	// Maybe also put the global secondary index name in config
+	Config.Logger.Printf("Ready to query table for active users: %s", Config.Config.Gen3UserLicenseTable)
+	Config.Logger.Printf("Environment = %s", targetEnvironment)
 
 	// TODO: filter by license-type
 	keyEx1 := expression.Key("environment").Equal(expression.Value(aws.String(targetEnvironment)))
@@ -49,7 +54,7 @@ var getActiveGen3UserLicenses = func() (gen3UserLicenses *[]Gen3UserLicense, err
 		Config.Logger.Printf("Error in building expression for query: %s", err)
 		return nil, err
 	}
-	res, err := dynamodbSvc.Query(&dynamodb.QueryInput{
+	res, err := dbconfig.DynamoDb.Query(&dynamodb.QueryInput{
 		TableName:                 aws.String(Config.Config.Gen3UserLicenseTable),
 		IndexName:                 aws.String("activeUsersIndex"),
 		ExpressionAttributeNames:  expr.Names(),
@@ -96,22 +101,13 @@ func getNextLicenseId(activeGen3UserLicenses *[]Gen3UserLicense, maxLicenseIds i
 	return 0
 }
 
-var createGen3UserLicense = func(userId string, licenseId int) (gen3UserLicense Gen3UserLicense, err error) {
+var createGen3UserLicense = func(dbconfig *DbConfig, userId string, licenseId int) (gen3UserLicense Gen3UserLicense, err error) {
 	// Create a new user-license object and put in table
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	// Maybe also put the global secondary index name in config
 	Config.Logger.Printf("Ready to put item for new user license in table: %s", Config.Config.Gen3UserLicenseTable)
 	Config.Logger.Printf("Environment = %s", targetEnvironment)
-
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region: aws.String("us-east-1"),
-			// Use this endpoint for running locally
-			// Endpoint: aws.String("http://localhost:8000"),
-		},
-	}))
-	dynamodbSvc := dynamodb.New(sess)
 
 	itemId := uuid.New().String()
 	currentUnixTime := int(time.Now().Unix())
@@ -134,7 +130,7 @@ var createGen3UserLicense = func(userId string, licenseId int) (gen3UserLicense 
 		return newItem, err
 	}
 	// put item
-	res, err := dynamodbSvc.PutItem(&dynamodb.PutItemInput{
+	_, err = dbconfig.DynamoDb.PutItem(&dynamodb.PutItemInput{
 		TableName: aws.String(Config.Config.Gen3UserLicenseTable),
 		Item:      item,
 	})
@@ -142,12 +138,12 @@ var createGen3UserLicense = func(userId string, licenseId int) (gen3UserLicense 
 		Config.Logger.Printf("Error: could not add item to table: %s", err)
 		return newItem, err
 	}
-	Config.Logger.Printf("Res: %s", res)
-	// Return new gen3-user-license item
+	Config.Logger.Printf("Debug: newItem submitted to table: %v", newItem)
+	// Return the new gen3-user-license item that we created; putItem does not return new items.
 	return newItem, nil
 }
 
-var setGen3UserLicensInactive = func(itemId string) error {
+var setGen3UserLicenseInactive = func(dbconfig *DbConfig, itemId string) (Gen3UserLicense, error) {
 	// Update an item to mark as inactive
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
@@ -156,17 +152,6 @@ var setGen3UserLicensInactive = func(itemId string) error {
 	Config.Logger.Printf("Environment = %s", targetEnvironment)
 
 	isActive := "False"
-
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region: aws.String("us-east-1"),
-			// Use this endpoint for running locally
-			// Endpoint: aws.String("http://localhost:8000"),
-		},
-	}))
-	dynamodbSvc := dynamodb.New(sess)
-
-	// pull out the input from UpdateItem - this matches paymodel and awsdocs
 	input := &dynamodb.UpdateItemInput{
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":active": {
@@ -183,20 +168,31 @@ var setGen3UserLicensInactive = func(itemId string) error {
 				S: aws.String(targetEnvironment),
 			},
 		},
+		// AWS docs are bad: 'UPDATED_NEW' is not an accepted value.
+		// Allowable values are 'NONE' or 'ALL_OLD' and no new values are returned.
 		ReturnValues:     aws.String("UPDATED_NEW"),
 		UpdateExpression: aws.String("set isActive = :active"),
 	}
 
-	_, err := dynamodbSvc.UpdateItem(input)
+	res, err := dbconfig.DynamoDb.UpdateItem(input)
 	if err != nil {
 		Config.Logger.Printf("Error: could not update item in table: %s", err)
-		return err
+		return Gen3UserLicense{}, err
 	}
-	return nil
+
+	var updatedItem Gen3UserLicense
+	err = dynamodbattribute.UnmarshalMap(res.Attributes, &updatedItem)
+	if err != nil {
+		Config.Logger.Printf("Error: could not unmarshal updated item: %s", err)
+		return Gen3UserLicense{}, err
+	}
+
+	Config.Logger.Printf("Debug: updatedItem submitted to table: %v", updatedItem)
+	return updatedItem, nil
 
 }
 
-var getKubeClientSet = func() (clientset *kubernetes.Clientset, err error) {
+var getKubeClientSet = func() (clientset kubernetes.Interface, err error) {
 	// Get the kubernetes client set
 	kubeConfigPath := os.Getenv("HOME") + "/.kube/config"
 	if _, err := os.Stat(kubeConfigPath); err == nil {
@@ -229,7 +225,7 @@ var getKubeClientSet = func() (clientset *kubernetes.Clientset, err error) {
 
 }
 
-var getLicenseFromKubernetes = func() (licenseString string, err error) {
+var getLicenseFromKubernetes = func(clientset kubernetes.Interface) (licenseString string, err error) {
 	// Read the gen3-license string from the g3auto kubernetes secret
 	g3autoName := Config.Config.Gen3G3autoName
 	g3autoKey := Config.Config.Gen3G3autoKey
@@ -244,12 +240,6 @@ var getLicenseFromKubernetes = func() (licenseString string, err error) {
 	}
 
 	var secretsClient coreV1Types.SecretInterface
-	var clientset *kubernetes.Clientset
-	clientset, err = getKubeClientSet()
-	if err != nil {
-		Config.Logger.Printf("Error: could not get kubernetes client: %s", err)
-		return "", err
-	}
 	secretsClient = clientset.CoreV1().Secrets(namespace)
 	secret, err := secretsClient.Get(context.TODO(), g3autoName, metaV1.GetOptions{})
 	if err != nil {

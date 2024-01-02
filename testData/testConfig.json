@@ -2,6 +2,12 @@
   "user-namespace": "jupyter-pods",
   "sub-dir": "/lw-workspace",
   "user-volume-size": "10Gi",
+  "gen3-user-license-dynamodb-table": "gen3-license-user-table",
+  "gen3-user-license-type": "TEST-LICENSE",
+  "gen3-g3auto-name": "test-license-g3auto",
+  "gen3-max-license-ids": 6,
+  "gen3-g3auto-key": "test_license.txt",
+  "gen3-license-file-path": "stata.lic",
   "sidecar": {
     "cpu-limit": "1.0",
     "memory-limit": "256Mi",

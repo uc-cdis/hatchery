@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	k8sv1 "k8s.io/api/core/v1"
 
 	"crypto/md5"
@@ -89,6 +90,10 @@ type AllPayModels struct {
 	PayModels       []PayModel `json:"all_pay_models"`
 }
 
+type DbConfig struct {
+	DynamoDb dynamodbiface.DynamoDBAPI
+}
+
 type Gen3UserLicense struct {
 	ItemId      string `json:"itemId"`
 	Environment string `json:"environment"`
@@ -110,6 +115,7 @@ type HatcheryConfig struct {
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
 	Gen3UserLicenseTable   string           `json:"gen3-user-license-dynamodb-table"`
 	Gen3LicenseType        string           `json:"gen3-user-license-type"`
+	Gen3LicenseMaxIds      int              `json:"gen3-license-max-ids"`
 	Gen3G3autoName         string           `json:"gen3-g3auto-name"`
 	Gen3G3autoKey          string           `json:"gen3-g3auto-key"`
 	Gen3LicenseFilePath    string           `json:"gen3-license-file-path"`

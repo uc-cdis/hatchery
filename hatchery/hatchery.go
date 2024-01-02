@@ -410,18 +410,18 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(strings.ToLower(Config.ContainersMap[hash].Name), "gen3-licensed") {
 		Config.Logger.Printf("Debug: Running gen3-licensed workspace: %s", Config.ContainersMap[hash].Name)
 		// Test the active users function
-		activeUserLicenses, err := getActiveGen3UserLicenses()
+		dbconfig := initializeDbConfig()
+		activeUserLicenses, err := getActiveGen3UserLicenses(dbconfig)
 		if err != nil {
 			Config.Logger.Printf(err.Error())
 		}
 		Config.Logger.Printf("Debug: Active user licenses %v", activeUserLicenses)
-		maxLicenseIds := 6
-		nextLicenseId := getNextLicenseId(activeUserLicenses, maxLicenseIds)
+		nextLicenseId := getNextLicenseId(activeUserLicenses, Config.Config.Gen3LicenseMaxIds)
 		if nextLicenseId == 0 {
 			Config.Logger.Printf("Error: no available license ids")
 			return
 		}
-		newItem, err := createGen3UserLicense(userName, nextLicenseId)
+		newItem, err := createGen3UserLicense(dbconfig, userName, nextLicenseId)
 		if err != nil {
 			Config.Logger.Printf(err.Error())
 		}
@@ -487,7 +487,8 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 
 	// mark any gen3-licensed sessions as inactive
 	Config.Logger.Printf("Checking for gen3 user-license items for user: %s", userName)
-	activeGen3UserLicenses, userlicerr := getActiveGen3UserLicenses()
+	dbconfig := initializeDbConfig()
+	activeGen3UserLicenses, userlicerr := getActiveGen3UserLicenses(dbconfig)
 	if userlicerr != nil {
 		Config.Logger.Printf(userlicerr.Error())
 	}
@@ -498,7 +499,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		for _, v := range *activeGen3UserLicenses {
 			if v.UserId == userName {
 				Config.Logger.Printf("Debug: updating user-license as inactive for itemId %s", v.ItemId)
-				err := setGen3UserLicensInactive(v.ItemId)
+				_, err := setGen3UserLicenseInactive(dbconfig, v.ItemId)
 				if err != nil {
 					Config.Logger.Printf(err.Error())
 				}
@@ -690,8 +691,10 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}
 		return out, nil
+		// Could use config values here, "gen3-license-file-path" and "gen3-user-license-type"
 	} else if fileId == "stata.lic" {
-		out, err := getLicenseFromKubernetes()
+		clientset, err := getKubeClientSet()
+		out, err := getLicenseFromKubernetes(clientset)
 		if err != nil {
 			Config.Logger.Printf("unable to get Stata license from kubernetes: %v", err)
 		}

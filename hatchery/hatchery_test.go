@@ -906,7 +906,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 			return nil
 		}
 
-		getActiveGen3UserLicenses = func() (*[]Gen3UserLicense, error) {
+		getActiveGen3UserLicenses = func(dbconfig *DbConfig) (*[]Gen3UserLicense, error) {
 			return testcase.mockGen3UserLicense, nil
 		}
 
