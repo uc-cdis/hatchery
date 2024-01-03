@@ -552,7 +552,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 		batchComputeEnvArn = *batchComputeEnv.ComputeEnvironments[0].ComputeEnvironmentArn
 
 		// wait for the compute env to be ready to be updated
-		err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc)
+		err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc, false)
 		if err != nil {
 			return "", err
 		}
@@ -640,7 +640,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	}
 
 	// the compute environment must be "VALID" before we can create the job queue: wait until ready
-	err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc)
+	err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc, true)
 	if err != nil {
 		return "", err
 	}
@@ -648,7 +648,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	return batchComputeEnvArn, nil
 }
 
-func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.Batch) error {
+func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.Batch, mustBeValid bool) error {
 	maxIter := 6
 	iterDelaySecs := 5
 	var compEnvStatus string
@@ -662,12 +662,17 @@ func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.
 			return err
 		}
 		compEnvStatus = *batchComputeEnvs.ComputeEnvironments[0].Status
+		// possible statuses: CREATING | UPDATING | DELETING | DELETED | VALID | INVALID
 		if compEnvStatus == "VALID" {
 			Config.Logger.Print("Debug: Compute environment is ready")
 			break
 		}
+		if !mustBeValid && compEnvStatus == "INVALID" {
+			Config.Logger.Printf("Debug: Compute environment is %s and can't be used, but can be updated", compEnvStatus)
+			break
+		}
 		if i == maxIter {
-			return fmt.Errorf("Compute environment is not ready after %v seconds. Exiting", maxIter*iterDelaySecs)
+			return fmt.Errorf("compute environment is not ready after %v seconds. Exiting", maxIter*iterDelaySecs)
 		}
 		Config.Logger.Printf("Info: Compute environment is %s, waiting %vs and checking again", compEnvStatus, iterDelaySecs)
 		time.Sleep(time.Duration(iterDelaySecs) * time.Second)
