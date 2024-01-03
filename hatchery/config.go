@@ -94,7 +94,7 @@ type DbConfig struct {
 	DynamoDb dynamodbiface.DynamoDBAPI
 }
 
-type Gen3UserLicense struct {
+type Gen3LicenseUserMap struct {
 	ItemId      string `json:"itemId"`
 	Environment string `json:"environment"`
 	LicenseType string `json:"licenseType"`
@@ -108,23 +108,23 @@ type Gen3UserLicense struct {
 
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
-	UserNamespace          string           `json:"user-namespace"`
-	DefaultPayModel        PayModel         `json:"default-pay-model"`
-	DisableLocalWS         bool             `json:"disable-local-ws"`
-	PayModels              []PayModel       `json:"pay-models"`
-	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
-	Gen3UserLicenseTable   string           `json:"gen3-user-license-dynamodb-table"`
-	Gen3LicenseType        string           `json:"gen3-user-license-type"`
-	Gen3LicenseMaxIds      int              `json:"gen3-license-max-ids"`
-	Gen3G3autoName         string           `json:"gen3-g3auto-name"`
-	Gen3G3autoKey          string           `json:"gen3-g3auto-key"`
-	Gen3LicenseFilePath    string           `json:"gen3-license-file-path"`
-	SubDir                 string           `json:"sub-dir"`
-	Containers             []Container      `json:"containers"`
-	UserVolumeSize         string           `json:"user-volume-size"`
-	Sidecar                SidecarContainer `json:"sidecar"`
-	MoreConfigs            []AppConfigInfo  `json:"more-configs"`
-	PrismaConfig           PrismaConfig     `json:"prisma"`
+	UserNamespace            string           `json:"user-namespace"`
+	DefaultPayModel          PayModel         `json:"default-pay-model"`
+	DisableLocalWS           bool             `json:"disable-local-ws"`
+	PayModels                []PayModel       `json:"pay-models"`
+	PayModelsDynamodbTable   string           `json:"pay-models-dynamodb-table"`
+	Gen3LicenseUserMapsTable string           `json:"gen3-license-user-maps-dynamodb-table"`
+	Gen3LicenseType          string           `json:"gen3-license-type"`
+	Gen3LicenseMaxIds        int              `json:"gen3-license-max-ids"`
+	Gen3G3autoName           string           `json:"gen3-g3auto-name"`
+	Gen3G3autoKey            string           `json:"gen3-g3auto-key"`
+	Gen3LicenseFilePath      string           `json:"gen3-license-file-path"`
+	SubDir                   string           `json:"sub-dir"`
+	Containers               []Container      `json:"containers"`
+	UserVolumeSize           string           `json:"user-volume-size"`
+	Sidecar                  SidecarContainer `json:"sidecar"`
+	MoreConfigs              []AppConfigInfo  `json:"more-configs"`
+	PrismaConfig             PrismaConfig     `json:"prisma"`
 }
 
 // Config to allow for Prisma Agents
@@ -212,8 +212,12 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.PayModelMap[user] = payModel
 	}
 
-	if data.Config.Gen3UserLicenseTable == "" {
-		data.Logger.Printf("Warning: no 'gen3-user-license-dynamodb-table' in configuration: will be unable to store gen3-user-license data in DynamoDB")
+	if data.Config.Gen3LicenseUserMapsTable == "" {
+		data.Logger.Printf("Warning: no 'gen3-license-user-maps-dynamodb-table' in configuration: will be unable to store gen3-license-user-map data in DynamoDB")
+	}
+
+	if data.Config.Gen3LicenseMaxIds == 0 {
+		data.Logger.Printf("Warning: no 'gen3-license-max-ids' in configuration: will be unable to store gen3-license-user-map data in DynamoDB")
 	}
 
 	return data, nil

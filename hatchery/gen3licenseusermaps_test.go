@@ -22,7 +22,7 @@ func (m *DynamodbMockClient) Query(input *dynamodb.QueryInput) (*dynamodb.QueryO
 	return m.mockOutput, nil
 }
 
-func Test_GetActiveGen3UserLicenses(t *testing.T) {
+func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
 	targetEnvironment := "test.planx-pla.net"
@@ -30,17 +30,17 @@ func Test_GetActiveGen3UserLicenses(t *testing.T) {
 
 	testCases := []struct {
 		name            string
-		want            *[]Gen3UserLicense
+		want            *[]Gen3LicenseUserMap
 		mockQueryOutput *dynamodb.QueryOutput
 	}{
 		{
 			name:            "NoActiveLicenses",
-			want:            &[]Gen3UserLicense{},
+			want:            &[]Gen3LicenseUserMap{},
 			mockQueryOutput: &dynamodb.QueryOutput{},
 		},
 		{
 			name: "SomeActiveLicenses",
-			want: &[]Gen3UserLicense{
+			want: &[]Gen3LicenseUserMap{
 				{
 					ItemId:      "1234-abcd",
 					Environment: targetEnvironment,
@@ -77,7 +77,7 @@ func Test_GetActiveGen3UserLicenses(t *testing.T) {
 	dbconfig := initializeDbConfig()
 
 	for _, testcase := range testCases {
-		t.Logf("Testing GetActiveGen3UserLicenses")
+		t.Logf("Testing GetActiveGen3LicenseUserMaps")
 
 		dbconfig.DynamoDb = &DynamodbMockClient{
 			DynamoDBAPI: nil,
@@ -85,7 +85,7 @@ func Test_GetActiveGen3UserLicenses(t *testing.T) {
 		}
 
 		/* Act */
-		got, err := getActiveGen3UserLicenses(dbconfig)
+		got, err := getActiveGen3LicenseUserMaps(dbconfig)
 		if nil != err {
 			t.Errorf("failed to query table, got: %v", err)
 			return
@@ -97,7 +97,7 @@ func Test_GetActiveGen3UserLicenses(t *testing.T) {
 				reflect.TypeOf(got), reflect.TypeOf(testcase.want))
 		}
 		if !reflect.DeepEqual(got, testcase.want) {
-			t.Errorf("\nassertion error while testing `getActiveGen3UserLicenses`: \nWant:%+v\nGot:%+v", testcase.want, got)
+			t.Errorf("\nassertion error while testing `getActiveGen3LicenseUserMaps`: \nWant:%+v\nGot:%+v", testcase.want, got)
 		}
 	}
 }
@@ -110,7 +110,7 @@ func (m *DynamodbMockClient) PutItem(input *dynamodb.PutItemInput) (*dynamodb.Pu
 	}, nil
 }
 
-func Test_CreateGen3UserLicense(t *testing.T) {
+func Test_CreateGen3LicenseUserMap(t *testing.T) {
 
 	/* Setup */
 	targetEnvironment := "test.planx-pla.net"
@@ -121,18 +121,18 @@ func Test_CreateGen3UserLicense(t *testing.T) {
 	dbconfig := initializeDbConfig()
 	dbconfig.DynamoDb = &DynamodbMockClient{}
 
-	t.Logf("Testing CreateGen3UserLicense")
+	t.Logf("Testing CreateGen3LicenseUserMap")
 
 	/* Act */
-	newItem, err := createGen3UserLicense(dbconfig, itemId, licenseId)
+	newItem, err := createGen3LicenseUserMap(dbconfig, itemId, licenseId)
 	if nil != err {
 		t.Errorf("failed to put item, got: %v", err)
 	}
 
 	/* Assert */
-	if reflect.TypeOf(newItem) != reflect.TypeOf(Gen3UserLicense{}) {
+	if reflect.TypeOf(newItem) != reflect.TypeOf(Gen3LicenseUserMap{}) {
 		t.Errorf("Return value is not correct type:\ngot: '%v'\nwant: '%v'",
-			reflect.TypeOf(newItem), reflect.TypeOf(Gen3UserLicense{}))
+			reflect.TypeOf(newItem), reflect.TypeOf(Gen3LicenseUserMap{}))
 	}
 	got := newItem.IsActive
 	want := "True"
@@ -151,7 +151,7 @@ func (m *DynamodbMockClient) UpdateItem(input *dynamodb.UpdateItemInput) (*dynam
 	}, nil
 }
 
-func Test_SetGen3UserLicenseInactive(t *testing.T) {
+func Test_SetGen3LicenseUserInactive(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
 	/* Setup */
@@ -162,19 +162,19 @@ func Test_SetGen3UserLicenseInactive(t *testing.T) {
 	dbconfig := initializeDbConfig()
 	dbconfig.DynamoDb = &DynamodbMockClient{}
 
-	t.Logf("Testing SetGen3UserLicenseInactive when %s", "singleitemtoupdate")
+	t.Logf("Testing SetGen3LicenseUserInactive when %s", "singleitemtoupdate")
 
 	/* Act */
-	updatedItem, err := setGen3UserLicenseInactive(dbconfig, itemId)
+	updatedItem, err := setGen3LicenseUserInactive(dbconfig, itemId)
 	if nil != err {
 		t.Errorf("failed to put item, got: %v", err)
 		return
 	}
 
 	/* Assert */
-	if reflect.TypeOf(updatedItem) != reflect.TypeOf(Gen3UserLicense{}) {
+	if reflect.TypeOf(updatedItem) != reflect.TypeOf(Gen3LicenseUserMap{}) {
 		t.Errorf("Return value is not correct type:\ngot: '%v'\nwant: '%v'",
-			reflect.TypeOf(updatedItem), reflect.TypeOf(Gen3UserLicense{}))
+			reflect.TypeOf(updatedItem), reflect.TypeOf(Gen3LicenseUserMap{}))
 	}
 	got := updatedItem.IsActive
 	want := "False"
@@ -188,22 +188,22 @@ func Test_SetGen3UserLicenseInactive(t *testing.T) {
 func Test_GetNextLicenseId(t *testing.T) {
 
 	testCases := []struct {
-		name                       string
-		maxLicenseIds              int
-		want                       int
-		mockActiveGen3UserLicenses *[]Gen3UserLicense
+		name                          string
+		maxLicenseIds                 int
+		want                          int
+		mockActiveGen3LicenseUserMaps *[]Gen3LicenseUserMap
 	}{
 		{
-			name:                       "Gen3UserLicensesIsEmpty",
-			maxLicenseIds:              6,
-			want:                       1,
-			mockActiveGen3UserLicenses: &[]Gen3UserLicense{},
+			name:                          "Gen3UserLicensesIsEmpty",
+			maxLicenseIds:                 6,
+			want:                          1,
+			mockActiveGen3LicenseUserMaps: &[]Gen3LicenseUserMap{},
 		},
 		{
 			name:          "OneLicenseUsed",
 			maxLicenseIds: 6,
 			want:          2,
-			mockActiveGen3UserLicenses: &[]Gen3UserLicense{
+			mockActiveGen3LicenseUserMaps: &[]Gen3LicenseUserMap{
 				{
 					IsActive:  "True",
 					LicenseId: 1,
@@ -214,7 +214,7 @@ func Test_GetNextLicenseId(t *testing.T) {
 			name:          "MaxLicensesActive",
 			maxLicenseIds: 2,
 			want:          0,
-			mockActiveGen3UserLicenses: &[]Gen3UserLicense{
+			mockActiveGen3LicenseUserMaps: &[]Gen3LicenseUserMap{
 				{
 					IsActive:  "True",
 					LicenseId: 1,
@@ -230,7 +230,7 @@ func Test_GetNextLicenseId(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Logf("Testing getNextLicenseId when %s", testcase.name)
 
-		got := getNextLicenseId(testcase.mockActiveGen3UserLicenses, testcase.maxLicenseIds)
+		got := getNextLicenseId(testcase.mockActiveGen3LicenseUserMaps, testcase.maxLicenseIds)
 
 		/* Assert */
 		if got != testcase.want {

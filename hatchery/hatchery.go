@@ -404,25 +404,25 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// debug
-	Config.Logger.Printf("DynamoDB tables: paymodel=%s, gen3userlicense=%s", Config.Config.PayModelsDynamodbTable, Config.Config.Gen3UserLicenseTable)
+	Config.Logger.Printf("DynamoDB tables: paymodel=%s, gen3licenseusermapstable=%s", Config.Config.PayModelsDynamodbTable, Config.Config.Gen3LicenseUserMapsTable)
 	Config.Logger.Printf("Container name=%s", Config.ContainersMap[hash].Name)
 	Config.Logger.Printf("hash value %s", hash)
 	if strings.Contains(strings.ToLower(Config.ContainersMap[hash].Name), "gen3-licensed") {
 		Config.Logger.Printf("Debug: Running gen3-licensed workspace: %s", Config.ContainersMap[hash].Name)
 		// Test the active users function
 		dbconfig := initializeDbConfig()
-		activeUserLicenses, err := getActiveGen3UserLicenses(dbconfig)
+		activeGen3LicenseUsers, err := getActiveGen3LicenseUserMaps(dbconfig)
 		if err != nil {
 			Config.Logger.Printf(err.Error())
 		}
-		Config.Logger.Printf("Debug: Active user licenses %v", activeUserLicenses)
+		Config.Logger.Printf("Debug: Active gen3 license user maps %v", activeGen3LicenseUsers)
 		// Check for config max
-		nextLicenseId := getNextLicenseId(activeUserLicenses, Config.Config.Gen3LicenseMaxIds)
+		nextLicenseId := getNextLicenseId(activeGen3LicenseUsers, Config.Config.Gen3LicenseMaxIds)
 		if nextLicenseId == 0 {
 			Config.Logger.Printf("Error: no available license ids")
 			return
 		}
-		newItem, err := createGen3UserLicense(dbconfig, userName, nextLicenseId)
+		newItem, err := createGen3LicenseUserMap(dbconfig, userName, nextLicenseId)
 		if err != nil {
 			Config.Logger.Printf(err.Error())
 		}
@@ -487,20 +487,20 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	Config.Logger.Printf("Terminating workspace for user %s", userName)
 
 	// mark any gen3-licensed sessions as inactive
-	Config.Logger.Printf("Checking for gen3 user-license items for user: %s", userName)
+	Config.Logger.Printf("Checking for gen3 license items for user: %s", userName)
 	dbconfig := initializeDbConfig()
-	activeGen3UserLicenses, userlicerr := getActiveGen3UserLicenses(dbconfig)
+	activeGen3LicenseUsers, userlicerr := getActiveGen3LicenseUserMaps(dbconfig)
 	if userlicerr != nil {
 		Config.Logger.Printf(userlicerr.Error())
 	}
-	Config.Logger.Printf("Debug: Active user licenses %v", activeGen3UserLicenses)
-	if len(*activeGen3UserLicenses) == 0 {
-		Config.Logger.Printf("No active gen3 user-license sessions for user: %s", userName)
+	Config.Logger.Printf("Debug: Active gen3 license user maps %v", activeGen3LicenseUsers)
+	if len(*activeGen3LicenseUsers) == 0 {
+		Config.Logger.Printf("No active gen3 license sessions for user: %s", userName)
 	} else {
-		for _, v := range *activeGen3UserLicenses {
+		for _, v := range *activeGen3LicenseUsers {
 			if v.UserId == userName {
-				Config.Logger.Printf("Debug: updating user-license as inactive for itemId %s", v.ItemId)
-				_, err := setGen3UserLicenseInactive(dbconfig, v.ItemId)
+				Config.Logger.Printf("Debug: updating gen3 license user map as inactive for itemId %s", v.ItemId)
+				_, err := setGen3LicenseUserInactive(dbconfig, v.ItemId)
 				if err != nil {
 					Config.Logger.Printf(err.Error())
 				}

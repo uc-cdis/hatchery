@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,28 +38,30 @@ var initializeDbConfig = func() *DbConfig {
 	}
 }
 
-var getActiveGen3UserLicenses = func(dbconfig *DbConfig) (gen3UserLicenses *[]Gen3UserLicense, err error) {
-	// Query the table to get all active user license items
+var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig) (gen3LicenseUserMaps *[]Gen3LicenseUserMap, err error) {
+	// Query the table to get all active gen3 license usere map items
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	// Maybe also put the global secondary index name in config
-	Config.Logger.Printf("Ready to query table for active users: %s", Config.Config.Gen3UserLicenseTable)
+	Config.Logger.Printf("Ready to query table for active users: %s", Config.Config.Gen3LicenseUserMapsTable)
 	Config.Logger.Printf("Environment = %s", targetEnvironment)
 
-	// TODO: filter by license-type
+	// Query on primary keys and filter by license type (eg. "STATA")
 	keyEx1 := expression.Key("environment").Equal(expression.Value(aws.String(targetEnvironment)))
 	keyEx2 := expression.Key("isActive").Equal(expression.Value("True"))
-	expr, err := expression.NewBuilder().WithKeyCondition(expression.KeyAnd(keyEx1, keyEx2)).Build()
+	filt := expression.Name("licenseType").Equal(expression.Value(Config.Config.Gen3LicenseType))
+	expr, err := expression.NewBuilder().WithKeyCondition(expression.KeyAnd(keyEx1, keyEx2)).WithFilter(filt).Build()
 	if err != nil {
 		Config.Logger.Printf("Error in building expression for query: %s", err)
 		return nil, err
 	}
 	res, err := dbconfig.DynamoDb.Query(&dynamodb.QueryInput{
-		TableName:                 aws.String(Config.Config.Gen3UserLicenseTable),
+		TableName:                 aws.String(Config.Config.Gen3LicenseUserMapsTable),
 		IndexName:                 aws.String("activeUsersIndex"),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 		KeyConditionExpression:    expr.KeyCondition(),
+		FilterExpression:          expr.Filter(),
 	})
 	if err != nil {
 		Config.Logger.Printf("Error in active user query: %s", err)
@@ -66,26 +69,27 @@ var getActiveGen3UserLicenses = func(dbconfig *DbConfig) (gen3UserLicenses *[]Ge
 	}
 	fmt.Println(res.Items)
 
-	var userLicenses []Gen3UserLicense
-	err = dynamodbattribute.UnmarshalListOfMaps(res.Items, &userLicenses)
+	// Populate list of all active gen3 license user maps
+	var gen3LicenseUsers []Gen3LicenseUserMap
+	err = dynamodbattribute.UnmarshalListOfMaps(res.Items, &gen3LicenseUsers)
 	if err != nil {
-		Config.Logger.Printf("Error in unmarshalling active users: %s", err)
+		Config.Logger.Printf("Error in unmarshalling active gen3 license user maps: %s", err)
 		return nil, err
 	}
 
-	fmt.Println(userLicenses)
-	return &userLicenses, nil
+	Config.Logger.Printf("Debug: active gen3 license user maps %v", gen3LicenseUsers)
+	return &gen3LicenseUsers, nil
 }
 
-func getNextLicenseId(activeGen3UserLicenses *[]Gen3UserLicense, maxLicenseIds int) int {
+func getNextLicenseId(activeGen3LicenseUserMaps *[]Gen3LicenseUserMap, maxLicenseIds int) int {
 	// Determine the next available licenseId [1..6], return 0 if no ids
-	if len(*activeGen3UserLicenses) == 0 {
+	if len(*activeGen3LicenseUserMaps) == 0 {
 		return 1
 	}
 	var idInUsedIds bool
 	for i := 1; i <= maxLicenseIds; i++ {
 		idInUsedIds = false
-		for _, v := range *activeGen3UserLicenses {
+		for _, v := range *activeGen3LicenseUserMaps {
 			if i == v.LicenseId {
 				idInUsedIds = true
 				break
@@ -100,19 +104,19 @@ func getNextLicenseId(activeGen3UserLicenses *[]Gen3UserLicense, maxLicenseIds i
 	return 0
 }
 
-var createGen3UserLicense = func(dbconfig *DbConfig, userId string, licenseId int) (gen3UserLicense Gen3UserLicense, err error) {
+var createGen3LicenseUserMap = func(dbconfig *DbConfig, userId string, licenseId int) (gen3LicenseUserMap Gen3LicenseUserMap, err error) {
 	// Create a new user-license object and put in table
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	// Maybe also put the global secondary index name in config
-	Config.Logger.Printf("Ready to put item for new user license in table: %s", Config.Config.Gen3UserLicenseTable)
+	Config.Logger.Printf("Ready to put item for new user license in table: %s", Config.Config.Gen3LicenseUserMapsTable)
 	Config.Logger.Printf("Environment = %s", targetEnvironment)
 
 	itemId := uuid.New().String()
 	currentUnixTime := int(time.Now().Unix())
 
-	// create new Gen3UserLicense
-	newItem := Gen3UserLicense{}
+	// create new Gen3LicenseUserMap
+	newItem := Gen3LicenseUserMap{}
 	newItem.LicenseType = Config.Config.Gen3LicenseType
 	newItem.ItemId = itemId
 	newItem.Environment = targetEnvironment
@@ -122,7 +126,7 @@ var createGen3UserLicense = func(dbconfig *DbConfig, userId string, licenseId in
 	newItem.FirstUsedTimestamp = currentUnixTime
 	newItem.LastUsedTimestamp = currentUnixTime
 
-	// marshall Gen3UserLicense into dynamodb item
+	// marshall Gen3LicenseUserMap into dynamodb item
 	item, err := dynamodbattribute.MarshalMap(newItem)
 	if err != nil {
 		Config.Logger.Printf("Error: could not marshal new item: %s", err)
@@ -130,7 +134,7 @@ var createGen3UserLicense = func(dbconfig *DbConfig, userId string, licenseId in
 	}
 	// put item
 	_, err = dbconfig.DynamoDb.PutItem(&dynamodb.PutItemInput{
-		TableName: aws.String(Config.Config.Gen3UserLicenseTable),
+		TableName: aws.String(Config.Config.Gen3LicenseUserMapsTable),
 		Item:      item,
 	})
 	if err != nil {
@@ -142,22 +146,27 @@ var createGen3UserLicense = func(dbconfig *DbConfig, userId string, licenseId in
 	return newItem, nil
 }
 
-var setGen3UserLicenseInactive = func(dbconfig *DbConfig, itemId string) (Gen3UserLicense, error) {
+var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3LicenseUserMap, error) {
 	// Update an item to mark as inactive
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	// Maybe also put the global secondary index name in config
-	Config.Logger.Printf("Ready to update existing user license in table: %s", Config.Config.Gen3UserLicenseTable)
+	Config.Logger.Printf("Ready to update existing user license in table: %s", Config.Config.Gen3LicenseUserMapsTable)
 	Config.Logger.Printf("Environment = %s", targetEnvironment)
 
 	isActive := "False"
+	currentUnixTime := int(time.Now().Unix())
+	// Mark the lastUsedTimestamp
 	input := &dynamodb.UpdateItemInput{
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":active": {
 				S: aws.String(isActive),
 			},
+			":currentTime": {
+				N: aws.String(strconv.Itoa(currentUnixTime)),
+			},
 		},
-		TableName: aws.String(Config.Config.Gen3UserLicenseTable),
+		TableName: aws.String(Config.Config.Gen3LicenseUserMapsTable),
 		// Use the composite primary key: itemId, environment
 		Key: map[string]*dynamodb.AttributeValue{
 			"itemId": {
@@ -170,23 +179,23 @@ var setGen3UserLicenseInactive = func(dbconfig *DbConfig, itemId string) (Gen3Us
 		// AWS docs are bad: 'UPDATED_NEW' is not an accepted value.
 		// Allowable values are 'NONE' or 'ALL_OLD' and no new values are returned.
 		ReturnValues:     aws.String("UPDATED_NEW"),
-		UpdateExpression: aws.String("set isActive = :active"),
+		UpdateExpression: aws.String("set isActive = :active, lastUsedTimestamp = :currentTime"),
 	}
 
 	res, err := dbconfig.DynamoDb.UpdateItem(input)
 	if err != nil {
 		Config.Logger.Printf("Error: could not update item in table: %s", err)
-		return Gen3UserLicense{}, err
+		return Gen3LicenseUserMap{}, err
 	}
 
-	var updatedItem Gen3UserLicense
+	var updatedItem Gen3LicenseUserMap
 	err = dynamodbattribute.UnmarshalMap(res.Attributes, &updatedItem)
 	if err != nil {
 		Config.Logger.Printf("Error: could not unmarshal updated item: %s", err)
-		return Gen3UserLicense{}, err
+		return Gen3LicenseUserMap{}, err
 	}
 
-	Config.Logger.Printf("Debug: updatedItem submitted to table: %v", updatedItem)
+	Config.Logger.Printf("Debug: updatedItem: %v", updatedItem)
 	return updatedItem, nil
 
 }
