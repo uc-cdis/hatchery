@@ -403,13 +403,8 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
 
-	// debug
-	Config.Logger.Printf("DynamoDB tables: paymodel=%s, gen3licenseusermapstable=%s", Config.Config.PayModelsDynamodbTable, Config.Config.Gen3LicenseUserMapsTable)
-	Config.Logger.Printf("Container name=%s", Config.ContainersMap[hash].Name)
-	Config.Logger.Printf("hash value %s", hash)
 	if strings.Contains(strings.ToLower(Config.ContainersMap[hash].Name), "gen3-licensed") {
 		Config.Logger.Printf("Debug: Running gen3-licensed workspace: %s", Config.ContainersMap[hash].Name)
-		// Test the active users function
 		dbconfig := initializeDbConfig()
 		activeGen3LicenseUsers, err := getActiveGen3LicenseUserMaps(dbconfig)
 		if err != nil {
@@ -426,7 +421,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			Config.Logger.Printf(err.Error())
 		}
-		Config.Logger.Printf("New item = %v", newItem)
+		Config.Logger.Printf("Created new gen3-license-user-map item: %v", newItem)
 
 	}
 

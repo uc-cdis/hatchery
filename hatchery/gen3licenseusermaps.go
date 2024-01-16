@@ -43,8 +43,6 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig) (gen3LicenseUserMaps
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	// Maybe also put the global secondary index name in config
-	Config.Logger.Printf("Ready to query table for active users: %s", Config.Config.Gen3LicenseUserMapsTable)
-	Config.Logger.Printf("Environment = %s", targetEnvironment)
 
 	// Query on primary keys and filter by license type (eg. "STATA")
 	keyEx1 := expression.Key("environment").Equal(expression.Value(aws.String(targetEnvironment)))
@@ -109,8 +107,6 @@ var createGen3LicenseUserMap = func(dbconfig *DbConfig, userId string, licenseId
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	// Maybe also put the global secondary index name in config
-	Config.Logger.Printf("Ready to put item for new user license in table: %s", Config.Config.Gen3LicenseUserMapsTable)
-	Config.Logger.Printf("Environment = %s", targetEnvironment)
 
 	itemId := uuid.New().String()
 	currentUnixTime := int(time.Now().Unix())
@@ -151,8 +147,6 @@ var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3Li
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	// Maybe also put the global secondary index name in config
-	Config.Logger.Printf("Ready to update existing user license in table: %s", Config.Config.Gen3LicenseUserMapsTable)
-	Config.Logger.Printf("Environment = %s", targetEnvironment)
 
 	isActive := "False"
 	currentUnixTime := int(time.Now().Unix())
