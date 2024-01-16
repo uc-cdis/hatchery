@@ -3,7 +3,6 @@ package hatchery
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -65,7 +64,6 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig) (gen3LicenseUserMaps
 		Config.Logger.Printf("Error in active user query: %s", err)
 		return nil, err
 	}
-	fmt.Println(res.Items)
 
 	// Populate list of all active gen3 license user maps
 	var gen3LicenseUsers []Gen3LicenseUserMap
@@ -137,8 +135,7 @@ var createGen3LicenseUserMap = func(dbconfig *DbConfig, userId string, licenseId
 		Config.Logger.Printf("Error: could not add item to table: %s", err)
 		return newItem, err
 	}
-	Config.Logger.Printf("Debug: newItem submitted to table: %v", newItem)
-	// Return the new gen3-user-license item that we created; putItem does not return new items.
+	// Return the new gen3-user-license item that we created; DynamoDB:putItem does not return new items.
 	return newItem, nil
 }
 
@@ -189,7 +186,6 @@ var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3Li
 		return Gen3LicenseUserMap{}, err
 	}
 
-	Config.Logger.Printf("Debug: updatedItem: %v", updatedItem)
 	return updatedItem, nil
 
 }

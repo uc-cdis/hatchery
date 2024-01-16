@@ -410,7 +410,6 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			Config.Logger.Printf(err.Error())
 		}
-		Config.Logger.Printf("Debug: Active gen3 license user maps %v", activeGen3LicenseUsers)
 		// Check for config max
 		nextLicenseId := getNextLicenseId(activeGen3LicenseUsers, Config.Config.Gen3LicenseMaxIds)
 		if nextLicenseId == 0 {
