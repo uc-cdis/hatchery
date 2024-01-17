@@ -526,10 +526,67 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 	return &vpcid, &subnetIds, nil
 }
 
+// Function to make sure launch template is created, and configured correctly
+// We need a launch template since we need a user data script to authenticate with private ECR repositories
+func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string) (*string, error) {
+
+	// user data script to authenticate with private ECR repositories
+	userData, err := generateUserData(userName)
+	if err != nil {
+		return nil, err
+	}
+
+	launchTemplateName := fmt.Sprintf("%s-nf-%s", hostname, userName)
+
+	Config.Logger.Printf("Debug: Launch template name: %s", launchTemplateName)
+
+	// create launch template
+	launchTemplate, err := ec2Svc.DescribeLaunchTemplates(&ec2.DescribeLaunchTemplatesInput{
+		LaunchTemplateNames: []*string{
+			aws.String(launchTemplateName),
+		},
+	})
+	if err != nil {
+		// If no launch template exists, create it
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "InvalidLaunchTemplateName.NotFoundException" {
+			Config.Logger.Printf("Debug: Launch template '%s' does not exist, creating it", launchTemplateName)
+			launchTemplate, err := ec2Svc.CreateLaunchTemplate(&ec2.CreateLaunchTemplateInput{
+				LaunchTemplateName: aws.String(launchTemplateName),
+				LaunchTemplateData: &ec2.RequestLaunchTemplateData{
+					UserData: aws.String(userData),
+				},
+			})
+			if err != nil {
+				Config.Logger.Printf("Error creating launch template '%s': %v", launchTemplateName, err)
+				return nil, err
+			}
+			Config.Logger.Printf("Debug: Created launch template '%s'", launchTemplateName)
+			return launchTemplate.LaunchTemplate.LaunchTemplateName, nil
+		} else {
+			Config.Logger.Printf("Error describing launch template '%s': %v", launchTemplateName, err)
+		}
+		return nil, err
+	}
+
+	if len(launchTemplate.LaunchTemplates) == 1 {
+		// TODO: Make sure user data in the existing launch template matches the user data we want
+		Config.Logger.Printf("Debug: Launch template '%s' already exists", launchTemplateName)
+		return launchTemplate.LaunchTemplates[0].LaunchTemplateName, nil
+	}
+	return nil, fmt.Errorf("More than one launch template with the same name exist: %v", launchTemplate.LaunchTemplates)
+}
+
+// Create AWS Batch compute environment
 func createBatchComputeEnvironment(userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string, payModel *PayModel, awsAccountId string, nextflowConfig NextflowConfig) (string, error) {
 	instanceProfileArn, err := createEcsInstanceProfile(iamSvc, fmt.Sprintf("%s-nf-ecsInstanceRole", hostname))
 	if err != nil {
 		Config.Logger.Printf("Unable to create ECS instance profile: %s", err.Error())
+		return "", err
+	}
+
+	// the launch template for the compute envrionment must be user-specific as well
+	launchTemplateName, err := ensureLaunchTemplate(ec2Svc, userName, hostname)
+	if err != nil {
 		return "", err
 	}
 
@@ -552,7 +609,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 		batchComputeEnvArn = *batchComputeEnv.ComputeEnvironments[0].ComputeEnvironmentArn
 
 		// wait for the compute env to be ready to be updated
-		err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc)
+		err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc, false)
 		if err != nil {
 			return "", err
 		}
@@ -569,6 +626,10 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 						ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
 						ImageType:       aws.String("ECS_AL2"),
 					},
+				},
+				LaunchTemplate: &batch.LaunchTemplateSpecification{
+					LaunchTemplateName: launchTemplateName,
+					Version:            aws.String("$Latest"),
 				},
 				MinvCpus: aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
 				MaxvCpus: aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
@@ -619,6 +680,10 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 						ImageType:       aws.String("ECS_AL2"),
 					},
 				},
+				LaunchTemplate: &batch.LaunchTemplateSpecification{
+					LaunchTemplateName: launchTemplateName,
+					Version:            aws.String("$Latest"),
+				},
 				InstanceRole:       instanceProfileArn,
 				AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
 				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
@@ -640,7 +705,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	}
 
 	// the compute environment must be "VALID" before we can create the job queue: wait until ready
-	err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc)
+	err = waitForBatchComputeEnvironment(batchComputeEnvName, batchSvc, true)
 	if err != nil {
 		return "", err
 	}
@@ -648,7 +713,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	return batchComputeEnvArn, nil
 }
 
-func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.Batch) error {
+func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.Batch, mustBeValid bool) error {
 	maxIter := 6
 	iterDelaySecs := 5
 	var compEnvStatus string
@@ -662,12 +727,17 @@ func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.
 			return err
 		}
 		compEnvStatus = *batchComputeEnvs.ComputeEnvironments[0].Status
+		// possible statuses: CREATING | UPDATING | DELETING | DELETED | VALID | INVALID
 		if compEnvStatus == "VALID" {
 			Config.Logger.Print("Debug: Compute environment is ready")
 			break
 		}
+		if !mustBeValid && compEnvStatus == "INVALID" {
+			Config.Logger.Printf("Debug: Compute environment is %s and can't be used, but can be updated", compEnvStatus)
+			break
+		}
 		if i == maxIter {
-			return fmt.Errorf("Compute environment is not ready after %v seconds. Exiting", maxIter*iterDelaySecs)
+			return fmt.Errorf("compute environment is not ready after %v seconds. Exiting", maxIter*iterDelaySecs)
 		}
 		Config.Logger.Printf("Info: Compute environment is %s, waiting %vs and checking again", compEnvStatus, iterDelaySecs)
 		time.Sleep(time.Duration(iterDelaySecs) * time.Second)
@@ -1473,4 +1543,24 @@ workDir = '%s'`,
 	)
 
 	return configContents, nil
+}
+
+// function to generate user data
+func generateUserData(userName string) (string, error) {
+	// TODO: read repo from config
+	approvedRepo := "143731057154.dkr.ecr.us-east-1.amazonaws.com/nextflow-approved"
+
+	// TODO: read region from config
+	userData := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(`MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="==MYBOUNDARY=="
+
+--==MYBOUNDARY==
+Content-Type: text/cloud-config; charset="us-ascii"
+
+packages:
+- aws-cli
+runcmd:
+- aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin %s/%s
+--==MYBOUNDARY==--`, approvedRepo, userName)))
+	return userData, nil
 }
