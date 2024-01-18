@@ -76,6 +76,9 @@ func main() {
 	hatchery.RegisterSystem(mux)
 	hatchery.RegisterHatchery(mux)
 
+	if config.Config.Karpenter {
+		config.Logger.Printf("Using karpenter for cost tracking.")
+	}
 	config.Logger.Printf("Running main")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8000", mux))
 }

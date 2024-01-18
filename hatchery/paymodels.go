@@ -3,6 +3,7 @@ package hatchery
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -118,6 +119,20 @@ var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 		Config.Logger.Printf("Got error unmarshalling: %s", err)
 		return nil, err
 	}
+
+	if payModel.Local && Config.Config.Karpenter && strings.Contains(strings.ToLower(payModel.Name), "trial") {
+
+		// get cost usage report
+		costUsage, err := getCostUsageReport(userName, "")
+		if err != nil {
+			Config.Logger.Printf("Got error getting cost usage report: %s", err)
+			return nil, err
+		}
+		payModel.TotalUsage = float32(costUsage.TotalCost)
+		payModel.HardLimit = float32(10) // TODO: get this from config
+		payModel.SoftLimit = float32(5)  // TODO: get this from config
+	}
+
 	return &payModel, nil
 }
 
