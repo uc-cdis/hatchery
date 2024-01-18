@@ -11,8 +11,6 @@ servers:
 tags:
 - name: workspace
   description: Operations about workspaces
-security:
-  - bearerAuth: []
 paths:
   /launch:
     post:
@@ -73,10 +71,77 @@ paths:
                     $ref: '#/components/schemas/Container'
         401:
           $ref: '#/components/responses/UnauthorizedError'
-  /paymodels:
+  /options?id=foobar:
     get:
       tags:
       - workspace
+      summary: Get information about the specified workspace option only
+      operationId: options_id
+      parameters:
+      - in: query
+        name: id
+        schema:
+          type: string
+        description: The ID of the option to get information for
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                items:
+                    $ref: '#/components/schemas/Container'
+        401:
+          $ref: '#/components/responses/UnauthorizedError'
+  /mount-files:
+    get:
+      tags:
+      - workspace
+      summary: Get the list of files that should be mounted to the workspace
+      operationId: mountfiles
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_path:
+                    type: string
+                    description: The path at which to mount the file. Includes the file name.
+                  workspace_flavor:
+                    type: string
+                    description: The file should only be mounted when the workspace flavor matches this.
+        401:
+          $ref: '#/components/responses/UnauthorizedError'
+  /mount-files?file_path=foobar:
+    get:
+      tags:
+      - workspace
+      summary: Get the contents of a file that should be mounted to the workspace
+      operationId: mountfiles_file_path
+      parameters:
+      - in: query
+        name: file_path
+        schema:
+          type: string
+        description: The file path, as returned by `/mount-files`.
+      responses:
+        200:
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: string
+        401:
+          $ref: '#/components/responses/UnauthorizedError'
+        404:
+          $ref: '#/components/responses/BadRequestError'
+  /paymodels:
+    get:
+      tags:
+      - pay models
       summary: Get the current user's pay model data
       operationId: paymodels
       responses:
@@ -95,7 +160,7 @@ paths:
   /allpaymodels:
     get:
       tags:
-      - workspace
+      - pay models
       summary: Get the current user's all pay model data, including the currently activated one
       operationId: allpaymodels
       responses:
@@ -114,7 +179,7 @@ paths:
   /setpaymodel:
     post:
       tags:
-      - workspace
+      - pay models
       summary: Set the currently activated paymodel for user
       operationId: setpaymodel
       parameters:

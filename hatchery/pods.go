@@ -439,12 +439,11 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			Name:         "shared-data",
 			VolumeSource: k8sv1.VolumeSource{},
 		},
+		{
+			Name:         "gen3",
+			VolumeSource: k8sv1.VolumeSource{},
+		},
 	}
-
-	volumes = append(volumes, k8sv1.Volume{
-		Name:         "gen3",
-		VolumeSource: k8sv1.VolumeSource{},
-	})
 
 	if mountSharedMemory {
 		volumes = append(volumes, k8sv1.Volume{
@@ -489,12 +488,11 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			Name:             "shared-data",
 			MountPropagation: &bidirectional,
 		},
+		{
+			MountPath: "/.gen3",
+			Name:      "gen3",
+		},
 	}
-
-	volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
-		MountPath: "/.gen3",
-		Name:      "gen3",
-	})
 
 	if mountSharedMemory {
 		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
