@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -11,13 +12,31 @@ import (
 )
 
 func acceptTransitGatewayShare(pm *PayModel, userName string, sess *session.Session, ramArn *string) error {
-	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	svc := NewSVC(sess, roleARN)
-	err := svc.acceptTGWShare(ramArn)
+	ramSvc := ram.New(sess)
+	// Check if the resource share is already accepted.
+	// If not, accept the resource share
+	ramName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-ram"
+	exResourceShares, err := ramSvc.GetResourceShares(&ram.GetResourceSharesInput{
+		Name:          aws.String(ramName),
+		ResourceOwner: aws.String("OTHER-ACCOUNTS"),
+	})
 	if err != nil {
 		// Log error
 		Config.Logger.Printf(err.Error())
 		return err
+	}
+	if len(exResourceShares.ResourceShares) == 0 {
+		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+		svc := NewSVC(sess, roleARN)
+		err := svc.acceptTGWShare(ramArn)
+		if err != nil {
+			// Log error
+			Config.Logger.Printf(err.Error())
+			return err
+		}
+	} else {
+		// Log that resource share is already accepted
+		Config.Logger.Printf("Resource share already accepted")
 	}
 	return nil
 }
@@ -41,9 +60,12 @@ func (creds *CREDS) acceptTGWShare(ramArn *string) error {
 		return err
 	}
 
+	// Check if we have an invitation to accept
 	if len(resourceShareInvitation.ResourceShareInvitations) == 0 {
-		// Log that there are no invitations
-		Config.Logger.Printf("No invitations found something fishy is going on")
+		// No invitation found, possible that we have to wait a bit for the invitation to show up.
+		Config.Logger.Printf("No resource share invitation found, waiting 10 seconds")
+		time.Sleep(10 * time.Second)
+
 		err := creds.acceptTGWShare(ramArn)
 		if err != nil {
 			return err
