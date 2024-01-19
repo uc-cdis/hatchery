@@ -272,10 +272,6 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 		}
 	}
 
-	if exTg == nil {
-		return nil, fmt.Errorf("Transit Gateway not found after maximum retries")
-	}
-
 	for *exTg.TransitGateways[0].State != "available" {
 		Config.Logger.Printf("TransitGateway is in state: %s ...  Waiting for 10 seconds", *exTg.TransitGateways[0].State)
 		// sleep for 10 sec
