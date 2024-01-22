@@ -13,13 +13,14 @@ import (
 
 // Configuration specific to Nextflow containers
 type NextflowConfig struct {
-	Enabled           bool     `json:"enabled"`
-	JobImageWhitelist []string `json:"job-image-whitelist"`
-	S3BucketWhitelist []string `json:"s3-bucket-whitelist"`
-	InstanceAMI       string   `json:"instance-ami"`
-	InstanceType      string   `json:"instance-type"`
-	InstanceMinVCpus  int32    `json:"instance-min-vcpus"`
-	InstanceMaxVCpus  int32    `json:"instance-max-vcpus"`
+	Enabled                bool     `json:"enabled"`
+	JobImageWhitelist      []string `json:"job-image-whitelist"`
+	S3BucketWhitelist      []string `json:"s3-bucket-whitelist"`
+	ComputeEnvironmentType string   `json:"compute-environment-type"`
+	InstanceAMI            string   `json:"instance-ami"`
+	InstanceType           string   `json:"instance-type"`
+	InstanceMinVCpus       int32    `json:"instance-min-vcpus"`
+	InstanceMaxVCpus       int32    `json:"instance-max-vcpus"`
 }
 
 // Container Struct to hold the configuration for Pod Container
