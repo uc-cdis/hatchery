@@ -63,7 +63,7 @@ type SidecarContainer struct {
 
 // LicenseInfo contains configuration for Gen3 supplied licenses.
 type LicenseInfo struct {
-	LicenseUserMapsTable string `json:"gen3-license-user-maps-dynamodb-table"`
+	LicenseUserMapsTable string `json:"license-user-maps-dynamodb-table"`
 	LicenseType          string `json:"license-type"`
 	MaxLicenseIds        int    `json:"max-license-ids"`
 	G3autoName           string `json:"g3auto-name"`
