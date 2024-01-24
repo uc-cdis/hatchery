@@ -46,14 +46,14 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig) (gen3LicenseUserMaps
 	// Query on primary keys and filter by license type (eg. "STATA")
 	keyEx1 := expression.Key("environment").Equal(expression.Value(aws.String(targetEnvironment)))
 	keyEx2 := expression.Key("isActive").Equal(expression.Value("True"))
-	filt := expression.Name("licenseType").Equal(expression.Value(Config.Config.Gen3LicenseType))
+	filt := expression.Name("licenseType").Equal(expression.Value(Config.Config.License.LicenseType))
 	expr, err := expression.NewBuilder().WithKeyCondition(expression.KeyAnd(keyEx1, keyEx2)).WithFilter(filt).Build()
 	if err != nil {
 		Config.Logger.Printf("Error in building expression for query: %s", err)
 		return nil, err
 	}
 	res, err := dbconfig.DynamoDb.Query(&dynamodb.QueryInput{
-		TableName:                 aws.String(Config.Config.Gen3LicenseUserMapsTable),
+		TableName:                 aws.String(Config.Config.License.LicenseUserMapsTable),
 		IndexName:                 aws.String("activeUsersIndex"),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
@@ -111,7 +111,7 @@ var createGen3LicenseUserMap = func(dbconfig *DbConfig, userId string, licenseId
 
 	// create new Gen3LicenseUserMap
 	newItem := Gen3LicenseUserMap{}
-	newItem.LicenseType = Config.Config.Gen3LicenseType
+	newItem.LicenseType = Config.Config.License.LicenseType
 	newItem.ItemId = itemId
 	newItem.Environment = targetEnvironment
 	newItem.UserId = userId
@@ -128,7 +128,7 @@ var createGen3LicenseUserMap = func(dbconfig *DbConfig, userId string, licenseId
 	}
 	// put item
 	_, err = dbconfig.DynamoDb.PutItem(&dynamodb.PutItemInput{
-		TableName: aws.String(Config.Config.Gen3LicenseUserMapsTable),
+		TableName: aws.String(Config.Config.License.LicenseUserMapsTable),
 		Item:      item,
 	})
 	if err != nil {
@@ -157,7 +157,7 @@ var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3Li
 				N: aws.String(strconv.Itoa(currentUnixTime)),
 			},
 		},
-		TableName: aws.String(Config.Config.Gen3LicenseUserMapsTable),
+		TableName: aws.String(Config.Config.License.LicenseUserMapsTable),
 		// Use the composite primary key: itemId, environment
 		Key: map[string]*dynamodb.AttributeValue{
 			"itemId": {
@@ -225,8 +225,8 @@ var getKubeClientSet = func() (clientset kubernetes.Interface, err error) {
 
 var getLicenseFromKubernetes = func(clientset kubernetes.Interface) (licenseString string, err error) {
 	// Read the gen3-license string from the g3auto kubernetes secret
-	g3autoName := Config.Config.Gen3G3autoName
-	g3autoKey := Config.Config.Gen3G3autoKey
+	g3autoName := Config.Config.License.G3autoName
+	g3autoKey := Config.Config.License.G3autoKey
 
 	var namespace string
 	var ok bool

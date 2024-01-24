@@ -243,8 +243,8 @@ func Test_GetNextLicenseId(t *testing.T) {
 func Test_GetLicenseFromKubernetes(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
-	g3autoName := Config.Config.Gen3G3autoName
-	g3autoKey := Config.Config.Gen3G3autoKey
+	g3autoName := Config.Config.License.G3autoName
+	g3autoKey := Config.Config.License.G3autoKey
 	kubeNamespace := "default"
 	testCases := []struct {
 		name    string

@@ -306,6 +306,7 @@ func options(w http.ResponseWriter, r *http.Request) {
 func getWorkspaceFlavor(container Container) string {
 	if container.NextflowConfig.Enabled {
 		return "nextflow"
+		// Move license config to container and use "Enabled" like nextflow
 	} else if strings.Contains(strings.ToLower(container.Name), "gen3-licensed") {
 		return "gen3-licensed"
 	} else if strings.Contains(strings.ToLower(container.Name), "jupyter") {
@@ -411,7 +412,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			Config.Logger.Printf(err.Error())
 		}
 		// Check for config max
-		nextLicenseId := getNextLicenseId(activeGen3LicenseUsers, Config.Config.Gen3LicenseMaxIds)
+		nextLicenseId := getNextLicenseId(activeGen3LicenseUsers, Config.Config.License.MaxLicenseIds)
 		if nextLicenseId == 0 {
 			Config.Logger.Printf("Error: no available license ids")
 			return
@@ -420,7 +421,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			Config.Logger.Printf(err.Error())
 		}
-		Config.Logger.Printf("Created new gen3-license-user-map item: %v", newItem)
+		Config.Logger.Printf("Created new license-user-map item: %v", newItem)
 
 	}
 
@@ -666,7 +667,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		WorkspaceFlavor: "nextflow",
 	})
 	fileList = append(fileList, file{
-		FilePath:        Config.Config.Gen3LicenseFilePath,
+		FilePath:        Config.Config.License.FilePath,
 		WorkspaceFlavor: "gen3-licensed",
 	})
 
@@ -687,7 +688,7 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 		}
 		return out, nil
 		// Could use config values here, "gen3-license-file-path" and "gen3-user-license-type"
-	} else if fileId == "stata.lic" {
+	} else if fileId == Config.Config.License.FilePath {
 		clientset, err := getKubeClientSet()
 		if err != nil {
 			Config.Logger.Printf("unable to get kube client set: %v", err)

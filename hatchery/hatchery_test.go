@@ -1073,7 +1073,7 @@ func TestMountFilesEndpoint(t *testing.T) {
 		generateNextflowConfig = originalGenerateNextflowConfig // restore original function
 	}()
 	// mock license file path config
-	Config.Config.Gen3LicenseFilePath = "license_path.txt"
+	Config.Config.License.FilePath = "license_path.txt"
 
 	// list files
 	url := "/mount-files"
