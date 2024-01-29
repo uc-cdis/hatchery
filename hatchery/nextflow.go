@@ -603,14 +603,10 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 		return "", err
 	}
 
-	// Configure the specified AMI for all image types.
-	// At the time of writing, CPU workflows launch on ECS_AL2 and GPU workflows on ECS_AL2. Setting the AMI
-	// for all types is easier than switching the image type based on which AMI (CPU or GPU) is configured.
+	// Configure the specified AMI. At the time of writing, CPU workflows launch on ECS_AL2 (default for all
+	// non-GPU instances) and GPU workflows on ECS_AL2 (default for all GPU instances). Setting the AMI for
+	// both types is easier than switching the image type based on which AMI (CPU or GPU) is configured.
 	ec2Configuration := []*batch.Ec2Configuration{
-		{
-			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-			ImageType:       aws.String("ECS"),
-		},
 		{
 			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
 			ImageType:       aws.String("ECS_AL2"),
@@ -618,18 +614,6 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 		{
 			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
 			ImageType:       aws.String("ECS_AL2_NVIDIA"),
-		},
-		{
-			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-			ImageType:       aws.String("EKS"),
-		},
-		{
-			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-			ImageType:       aws.String("EKS_AL2"),
-		},
-		{
-			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-			ImageType:       aws.String("EKS_AL2_NVIDIA"),
 		},
 	}
 
