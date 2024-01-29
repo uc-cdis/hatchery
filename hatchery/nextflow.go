@@ -613,10 +613,6 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 		},
 		{
 			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-			ImageType:       aws.String("ECS_AL1"),
-		},
-		{
-			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
 			ImageType:       aws.String("ECS_AL2"),
 		},
 		{
