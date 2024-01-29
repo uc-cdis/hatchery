@@ -603,6 +603,40 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 		return "", err
 	}
 
+	// Configure the specified AMI for all image types.
+	// At the time of writing, CPU workflows launch on ECS_AL2 and GPU workflows on ECS_AL2. Setting the AMI
+	// for all types is easier than switching the image type based on which AMI (CPU or GPU) is configured.
+	ec2Configuration := []*batch.Ec2Configuration{
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("ECS"),
+		},
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("ECS_AL1"),
+		},
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("ECS_AL2"),
+		},
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("ECS_AL2_NVIDIA"),
+		},
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("EKS"),
+		},
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("EKS_AL2"),
+		},
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("EKS_AL2_NVIDIA"),
+		},
+	}
+
 	var batchComputeEnvArn string
 	if len(batchComputeEnv.ComputeEnvironments) > 0 {
 		Config.Logger.Printf("Debug: Batch compute environment '%s' already exists, updating it", batchComputeEnvName)
@@ -621,12 +655,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 			ComputeEnvironment: &batchComputeEnvArn,
 			State:              aws.String("ENABLED"), // since the env already exists, make sure it's enabled
 			ComputeResources: &batch.ComputeResourceUpdate{
-				Ec2Configuration: []*batch.Ec2Configuration{
-					{
-						ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-						ImageType:       aws.String("ECS_AL2"),
-					},
-				},
+				Ec2Configuration: ec2Configuration,
 				LaunchTemplate: &batch.LaunchTemplateSpecification{
 					LaunchTemplateName: launchTemplateName,
 					Version:            aws.String("$Latest"),
@@ -678,12 +707,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 			ComputeEnvironmentName: &batchComputeEnvName,
 			Type:                   aws.String("MANAGED"),
 			ComputeResources: &batch.ComputeResource{
-				Ec2Configuration: []*batch.Ec2Configuration{
-					{
-						ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-						ImageType:       aws.String("ECS_AL2"),
-					},
-				},
+				Ec2Configuration: ec2Configuration,
 				LaunchTemplate: &batch.LaunchTemplateSpecification{
 					LaunchTemplateName: launchTemplateName,
 					Version:            aws.String("$Latest"),
