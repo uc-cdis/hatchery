@@ -27,7 +27,6 @@
       },
       "license": {
         "enabled": true,
-        "license-user-maps-dynamodb-table": "gen3-license-user-maps",
         "license-type": "TEST-LICENSE",
         "max-license-ids": 6,
         "g3auto-name": "test-license-g3auto",
