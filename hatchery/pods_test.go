@@ -7,6 +7,7 @@ import (
 
 func TestBuildPodFromJSON(t *testing.T) {
 	defer SetupAndTeardownTest()()
+	expectedApps := 8
 
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
@@ -14,8 +15,8 @@ func TestBuildPodFromJSON(t *testing.T) {
 		return
 	}
 	numApps := len(config.Config.Containers)
-	if numApps != 7 {
-		t.Errorf("did not load 7 apps, got: %v", numApps)
+	if numApps != expectedApps {
+		t.Errorf("did not load %d apps, got: %v", expectedApps, numApps)
 		return
 	}
 	app := &config.Config.Containers[numApps-3]
@@ -39,6 +40,7 @@ func TestBuildPodFromJSON(t *testing.T) {
 
 func TestBuildPodFromDockstore(t *testing.T) {
 	defer SetupAndTeardownTest()()
+	expectedApps := 8
 
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
@@ -46,8 +48,8 @@ func TestBuildPodFromDockstore(t *testing.T) {
 		return
 	}
 	numApps := len(config.Config.Containers)
-	if numApps != 7 {
-		t.Errorf("did not load 7 apps, got: %v", numApps)
+	if numApps != expectedApps {
+		t.Errorf("did not load %d apps, got: %v", expectedApps, numApps)
 		return
 	}
 	app := &config.Config.Containers[numApps-2]

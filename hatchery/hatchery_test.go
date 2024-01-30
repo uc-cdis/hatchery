@@ -842,7 +842,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 	original_deleteK8sPod := deleteK8sPod
 	original_terminateEcsWorkspace := terminateEcsWorkspace
 	original_getCurrentPayModel := getCurrentPayModel
-	original_getActiveGen3LicenseUserMaps := getActiveGen3LicenseUserMaps
+	original_getLicenseUserMapsForUser := getLicenseUserMapsForUser
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_resetCurrentPaymodel := resetCurrentPaymodel
 	defer func() {
@@ -850,7 +850,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 		deleteK8sPod = original_deleteK8sPod
 		terminateEcsWorkspace = original_terminateEcsWorkspace
 		getCurrentPayModel = original_getCurrentPayModel
-		getActiveGen3LicenseUserMaps = original_getActiveGen3LicenseUserMaps
+		getLicenseUserMapsForUser = original_getLicenseUserMapsForUser
 		getWorkspaceStatus = original_getWorkspaceStatus
 		resetCurrentPaymodel = original_resetCurrentPaymodel
 	}()
@@ -906,7 +906,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 			return nil
 		}
 
-		getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig) (*[]Gen3LicenseUserMap, error) {
+		getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (*[]Gen3LicenseUserMap, error) {
 			return testcase.mockGen3LicenseUserMaps, nil
 		}
 
@@ -1073,7 +1073,18 @@ func TestMountFilesEndpoint(t *testing.T) {
 		generateNextflowConfig = originalGenerateNextflowConfig // restore original function
 	}()
 	// mock license file path config
-	Config.Config.License.FilePath = "license_path.txt"
+	licenseInfo := LicenseInfo{
+		Enabled:         true,
+		FilePath:        "license-path.txt",
+		WorkspaceFlavor: "licensed-flavor",
+	}
+	Config.ContainersMap = map[string]Container{
+		"container_a": {
+			Name:    "Container with license",
+			License: licenseInfo,
+		},
+	}
+	//Config.Config.License.FilePath = "license_path.txt"
 
 	// list files
 	url := "/mount-files"
@@ -1091,7 +1102,7 @@ func TestMountFilesEndpoint(t *testing.T) {
 		return
 	}
 	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\",\"workspace_flavor\":\"nextflow\"}," +
-		"{\"file_path\":\"license_path.txt\",\"workspace_flavor\":\"gen3-licensed\"}]"
+		"{\"file_path\":\"license-path.txt\",\"workspace_flavor\":\"licensed-flavor\"}]"
 	if w.Body.String() != expectedOutput {
 		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, expectedOutput, w.Body)
 		return

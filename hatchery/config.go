@@ -23,6 +23,17 @@ type NextflowConfig struct {
 	InstanceMaxVCpus  int32    `json:"instance-max-vcpus"`
 }
 
+// LicenseInfo contains configuration for Gen3 supplied licenses.
+type LicenseInfo struct {
+	Enabled         bool   `json:"enabled"`
+	LicenseType     string `json:"license-type"`
+	MaxLicenseIds   int    `json:"max-license-ids"`
+	G3autoName      string `json:"g3auto-name"`
+	G3autoKey       string `json:"g3auto-key"`
+	FilePath        string `json:"file-path"`
+	WorkspaceFlavor string `json:"workspace-flavor"`
+}
+
 // Container Struct to hold the configuration for Pod Container
 type Container struct {
 	Name               string            `json:"name"`
@@ -47,6 +58,7 @@ type Container struct {
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
 	NextflowConfig     NextflowConfig    `json:"nextflow"`
+	License            LicenseInfo       `json:"license"`
 	Authz              AuthzConfig       `json:"authz"`
 }
 
@@ -59,16 +71,6 @@ type SidecarContainer struct {
 	Args             []string          `json:"args"`
 	Command          []string          `json:"command"`
 	LifecyclePreStop []string          `json:"lifecycle-pre-stop"`
-}
-
-// LicenseInfo contains configuration for Gen3 supplied licenses.
-type LicenseInfo struct {
-	LicenseUserMapsTable string `json:"license-user-maps-dynamodb-table"`
-	LicenseType          string `json:"license-type"`
-	MaxLicenseIds        int    `json:"max-license-ids"`
-	G3autoName           string `json:"g3auto-name"`
-	G3autoKey            string `json:"g3auto-key"`
-	FilePath             string `json:"file-path"`
 }
 
 // AppConfigInfo provides the type and path of a supplementary config path
@@ -124,6 +126,8 @@ type HatcheryConfig struct {
 	DisableLocalWS         bool             `json:"disable-local-ws"`
 	PayModels              []PayModel       `json:"pay-models"`
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
+	LicenseUserMapsTable   string           `json:"license-user-maps-dynamodb-table"`
+	LicenseUserMapsGSA     string           `json:"license-user-maps-global-secondary-index"`
 	License                LicenseInfo      `json:"license"`
 	SubDir                 string           `json:"sub-dir"`
 	Containers             []Container      `json:"containers"`
@@ -209,6 +213,25 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.ContainersMap[hash] = container
 	}
 
+	if data.Config.LicenseUserMapsTable == "" {
+		data.Logger.Printf("Warning: no 'license-user-maps-dynamodb-table' in configuration: will be unable to store license-user-map data in DynamoDB")
+	} else if data.Config.LicenseUserMapsGSA == "" {
+		data.Logger.Printf("Error: dynamodb table present but missing 'license-user-maps-global-secondary-index'")
+	}
+
+	for _, container := range data.Config.Containers {
+		data.Logger.Printf("Checking license config info for container %s", container.Name)
+		if container.License.Enabled == true {
+			if data.Config.LicenseUserMapsTable == "" {
+				data.Logger.Printf("Error: no 'license-user-maps-dynamodb-table' in configuration but container is configured for license %s", container.Name)
+			}
+			ok := validateContainerLicenseInfo(container.Name, container.License)
+			if !ok {
+				data.Logger.Printf("Error: container '%s' has an invalid 'license' configuration.", container.Name)
+			}
+		}
+	}
+
 	if data.Config.PayModelsDynamodbTable == "" {
 		data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
 	}
@@ -216,14 +239,6 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	for _, payModel := range data.Config.PayModels {
 		user := payModel.User
 		data.PayModelMap[user] = payModel
-	}
-
-	if data.Config.License.LicenseUserMapsTable == "" {
-		data.Logger.Printf("Warning: no 'license-user-maps-dynamodb-table' in configuration: will be unable to store license-user-map data in DynamoDB")
-	}
-
-	if data.Config.License.MaxLicenseIds == 0 {
-		data.Logger.Printf("Warning: no 'license-max-ids' in configuration: will be unable to store license-user-map data in DynamoDB")
 	}
 
 	return data, nil

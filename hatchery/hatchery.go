@@ -306,9 +306,8 @@ func options(w http.ResponseWriter, r *http.Request) {
 func getWorkspaceFlavor(container Container) string {
 	if container.NextflowConfig.Enabled {
 		return "nextflow"
-		// Move license config to container and use "Enabled" like nextflow
-	} else if strings.Contains(strings.ToLower(container.Name), "gen3-licensed") {
-		return "gen3-licensed"
+	} else if container.License.Enabled {
+		return container.License.WorkspaceFlavor
 	} else if strings.Contains(strings.ToLower(container.Name), "jupyter") {
 		return "jupyter"
 	} else {
@@ -404,20 +403,21 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
 
-	if strings.Contains(strings.ToLower(Config.ContainersMap[hash].Name), "gen3-licensed") {
-		Config.Logger.Printf("Debug: Running gen3-licensed workspace: %s", Config.ContainersMap[hash].Name)
+	if Config.ContainersMap[hash].License.Enabled {
+		Config.Logger.Printf(
+			"Info: Running licensed workspace: %s", Config.ContainersMap[hash].License.WorkspaceFlavor)
 		dbconfig := initializeDbConfig()
-		activeGen3LicenseUsers, err := getActiveGen3LicenseUserMaps(dbconfig)
+		activeGen3LicenseUsers, err := getActiveGen3LicenseUserMaps(dbconfig, Config.ContainersMap[hash])
 		if err != nil {
 			Config.Logger.Printf(err.Error())
 		}
 		// Check for config max
-		nextLicenseId := getNextLicenseId(activeGen3LicenseUsers, Config.Config.License.MaxLicenseIds)
+		nextLicenseId := getNextLicenseId(activeGen3LicenseUsers, Config.ContainersMap[hash].License.MaxLicenseIds)
 		if nextLicenseId == 0 {
 			Config.Logger.Printf("Error: no available license ids")
 			return
 		}
-		newItem, err := createGen3LicenseUserMap(dbconfig, userName, nextLicenseId)
+		newItem, err := createGen3LicenseUserMap(dbconfig, userName, nextLicenseId, Config.ContainersMap[hash])
 		if err != nil {
 			Config.Logger.Printf(err.Error())
 		}
@@ -484,7 +484,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	// mark any gen3-licensed sessions as inactive
 	Config.Logger.Printf("Checking for gen3 license items for user: %s", userName)
 	dbconfig := initializeDbConfig()
-	activeGen3LicenseUsers, userlicerr := getActiveGen3LicenseUserMaps(dbconfig)
+	activeGen3LicenseUsers, userlicerr := getLicenseUserMapsForUser(dbconfig, userName)
 	if userlicerr != nil {
 		Config.Logger.Printf(userlicerr.Error())
 	}
@@ -666,10 +666,15 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		FilePath:        "sample-nextflow-config.txt",
 		WorkspaceFlavor: "nextflow",
 	})
-	fileList = append(fileList, file{
-		FilePath:        Config.Config.License.FilePath,
-		WorkspaceFlavor: "gen3-licensed",
-	})
+	// Look for any `license` configs in containers
+	for _, v := range Config.ContainersMap {
+		if v.License.Enabled {
+			fileList = append(fileList, file{
+				FilePath:        v.License.FilePath,
+				WorkspaceFlavor: v.License.WorkspaceFlavor,
+			})
+		}
+	}
 
 	out, err := json.Marshal(fileList)
 	if err != nil {
@@ -681,21 +686,27 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func getMountFileContents(fileId string, userName string) (string, error) {
+	filePathConfigs := getFilePathConfigs()
+
 	if fileId == "sample-nextflow-config.txt" {
 		out, err := generateNextflowConfig(userName)
 		if err != nil {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}
 		return out, nil
-		// Could use config values here, "gen3-license-file-path" and "gen3-user-license-type"
-	} else if fileId == Config.Config.License.FilePath {
+	} else if filePathInConfigs(fileId, filePathConfigs) {
+		// get g3auto kube secret
+		g3autoName, g3autoKey, ok := getG3autoInfoForFilepath(fileId, filePathConfigs)
+		if !ok {
+			return "", fmt.Errorf("could not get g3auto name and key for file-path '%s'", fileId)
+		}
 		clientset, err := getKubeClientSet()
 		if err != nil {
 			Config.Logger.Printf("unable to get kube client set: %v", err)
 		}
-		out, err := getLicenseFromKubernetes(clientset)
+		out, err := getLicenseFromKubernetes(clientset, g3autoName, g3autoKey)
 		if err != nil {
-			Config.Logger.Printf("unable to get Stata license from kubernetes: %v", err)
+			Config.Logger.Printf("unable to get license from kubernetes: %v", err)
 		}
 		return out, nil
 	} else {

@@ -76,6 +76,17 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 	// mock the db
 	dbconfig := initializeDbConfig()
 
+	licenseInfo := LicenseInfo{
+		Enabled:       true,
+		LicenseType:   "some-license",
+		MaxLicenseIds: 6,
+	}
+	mockContainer := Container{
+		Name:    "container-name",
+		License: licenseInfo,
+	}
+
+	// getActiveGen3LicenseUserMaps
 	for _, testcase := range testCases {
 		t.Logf("Testing GetActiveGen3LicenseUserMaps")
 
@@ -85,7 +96,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 		}
 
 		/* Act */
-		got, err := getActiveGen3LicenseUserMaps(dbconfig)
+		got, err := getActiveGen3LicenseUserMaps(dbconfig, mockContainer)
 		if nil != err {
 			t.Errorf("failed to query table, got: %v", err)
 			return
@@ -98,6 +109,32 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, testcase.want) {
 			t.Errorf("\nassertion error while testing `getActiveGen3LicenseUserMaps`: \nWant:%+v\nGot:%+v", testcase.want, got)
+		}
+	}
+
+	// getLicenseUserMapsForUser
+	for _, testcase := range testCases {
+		t.Logf("Testing getLicenseUserMapsForUser")
+
+		dbconfig.DynamoDb = &DynamodbMockClient{
+			DynamoDBAPI: nil,
+			mockOutput:  testcase.mockQueryOutput,
+		}
+
+		/* Act */
+		got, err := getLicenseUserMapsForUser(dbconfig, "some-user")
+		if nil != err {
+			t.Errorf("failed to query table, got: %v", err)
+			return
+		}
+
+		/* Assert */
+		if reflect.TypeOf(got) != reflect.TypeOf(testcase.want) {
+			t.Errorf("Return value is not correct type:\ngot: '%v'\nwant: '%v'",
+				reflect.TypeOf(got), reflect.TypeOf(testcase.want))
+		}
+		if !reflect.DeepEqual(got, testcase.want) {
+			t.Errorf("\nassertion error while testing `getLicenseUserMapsForUser`: \nWant:%+v\nGot:%+v", testcase.want, got)
 		}
 	}
 }
@@ -121,10 +158,20 @@ func Test_CreateGen3LicenseUserMap(t *testing.T) {
 	dbconfig := initializeDbConfig()
 	dbconfig.DynamoDb = &DynamodbMockClient{}
 
+	licenseInfo := LicenseInfo{
+		Enabled:       true,
+		LicenseType:   "some-license",
+		MaxLicenseIds: 6,
+	}
+	mockContainer := Container{
+		Name:    "container-name",
+		License: licenseInfo,
+	}
+
 	t.Logf("Testing CreateGen3LicenseUserMap")
 
 	/* Act */
-	newItem, err := createGen3LicenseUserMap(dbconfig, itemId, licenseId)
+	newItem, err := createGen3LicenseUserMap(dbconfig, itemId, licenseId, mockContainer)
 	if nil != err {
 		t.Errorf("failed to put item, got: %v", err)
 	}
@@ -243,8 +290,8 @@ func Test_GetNextLicenseId(t *testing.T) {
 func Test_GetLicenseFromKubernetes(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
-	g3autoName := Config.Config.License.G3autoName
-	g3autoKey := Config.Config.License.G3autoKey
+	g3autoName := "g3auto-name"
+	g3autoKey := "g3auto-key"
 	kubeNamespace := "default"
 	testCases := []struct {
 		name    string
@@ -302,13 +349,98 @@ func Test_GetLicenseFromKubernetes(t *testing.T) {
 		t.Logf("Testing getLicenseFromKubernetes when %s", testcase.name)
 		fakeClientset := fake.NewSimpleClientset(testcase.secrets...)
 
-		got, err := getLicenseFromKubernetes(fakeClientset)
+		got, err := getLicenseFromKubernetes(fakeClientset, g3autoName, g3autoKey)
 		if err != nil {
 			t.Logf("Error in reading license from kubernetes: %s", err)
 		}
 		/* Assert */
 		if got != testcase.want {
 			t.Errorf("\nassertion error while testing `getNextLicenseId`: \nWant:%+v\nGot:%+v", testcase.want, got)
+		}
+	}
+
+}
+
+func Test_ValidateContainerLicenseInfo(t *testing.T) {
+
+	testCases := []struct {
+		name        string
+		licenseInfo LicenseInfo
+		want        bool
+	}{
+		{
+			name: "ValidLicenseInfo",
+			want: true,
+			licenseInfo: LicenseInfo{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test0g3auto-key",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+		{
+			name: "LicenseNotEnabled",
+			want: false,
+			licenseInfo: LicenseInfo{
+				Enabled:         false,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test0g3auto-key",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+		{
+			name: "MissingLicenseType",
+			want: false,
+			licenseInfo: LicenseInfo{
+				Enabled:         true,
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test0g3auto-key",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+		{
+			name: "ZeroMaxIds",
+			want: false,
+			licenseInfo: LicenseInfo{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   0,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test0g3auto-key",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+		{
+			name: "MissingG3AutoName",
+			want: false,
+			licenseInfo: LicenseInfo{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoKey:       "test0g3auto-key",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+	}
+
+	for _, testcase := range testCases {
+		t.Logf("Testing validateContainerLicenseInfo when %s", testcase.name)
+
+		got := validateContainerLicenseInfo("container-name", testcase.licenseInfo)
+
+		/* Assert */
+		if got != testcase.want {
+			t.Errorf("\nassertion error while testing `validateContainerLicenseInfo`: \nWant:%+v\nGot:%+v", testcase.want, got)
 		}
 	}
 

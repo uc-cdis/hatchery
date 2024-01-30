@@ -3,6 +3,7 @@ package hatchery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +22,13 @@ import (
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type filePathConfig struct {
+	FilePath        string `json:"file_path"`
+	WorkspaceFlavor string `json:"workspace_flavor"`
+	G3autoName      string `json:"g3auto-name"`
+	G3autoKey       string `json:"g3auto-key"`
+}
+
 var ErrNoLicenseIds = errors.New("no license ids available")
 
 var initializeDbConfig = func() *DbConfig {
@@ -37,24 +45,97 @@ var initializeDbConfig = func() *DbConfig {
 	}
 }
 
-var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig) (gen3LicenseUserMaps *[]Gen3LicenseUserMap, err error) {
-	// Query the table to get all active gen3 license usere map items
+var validateContainerLicenseInfo = func(containerName string, licenseInfo LicenseInfo) bool {
+
+	ok := true
+	if licenseInfo.Enabled != true {
+		fmt.Printf("Warning: License is not enabled for container %s\n", containerName)
+		ok = false
+	}
+	if licenseInfo.LicenseType == "" {
+		fmt.Printf("Error in container config. Empty LicenseType for container %s\n", containerName)
+		ok = false
+	}
+	if licenseInfo.MaxLicenseIds == 0 {
+		fmt.Printf("Error in container config. Empty or 0 MaxLicenseIds for container %s\n", containerName)
+		ok = false
+	}
+	if licenseInfo.G3autoName == "" {
+		fmt.Printf("Error in container config. Empty G3autoName for container %s\n", containerName)
+		ok = false
+	}
+	if licenseInfo.G3autoKey == "" {
+		fmt.Printf("Error in container config. Empty G3autoKey for container %s\n", containerName)
+		ok = false
+	}
+	if licenseInfo.FilePath == "" {
+		fmt.Printf("Error in container config. Empty FilePath for container %s\n", containerName)
+		ok = false
+	}
+	if licenseInfo.WorkspaceFlavor == "" {
+		fmt.Printf("Error in container config. Empty WorkspaceFlavor for container %s\n", containerName)
+		ok = false
+	}
+	return ok
+}
+
+var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container) (gen3LicenseUserMaps *[]Gen3LicenseUserMap, err error) {
+	// Query the table to get all active gen3 license user map items
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
-	// Maybe also put the global secondary index name in config
+	validateContainerLicenseInfo(container.Name, container.License)
 
-	// Query on primary keys and filter by license type (eg. "STATA")
+	// Query on global secondary index and filter by license type (eg. "STATA")
 	keyEx1 := expression.Key("environment").Equal(expression.Value(aws.String(targetEnvironment)))
 	keyEx2 := expression.Key("isActive").Equal(expression.Value("True"))
-	filt := expression.Name("licenseType").Equal(expression.Value(Config.Config.License.LicenseType))
+	filt := expression.Name("licenseType").Equal(expression.Value(container.License.LicenseType))
 	expr, err := expression.NewBuilder().WithKeyCondition(expression.KeyAnd(keyEx1, keyEx2)).WithFilter(filt).Build()
 	if err != nil {
 		Config.Logger.Printf("Error in building expression for query: %s", err)
 		return nil, err
 	}
 	res, err := dbconfig.DynamoDb.Query(&dynamodb.QueryInput{
-		TableName:                 aws.String(Config.Config.License.LicenseUserMapsTable),
-		IndexName:                 aws.String("activeUsersIndex"),
+		TableName:                 aws.String(Config.Config.LicenseUserMapsTable),
+		IndexName:                 aws.String(Config.Config.LicenseUserMapsGSA),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+		KeyConditionExpression:    expr.KeyCondition(),
+		FilterExpression:          expr.Filter(),
+	})
+	if err != nil {
+		Config.Logger.Printf("Error in active user query: %s", err)
+		return nil, err
+	}
+
+	// Populate list of all active gen3 license user maps
+	var gen3LicenseUsers []Gen3LicenseUserMap
+	err = dynamodbattribute.UnmarshalListOfMaps(res.Items, &gen3LicenseUsers)
+	if err != nil {
+		Config.Logger.Printf("Error in unmarshalling active gen3 license user maps: %s", err)
+		return nil, err
+	}
+
+	Config.Logger.Printf("Debug: active gen3 license user maps %v", gen3LicenseUsers)
+	return &gen3LicenseUsers, nil
+}
+
+var getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (gen3LicenseUserMaps *[]Gen3LicenseUserMap, err error) {
+	// Query the table to get all gen3 license user map items for user
+
+	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
+
+	// Query on global secondary index and filter by userId
+	keyEx1 := expression.Key("environment").Equal(expression.Value(aws.String(targetEnvironment)))
+	keyEx2 := expression.Key("isActive").Equal(expression.Value("True"))
+	filt := expression.Name("userId").Equal(expression.Value(userId))
+	expr, err := expression.NewBuilder().WithKeyCondition(expression.KeyAnd(keyEx1, keyEx2)).WithFilter(filt).Build()
+	if err != nil {
+		Config.Logger.Printf("Error in building expression for query: %s", err)
+		return nil, err
+	}
+	res, err := dbconfig.DynamoDb.Query(&dynamodb.QueryInput{
+		TableName:                 aws.String(Config.Config.LicenseUserMapsTable),
+		IndexName:                 aws.String(Config.Config.LicenseUserMapsGSA),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 		KeyConditionExpression:    expr.KeyCondition(),
@@ -100,7 +181,7 @@ func getNextLicenseId(activeGen3LicenseUserMaps *[]Gen3LicenseUserMap, maxLicens
 	return 0
 }
 
-var createGen3LicenseUserMap = func(dbconfig *DbConfig, userId string, licenseId int) (gen3LicenseUserMap Gen3LicenseUserMap, err error) {
+var createGen3LicenseUserMap = func(dbconfig *DbConfig, userId string, licenseId int, container Container) (gen3LicenseUserMap Gen3LicenseUserMap, err error) {
 	// Create a new user-license object and put in table
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
@@ -111,7 +192,7 @@ var createGen3LicenseUserMap = func(dbconfig *DbConfig, userId string, licenseId
 
 	// create new Gen3LicenseUserMap
 	newItem := Gen3LicenseUserMap{}
-	newItem.LicenseType = Config.Config.License.LicenseType
+	newItem.LicenseType = container.License.LicenseType
 	newItem.ItemId = itemId
 	newItem.Environment = targetEnvironment
 	newItem.UserId = userId
@@ -128,7 +209,7 @@ var createGen3LicenseUserMap = func(dbconfig *DbConfig, userId string, licenseId
 	}
 	// put item
 	_, err = dbconfig.DynamoDb.PutItem(&dynamodb.PutItemInput{
-		TableName: aws.String(Config.Config.License.LicenseUserMapsTable),
+		TableName: aws.String(Config.Config.LicenseUserMapsTable),
 		Item:      item,
 	})
 	if err != nil {
@@ -157,7 +238,7 @@ var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3Li
 				N: aws.String(strconv.Itoa(currentUnixTime)),
 			},
 		},
-		TableName: aws.String(Config.Config.License.LicenseUserMapsTable),
+		TableName: aws.String(Config.Config.LicenseUserMapsTable),
 		// Use the composite primary key: itemId, environment
 		Key: map[string]*dynamodb.AttributeValue{
 			"itemId": {
@@ -188,6 +269,42 @@ var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3Li
 
 	return updatedItem, nil
 
+}
+
+// Get the file-path related configurations
+func getFilePathConfigs() []LicenseInfo {
+	var config LicenseInfo
+	var filePathConfigs []LicenseInfo
+
+	for _, v := range Config.ContainersMap {
+		validateContainerLicenseInfo(v.Name, v.License)
+		if v.License.Enabled {
+			config.FilePath = v.License.FilePath
+			config.WorkspaceFlavor = v.License.WorkspaceFlavor
+			config.G3autoName = v.License.G3autoName
+			config.G3autoKey = v.License.G3autoKey
+			filePathConfigs = append(filePathConfigs, config)
+		}
+	}
+	return filePathConfigs
+}
+
+func filePathInConfigs(filePath string, configs []LicenseInfo) bool {
+	for _, v := range configs {
+		if filePath == v.FilePath {
+			return true
+		}
+	}
+	return false
+}
+
+func getG3autoInfoForFilepath(filePath string, configs []LicenseInfo) (string, string, bool) {
+	for _, v := range configs {
+		if filePath == v.FilePath {
+			return v.G3autoName, v.G3autoKey, true
+		}
+	}
+	return "", "", false
 }
 
 var getKubeClientSet = func() (clientset kubernetes.Interface, err error) {
@@ -223,13 +340,11 @@ var getKubeClientSet = func() (clientset kubernetes.Interface, err error) {
 
 }
 
-var getLicenseFromKubernetes = func(clientset kubernetes.Interface) (licenseString string, err error) {
+var getLicenseFromKubernetes = func(clientset kubernetes.Interface, g3autoName string, g3autoKey string) (licenseString string, err error) {
 	// Read the gen3-license string from the g3auto kubernetes secret
-	g3autoName := Config.Config.License.G3autoName
-	g3autoKey := Config.Config.License.G3autoKey
-
 	var namespace string
 	var ok bool
+
 	if namespace, ok = Config.Config.Sidecar.Env["NAMESPACE"]; ok {
 		Config.Logger.Printf("Searching configured namespace for g3auto secret: %s", namespace)
 	} else {
