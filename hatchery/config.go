@@ -221,7 +221,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 
 	for _, container := range data.Config.Containers {
 		data.Logger.Printf("Checking license config info for container %s", container.Name)
-		if container.License.Enabled == true {
+		if container.License.Enabled {
 			if data.Config.LicenseUserMapsTable == "" {
 				data.Logger.Printf("Error: no 'license-user-maps-dynamodb-table' in configuration but container is configured for license %s", container.Name)
 			}

@@ -22,13 +22,6 @@ import (
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type filePathConfig struct {
-	FilePath        string `json:"file_path"`
-	WorkspaceFlavor string `json:"workspace_flavor"`
-	G3autoName      string `json:"g3auto-name"`
-	G3autoKey       string `json:"g3auto-key"`
-}
-
 var ErrNoLicenseIds = errors.New("no license ids available")
 
 var initializeDbConfig = func() *DbConfig {
@@ -48,7 +41,7 @@ var initializeDbConfig = func() *DbConfig {
 var validateContainerLicenseInfo = func(containerName string, licenseInfo LicenseInfo) bool {
 
 	ok := true
-	if licenseInfo.Enabled != true {
+	if !licenseInfo.Enabled {
 		fmt.Printf("Warning: License is not enabled for container %s\n", containerName)
 		ok = false
 	}
@@ -277,8 +270,8 @@ func getFilePathConfigs() []LicenseInfo {
 	var filePathConfigs []LicenseInfo
 
 	for _, v := range Config.ContainersMap {
-		validateContainerLicenseInfo(v.Name, v.License)
 		if v.License.Enabled {
+			validateContainerLicenseInfo(v.Name, v.License)
 			config.FilePath = v.License.FilePath
 			config.WorkspaceFlavor = v.License.WorkspaceFlavor
 			config.G3autoName = v.License.G3autoName
