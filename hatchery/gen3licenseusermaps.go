@@ -2,7 +2,6 @@ package hatchery
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,7 +21,16 @@ import (
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var ErrNoLicenseIds = errors.New("no license ids available")
+type Gen3LicenseUserMap struct {
+	ItemId             string `json:"itemId"`
+	Environment        string `json:"environment"`
+	LicenseType        string `json:"licenseType"`
+	IsActive           string `json:"isActive"`
+	UserId             string `json:"userId"`
+	LicenseId          int    `json:"licenseId"`
+	FirstUsedTimestamp int    `json:"firstUsedTimestamp"`
+	LastUsedTimestamp  int    `json:"lastUsedTimestamp"`
+}
 
 var initializeDbConfig = func() *DbConfig {
 	// Create a new dynamoDB client

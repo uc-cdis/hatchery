@@ -106,18 +106,6 @@ type DbConfig struct {
 	DynamoDb dynamodbiface.DynamoDBAPI
 }
 
-// move this to licensemap
-type Gen3LicenseUserMap struct {
-	ItemId             string `json:"itemId"`
-	Environment        string `json:"environment"`
-	LicenseType        string `json:"licenseType"`
-	IsActive           string `json:"isActive"`
-	UserId             string `json:"userId"`
-	LicenseId          int    `json:"licenseId"`
-	FirstUsedTimestamp int    `json:"firstUsedTimestamp"`
-	LastUsedTimestamp  int    `json:"lastUsedTimestamp"`
-}
-
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace          string           `json:"user-namespace"`
