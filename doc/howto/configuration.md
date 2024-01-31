@@ -128,7 +128,7 @@ An example manifest entry may look like
       * `enabled` set to `true` to enable management of license and user-sessions.
       * `license-type` name of the license type, eg `"STATA"`.
       * `max-license-ids` integer for maximum users of the license, eg `6`.
-      * `g3auto-name` name of the g3auto secret.
-      * `g3auto-key` the g3auto key for the secret, eg `"license_file.txt"`.
+      * `g3auto-name` g3auto secret with license.
+      * `g3auto-key` g3auto key for the secret, eg `"license_file.txt"`.
       * `file-path` container file-path where license should be copied.
       * `workspace-flavor` description of type of gen3-licensed container.

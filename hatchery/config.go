@@ -108,10 +108,9 @@ type DbConfig struct {
 
 // move this to licensemap
 type Gen3LicenseUserMap struct {
-	ItemId      string `json:"itemId"`
-	Environment string `json:"environment"`
-	LicenseType string `json:"licenseType"`
-	// try changing to bool
+	ItemId             string `json:"itemId"`
+	Environment        string `json:"environment"`
+	LicenseType        string `json:"licenseType"`
 	IsActive           string `json:"isActive"`
 	UserId             string `json:"userId"`
 	LicenseId          int    `json:"licenseId"`
@@ -127,7 +126,7 @@ type HatcheryConfig struct {
 	PayModels              []PayModel       `json:"pay-models"`
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
 	LicenseUserMapsTable   string           `json:"license-user-maps-dynamodb-table"`
-	LicenseUserMapsGSA     string           `json:"license-user-maps-global-secondary-index"`
+	LicenseUserMapsGSI     string           `json:"license-user-maps-global-secondary-index"`
 	License                LicenseInfo      `json:"license"`
 	SubDir                 string           `json:"sub-dir"`
 	Containers             []Container      `json:"containers"`
@@ -215,7 +214,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 
 	if data.Config.LicenseUserMapsTable == "" {
 		data.Logger.Printf("Warning: no 'license-user-maps-dynamodb-table' in configuration: will be unable to store license-user-map data in DynamoDB")
-	} else if data.Config.LicenseUserMapsGSA == "" {
+	} else if data.Config.LicenseUserMapsGSI == "" {
 		data.Logger.Printf("Error: dynamodb table present but missing 'license-user-maps-global-secondary-index'")
 	}
 

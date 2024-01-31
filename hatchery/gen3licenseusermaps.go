@@ -89,7 +89,7 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container)
 	}
 	res, err := dbconfig.DynamoDb.Query(&dynamodb.QueryInput{
 		TableName:                 aws.String(Config.Config.LicenseUserMapsTable),
-		IndexName:                 aws.String(Config.Config.LicenseUserMapsGSA),
+		IndexName:                 aws.String(Config.Config.LicenseUserMapsGSI),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 		KeyConditionExpression:    expr.KeyCondition(),
@@ -128,7 +128,7 @@ var getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (gen3Lic
 	}
 	res, err := dbconfig.DynamoDb.Query(&dynamodb.QueryInput{
 		TableName:                 aws.String(Config.Config.LicenseUserMapsTable),
-		IndexName:                 aws.String(Config.Config.LicenseUserMapsGSA),
+		IndexName:                 aws.String(Config.Config.LicenseUserMapsGSI),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 		KeyConditionExpression:    expr.KeyCondition(),
