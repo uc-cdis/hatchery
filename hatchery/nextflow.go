@@ -250,7 +250,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	policyName = fmt.Sprintf("%s-nf-%s", hostname, userName)
 	jobImageWhitelistCondition := "" // if not configured, all images are allowed
 	if len(nextflowConfig.JobImageWhitelist) > 0 {
-		jobImageWhitelist := fmt.Sprintf(`"%v"`, strings.Join(nextflowConfig.JobImageWhitelist, "\", \""))
+		jobImageWhitelist := fmt.Sprintf(`"%v"`, strings.Join(replaceAllUsernamePlaceholders(nextflowConfig.JobImageWhitelist, userName), "\", \""))
 		jobImageWhitelistCondition = fmt.Sprintf(`,
 		"Condition": {
 			"StringLike": {
@@ -528,13 +528,10 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 
 // Function to make sure launch template is created, and configured correctly
 // We need a launch template since we need a user data script to authenticate with private ECR repositories
-func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string) (*string, error) {
+func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, jobImageWhitelist []string) (*string, error) {
 
 	// user data script to authenticate with private ECR repositories
-	userData, err := generateUserData(userName)
-	if err != nil {
-		return nil, err
-	}
+	userData := generateEcrLoginUserData(jobImageWhitelist, userName)
 
 	launchTemplateName := fmt.Sprintf("%s-nf-%s", hostname, userName)
 
@@ -585,7 +582,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	}
 
 	// the launch template for the compute envrionment must be user-specific as well
-	launchTemplateName, err := ensureLaunchTemplate(ec2Svc, userName, hostname)
+	launchTemplateName, err := ensureLaunchTemplate(ec2Svc, userName, hostname, nextflowConfig.JobImageWhitelist)
 	if err != nil {
 		return "", err
 	}
@@ -1553,13 +1550,33 @@ workDir = '%s'`,
 	return configContents, nil
 }
 
+func replaceAllUsernamePlaceholders(strArray []string, userName string) []string {
+	var result []string
+	for _, str := range strArray {
+		result = append(result, strings.Replace(str, "{{username}}", userName, -1))
+	}
+	return result
+}
+
 // function to generate user data
-func generateUserData(userName string) (string, error) {
-	// TODO: read repo from config
-	approvedRepo := "143731057154.dkr.ecr.us-east-1.amazonaws.com/nextflow-approved"
+func generateEcrLoginUserData(jobImageWhitelist []string, userName string) string {
+	var ecrRepos []string
+	for _, image := range replaceAllUsernamePlaceholders(jobImageWhitelist, userName) {
+		if strings.Contains(image, ".ecr.") {
+			// NOTE: on the ECR side, tags are ignored and users are allowed access to the whole repo.
+			repo := strings.Split(image, ":")[0]
+			ecrRepos = append(ecrRepos, repo)
+		}
+	}
 
 	// TODO: read region from config
-	userData := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(`MIME-Version: 1.0
+	runCmd := ""
+	for _, approvedRepo := range ecrRepos {
+		runCmd += fmt.Sprintf(`
+- aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin %s`, approvedRepo)
+	}
+
+	userData := fmt.Sprintf(`MIME-Version: 1.0
 Content-Type: multipart/mixed; boundary="==MYBOUNDARY=="
 
 --==MYBOUNDARY==
@@ -1567,8 +1584,8 @@ Content-Type: text/cloud-config; charset="us-ascii"
 
 packages:
 - aws-cli
-runcmd:
-- aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin %s/%s
---==MYBOUNDARY==--`, approvedRepo, userName)))
-	return userData, nil
+runcmd:%s
+--==MYBOUNDARY==--`, runCmd)
+
+	return base64.StdEncoding.EncodeToString([]byte(userData))
 }

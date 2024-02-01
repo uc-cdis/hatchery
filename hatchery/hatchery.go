@@ -63,7 +63,7 @@ func home(w http.ResponseWriter, r *http.Request) {
 func getCurrentUserName(r *http.Request) (userName string) {
 	user := r.Header.Get("REMOTE_USER")
 	if user == "" {
-		Config.Logger.Printf("Warning: No username in header REMOTE_USER!")
+		Config.Logger.Print("Warning: No username in header REMOTE_USER!")
 	}
 
 	// escape username to sanitize input from http header
