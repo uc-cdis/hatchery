@@ -573,7 +573,7 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string) (*s
 		Config.Logger.Printf("Debug: Launch template '%s' already exists", launchTemplateName)
 		return launchTemplate.LaunchTemplates[0].LaunchTemplateName, nil
 	}
-	return nil, fmt.Errorf("More than one launch template with the same name exist: %v", launchTemplate.LaunchTemplates)
+	return nil, fmt.Errorf("more than one launch template with the same name exist: %v", launchTemplate.LaunchTemplates)
 }
 
 // Create AWS Batch compute environment
@@ -603,6 +603,20 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 		return "", err
 	}
 
+	// Configure the specified AMI. At the time of writing, CPU workflows launch on ECS_AL2 (default for all
+	// non-GPU instances) and GPU workflows on ECS_AL2_NVIDIA (default for all GPU instances). Setting the AMI
+	// for both types is easier than switching the image type based on which AMI (CPU or GPU) is configured.
+	ec2Configuration := []*batch.Ec2Configuration{
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("ECS_AL2"),
+		},
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("ECS_AL2_NVIDIA"),
+		},
+	}
+
 	var batchComputeEnvArn string
 	if len(batchComputeEnv.ComputeEnvironments) > 0 {
 		Config.Logger.Printf("Debug: Batch compute environment '%s' already exists, updating it", batchComputeEnvName)
@@ -621,19 +635,18 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 			ComputeEnvironment: &batchComputeEnvArn,
 			State:              aws.String("ENABLED"), // since the env already exists, make sure it's enabled
 			ComputeResources: &batch.ComputeResourceUpdate{
-				Ec2Configuration: []*batch.Ec2Configuration{
-					{
-						ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-						ImageType:       aws.String("ECS_AL2"),
-					},
-				},
+				Ec2Configuration: ec2Configuration,
 				LaunchTemplate: &batch.LaunchTemplateSpecification{
 					LaunchTemplateName: launchTemplateName,
 					Version:            aws.String("$Latest"),
 				},
-				MinvCpus: aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
-				MaxvCpus: aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
-				Type:     aws.String(nextflowConfig.InstanceType),
+				InstanceRole:       instanceProfileArn,
+				AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
+				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
+				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
+				InstanceTypes:      []*string{aws.String(nextflowConfig.InstanceType)},
+				Type:               aws.String(nextflowConfig.ComputeEnvironmentType),
+				Tags:               tagsMap,
 			},
 			UpdatePolicy: &batch.UpdatePolicy{
 				// existing jobs are not terminated and keep running for up to 30 min after this update
@@ -674,12 +687,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 			ComputeEnvironmentName: &batchComputeEnvName,
 			Type:                   aws.String("MANAGED"),
 			ComputeResources: &batch.ComputeResource{
-				Ec2Configuration: []*batch.Ec2Configuration{
-					{
-						ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-						ImageType:       aws.String("ECS_AL2"),
-					},
-				},
+				Ec2Configuration: ec2Configuration,
 				LaunchTemplate: &batch.LaunchTemplateSpecification{
 					LaunchTemplateName: launchTemplateName,
 					Version:            aws.String("$Latest"),
@@ -688,10 +696,10 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 				AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
 				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
 				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
-				InstanceTypes:      []*string{aws.String("optimal")},
+				InstanceTypes:      []*string{aws.String(nextflowConfig.InstanceType)},
 				SecurityGroupIds:   []*string{securityGroupId},
 				Subnets:            subnets,
-				Type:               aws.String(nextflowConfig.InstanceType),
+				Type:               aws.String(nextflowConfig.ComputeEnvironmentType),
 				Tags:               tagsMap,
 			},
 			Tags: tagsMap,

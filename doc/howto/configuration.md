@@ -53,8 +53,9 @@ An example manifest entry may look like
             "s3-bucket-whitelist": [
               "ngi-igenomes"
             ],
+            "compute-environment-type": "SPOT",
             "instance-ami": "ami-03392f075059ae3ba",
-            "instance-type": "SPOT",
+            "instance-type": "optimal",
             "instance-min-vcpus": 0,
             "instance-max-vcpus": 9
         }
@@ -99,4 +100,4 @@ An example manifest entry may look like
       * `enabled` is false by default; if true, automatically create AWS resources required to run Nextflow workflows in AWS Batch.
       * `job-image-whitelist` are the only images that are allowed as Nextflow workflow containers. It supports wildcards `?` for a single character and `*` for multiple characters. Warning: setting the whitelist as an empty list allows all images!
       * `s3-bucket-whitelist` are public buckets that Nextflow jobs are allowed to get data objects from. Access to actions "s3:GetObject" and "s3:ListBucket" for `arn:aws:s3:::<bucket>` and `arn:aws:s3:::<bucket>/*` will be granted.
-      * `instance-ami`, `instance-type` ("EC2", "SPOT", "FARGATE" or "FARGATE_SPOT"), `instance-min-vcpus` and `instance-max-vcpus` are AWS Batch Compute Environment settings.
+      * `compute-environment-type` ("EC2", "SPOT", "FARGATE" or "FARGATE_SPOT"), `instance-ami`, `instance-type` ("optimal", "g4dn.xlarge"...), `instance-min-vcpus` and `instance-max-vcpus` are AWS Batch Compute Environment settings.
