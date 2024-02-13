@@ -45,7 +45,7 @@ func setupTransitGateway(userName string) error {
 	}
 
 	// Accept transit gateway share in remote account
-	err = acceptTransitGatewayShare(pm, *tgwarn, sess, ramArn)
+	err = acceptTransitGatewayShare(pm, sess, ramArn)
 	if err != nil {
 		return err
 	}

@@ -11,8 +11,16 @@ import (
 	"github.com/aws/aws-sdk-go/service/ram"
 )
 
-func acceptTransitGatewayShare(pm *PayModel, userName string, sess *session.Session, ramArn *string) error {
-	ramSvc := ram.New(sess)
+func acceptTransitGatewayShare(pm *PayModel, sess *session.Session, ramArn *string) error {
+	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
+	svc := NewSVC(sess, roleARN)
+
+	// create RAM client in remote account.
+	ramSvc := ram.New(session.Must(session.NewSession(&aws.Config{
+		Credentials: svc.creds,
+		Region:      aws.String("us-east-1"),
+	})))
+
 	// Check if the resource share is already accepted.
 	// If not, accept the resource share
 	ramName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-ram"
