@@ -188,7 +188,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	}
 
 	// create role for nextflow-created jobs
-	roleName := policyName
+	roleName := truncateString(policyName, 64)
 	roleResult, err := iamSvc.CreateRole(&iam.CreateRoleInput{
 		RoleName: &roleName,
 		AssumeRolePolicyDocument: aws.String(`{
