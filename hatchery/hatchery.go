@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"html/template"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"

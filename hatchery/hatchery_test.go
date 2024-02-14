@@ -1064,13 +1064,27 @@ func TestMountFilesEndpoint(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
 	// mock the nextflow config generation, which makes calls to AWS
-	fileContents := "here's the output"
+	fileContents := `here's the output
+aws {
+	batch {
+		cliPath = '/home/ec2-user/miniconda/bin/aws'
+		jobRole = '[arn:aws:s3:::my_corporate_bucket/*
+		arn:aws:s3:::my_corporate_bucket/Development/*]'
+	}
+}`
 	htmlContents := `<html>
 <head></head>
 <link rel="stylesheet" href="resource://content-accessible/plaintext.css">
 <body>
 <pre>
-here&#39;s the output
+here's the output
+aws {
+	batch {
+		cliPath = '/home/ec2-user/miniconda/bin/aws'
+		jobRole = '[arn:aws:s3:::my_corporate_bucket/*
+		arn:aws:s3:::my_corporate_bucket/Development/*]'
+	}
+}
 </pre>
 </body>
 </html>`
