@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"html/template"
 	"io"
 	"net/http"
 	"strconv"
@@ -27,6 +28,20 @@ type containerOption struct {
 	ID            string `json:"id"`
 	IdleTimeLimit int    `json:"idle-time-limit"`
 }
+
+type TextOutput struct {
+	Text string
+}
+
+var textResult = template.Must(template.New("").Parse(`<html>
+<head></head>
+<link rel="stylesheet" href="resource://content-accessible/plaintext.css">
+<body>
+	<pre>
+	{{ .Text }}
+	</pre>
+</body>
+</html>`))
 
 // RegisterHatchery setup endpoints with the http engine
 func RegisterHatchery(mux *httptrace.ServeMux) {
@@ -648,7 +663,8 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		fmt.Fprint(w, string(out))
+		//fmt.Fprint(w, string(out))
+		_ = textResult.Execute(w, TextOutput{string(out)})
 		return
 	}
 

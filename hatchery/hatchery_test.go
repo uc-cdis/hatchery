@@ -1065,6 +1065,15 @@ func TestMountFilesEndpoint(t *testing.T) {
 
 	// mock the nextflow config generation, which makes calls to AWS
 	fileContents := "here's the output"
+	htmlContents := `<html>
+<head></head>
+<link rel="stylesheet" href="resource://content-accessible/plaintext.css">
+<body>
+	<pre>
+	here&#39;s the output
+	</pre>
+</body>
+</html>`
 	originalGenerateNextflowConfig := generateNextflowConfig
 	generateNextflowConfig = func(userName string) (string, error) {
 		return fileContents, nil
@@ -1122,8 +1131,8 @@ func TestMountFilesEndpoint(t *testing.T) {
 		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
 		return
 	}
-	if w.Body.String() != fileContents {
-		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, fileContents, w.Body)
+	if w.Body.String() != htmlContents {
+		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, htmlContents, w.Body)
 		return
 	}
 }
