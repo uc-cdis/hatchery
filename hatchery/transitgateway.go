@@ -45,7 +45,7 @@ func setupTransitGateway(userName string) error {
 	}
 
 	// Accept transit gateway share in remote account
-	err = acceptTransitGatewayShare(pm, *tgwarn, sess, ramArn)
+	err = acceptTransitGatewayShare(pm, sess, ramArn)
 	if err != nil {
 		return err
 	}
@@ -240,23 +240,38 @@ func createTransitGatewayAttachments(svc *ec2.EC2, vpcid string, tgwid string, l
 			},
 		},
 	}
-	exTg, err := svc.DescribeTransitGateways(tgInput)
-	if err != nil {
+	var exTg *ec2.DescribeTransitGatewaysOutput
+	var err error
+	maxRetries := 10
+	retryInterval := 10 * time.Second
+
+	for i := 0; i < maxRetries; i++ {
+		exTg, err = svc.DescribeTransitGateways(tgInput)
+		if err == nil {
+			// Successfully described the Transit Gateway
+			break
+		}
+
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
 			case "InvalidTransitGatewayID.NotFound":
-				// Sleep for 10 seconds before trying again..
-				time.Sleep(10 * time.Second)
-				_, err = svc.DescribeTransitGateways(tgInput)
-				if err != nil {
-					return nil, fmt.Errorf("cannot DescribeTransitGateways again: %s", err.Error())
-				}
+				// Sleep for the retry interval before trying again
+				Config.Logger.Printf("TransitGateway not found, retrying in %s", retryInterval.String())
+				time.Sleep(retryInterval)
 			default:
 				return nil, fmt.Errorf("cannot DescribeTransitGateways: %s", err.Error())
 			}
+		} else {
+			// Some other error occurred, return it immediately
+			return nil, fmt.Errorf("cannot DescribeTransitGateways: %s", err.Error())
 		}
-		return nil, err
+
+		// If we've reached the maximum number of retries, return an error
+		if i == maxRetries-1 {
+			return nil, fmt.Errorf("maximum number of retries reached")
+		}
 	}
+
 	for *exTg.TransitGateways[0].State != "available" {
 		Config.Logger.Printf("TransitGateway is in state: %s ...  Waiting for 10 seconds", *exTg.TransitGateways[0].State)
 		// sleep for 10 sec

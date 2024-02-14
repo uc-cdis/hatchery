@@ -188,7 +188,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	}
 
 	// create role for nextflow-created jobs
-	roleName := policyName
+	roleName := truncateString(policyName, 64)
 	roleResult, err := iamSvc.CreateRole(&iam.CreateRoleInput{
 		RoleName: &roleName,
 		AssumeRolePolicyDocument: aws.String(`{
@@ -250,7 +250,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	policyName = fmt.Sprintf("%s-nf-%s", hostname, userName)
 	jobImageWhitelistCondition := "" // if not configured, all images are allowed
 	if len(nextflowConfig.JobImageWhitelist) > 0 {
-		jobImageWhitelist := fmt.Sprintf(`"%v"`, strings.Join(nextflowConfig.JobImageWhitelist, "\", \""))
+		jobImageWhitelist := fmt.Sprintf(`"%v"`, strings.Join(replaceAllUsernamePlaceholders(nextflowConfig.JobImageWhitelist, userName), "\", \""))
 		jobImageWhitelistCondition = fmt.Sprintf(`,
 		"Condition": {
 			"StringLike": {
@@ -528,13 +528,10 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 
 // Function to make sure launch template is created, and configured correctly
 // We need a launch template since we need a user data script to authenticate with private ECR repositories
-func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string) (*string, error) {
+func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, jobImageWhitelist []string) (*string, error) {
 
 	// user data script to authenticate with private ECR repositories
-	userData, err := generateUserData(userName)
-	if err != nil {
-		return nil, err
-	}
+	userData := generateEcrLoginUserData(jobImageWhitelist, userName)
 
 	launchTemplateName := fmt.Sprintf("%s-nf-%s", hostname, userName)
 
@@ -573,7 +570,7 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string) (*s
 		Config.Logger.Printf("Debug: Launch template '%s' already exists", launchTemplateName)
 		return launchTemplate.LaunchTemplates[0].LaunchTemplateName, nil
 	}
-	return nil, fmt.Errorf("More than one launch template with the same name exist: %v", launchTemplate.LaunchTemplates)
+	return nil, fmt.Errorf("more than one launch template with the same name exist: %v", launchTemplate.LaunchTemplates)
 }
 
 // Create AWS Batch compute environment
@@ -585,7 +582,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	}
 
 	// the launch template for the compute envrionment must be user-specific as well
-	launchTemplateName, err := ensureLaunchTemplate(ec2Svc, userName, hostname)
+	launchTemplateName, err := ensureLaunchTemplate(ec2Svc, userName, hostname, nextflowConfig.JobImageWhitelist)
 	if err != nil {
 		return "", err
 	}
@@ -601,6 +598,20 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	})
 	if err != nil {
 		return "", err
+	}
+
+	// Configure the specified AMI. At the time of writing, CPU workflows launch on ECS_AL2 (default for all
+	// non-GPU instances) and GPU workflows on ECS_AL2_NVIDIA (default for all GPU instances). Setting the AMI
+	// for both types is easier than switching the image type based on which AMI (CPU or GPU) is configured.
+	ec2Configuration := []*batch.Ec2Configuration{
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("ECS_AL2"),
+		},
+		{
+			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageType:       aws.String("ECS_AL2_NVIDIA"),
+		},
 	}
 
 	var batchComputeEnvArn string
@@ -621,19 +632,18 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 			ComputeEnvironment: &batchComputeEnvArn,
 			State:              aws.String("ENABLED"), // since the env already exists, make sure it's enabled
 			ComputeResources: &batch.ComputeResourceUpdate{
-				Ec2Configuration: []*batch.Ec2Configuration{
-					{
-						ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-						ImageType:       aws.String("ECS_AL2"),
-					},
-				},
+				Ec2Configuration: ec2Configuration,
 				LaunchTemplate: &batch.LaunchTemplateSpecification{
 					LaunchTemplateName: launchTemplateName,
 					Version:            aws.String("$Latest"),
 				},
-				MinvCpus: aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
-				MaxvCpus: aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
-				Type:     aws.String(nextflowConfig.InstanceType),
+				InstanceRole:       instanceProfileArn,
+				AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
+				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
+				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
+				InstanceTypes:      []*string{aws.String(nextflowConfig.InstanceType)},
+				Type:               aws.String(nextflowConfig.ComputeEnvironmentType),
+				Tags:               tagsMap,
 			},
 			UpdatePolicy: &batch.UpdatePolicy{
 				// existing jobs are not terminated and keep running for up to 30 min after this update
@@ -674,12 +684,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 			ComputeEnvironmentName: &batchComputeEnvName,
 			Type:                   aws.String("MANAGED"),
 			ComputeResources: &batch.ComputeResource{
-				Ec2Configuration: []*batch.Ec2Configuration{
-					{
-						ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
-						ImageType:       aws.String("ECS_AL2"),
-					},
-				},
+				Ec2Configuration: ec2Configuration,
 				LaunchTemplate: &batch.LaunchTemplateSpecification{
 					LaunchTemplateName: launchTemplateName,
 					Version:            aws.String("$Latest"),
@@ -688,10 +693,10 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 				AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
 				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
 				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
-				InstanceTypes:      []*string{aws.String("optimal")},
+				InstanceTypes:      []*string{aws.String(nextflowConfig.InstanceType)},
 				SecurityGroupIds:   []*string{securityGroupId},
 				Subnets:            subnets,
-				Type:               aws.String(nextflowConfig.InstanceType),
+				Type:               aws.String(nextflowConfig.ComputeEnvironmentType),
 				Tags:               tagsMap,
 			},
 			Tags: tagsMap,
@@ -1545,13 +1550,33 @@ workDir = '%s'`,
 	return configContents, nil
 }
 
+func replaceAllUsernamePlaceholders(strArray []string, userName string) []string {
+	var result []string
+	for _, str := range strArray {
+		result = append(result, strings.Replace(str, "{{username}}", userName, -1))
+	}
+	return result
+}
+
 // function to generate user data
-func generateUserData(userName string) (string, error) {
-	// TODO: read repo from config
-	approvedRepo := "143731057154.dkr.ecr.us-east-1.amazonaws.com/nextflow-approved"
+func generateEcrLoginUserData(jobImageWhitelist []string, userName string) string {
+	var ecrRepos []string
+	for _, image := range replaceAllUsernamePlaceholders(jobImageWhitelist, userName) {
+		if strings.Contains(image, ".ecr.") {
+			// NOTE: on the ECR side, tags are ignored and users are allowed access to the whole repo.
+			repo := strings.Split(image, ":")[0]
+			ecrRepos = append(ecrRepos, repo)
+		}
+	}
 
 	// TODO: read region from config
-	userData := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(`MIME-Version: 1.0
+	runCmd := ""
+	for _, approvedRepo := range ecrRepos {
+		runCmd += fmt.Sprintf(`
+- aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin %s`, approvedRepo)
+	}
+
+	userData := fmt.Sprintf(`MIME-Version: 1.0
 Content-Type: multipart/mixed; boundary="==MYBOUNDARY=="
 
 --==MYBOUNDARY==
@@ -1559,8 +1584,8 @@ Content-Type: text/cloud-config; charset="us-ascii"
 
 packages:
 - aws-cli
-runcmd:
-- aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin %s/%s
---==MYBOUNDARY==--`, approvedRepo, userName)))
-	return userData, nil
+runcmd:%s
+--==MYBOUNDARY==--`, runCmd)
+
+	return base64.StdEncoding.EncodeToString([]byte(userData))
 }
