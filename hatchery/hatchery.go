@@ -37,9 +37,9 @@ var textResult = template.Must(template.New("").Parse(`<html>
 <head></head>
 <link rel="stylesheet" href="resource://content-accessible/plaintext.css">
 <body>
-	<pre>
-	{{ .Text }}
-	</pre>
+<pre>
+{{ .Text }}
+</pre>
 </body>
 </html>`))
 

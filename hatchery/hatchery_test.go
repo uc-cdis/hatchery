@@ -1069,9 +1069,9 @@ func TestMountFilesEndpoint(t *testing.T) {
 <head></head>
 <link rel="stylesheet" href="resource://content-accessible/plaintext.css">
 <body>
-	<pre>
-	here&#39;s the output
-	</pre>
+<pre>
+here&#39;s the output
+</pre>
 </body>
 </html>`
 	originalGenerateNextflowConfig := generateNextflowConfig
