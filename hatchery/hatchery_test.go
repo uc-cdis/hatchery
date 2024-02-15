@@ -1072,14 +1072,6 @@ aws {
 		arn:aws:s3:::my_corporate_bucket/Development/*]'
 	}
 }`
-	htmlContents := `here's the output
-aws {
-	batch {
-		cliPath = '/home/ec2-user/miniconda/bin/aws'
-		jobRole = '[arn:aws:s3:::my_corporate_bucket/*
-		arn:aws:s3:::my_corporate_bucket/Development/*]'
-	}
-}`
 	originalGenerateNextflowConfig := generateNextflowConfig
 	generateNextflowConfig = func(userName string) (string, error) {
 		return fileContents, nil
@@ -1137,8 +1129,8 @@ aws {
 		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
 		return
 	}
-	if w.Body.String() != htmlContents {
-		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, htmlContents, w.Body)
+	if w.Body.String() != fileContents {
+		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, fileContents, w.Body)
 		return
 	}
 }
