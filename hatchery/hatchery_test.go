@@ -1072,22 +1072,14 @@ aws {
 		arn:aws:s3:::my_corporate_bucket/Development/*]'
 	}
 }`
-	htmlContents := `<html>
-<head></head>
-<link rel="stylesheet" href="resource://content-accessible/plaintext.css">
-<body>
-<pre>
-here's the output
+	htmlContents := `here's the output
 aws {
 	batch {
 		cliPath = '/home/ec2-user/miniconda/bin/aws'
 		jobRole = '[arn:aws:s3:::my_corporate_bucket/*
 		arn:aws:s3:::my_corporate_bucket/Development/*]'
 	}
-}
-</pre>
-</body>
-</html>`
+}`
 	originalGenerateNextflowConfig := generateNextflowConfig
 	generateNextflowConfig = func(userName string) (string, error) {
 		return fileContents, nil

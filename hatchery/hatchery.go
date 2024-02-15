@@ -33,15 +33,7 @@ type TextOutput struct {
 	Text string
 }
 
-var textResult = template.Must(template.New("").Parse(`<html>
-<head></head>
-<link rel="stylesheet" href="resource://content-accessible/plaintext.css">
-<body>
-<pre>
-{{ .Text }}
-</pre>
-</body>
-</html>`))
+var textResult = template.Must(template.New("").Parse(`{{ .Text }}`))
 
 // RegisterHatchery setup endpoints with the http engine
 func RegisterHatchery(mux *httptrace.ServeMux) {
