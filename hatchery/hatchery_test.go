@@ -1091,7 +1091,6 @@ aws {
 			License: licenseInfo,
 		},
 	}
-	//Config.Config.License.FilePath = "license_path.txt"
 
 	// list files
 	url := "/mount-files"

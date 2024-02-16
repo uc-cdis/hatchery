@@ -3,7 +3,7 @@
   "sub-dir": "/lw-workspace",
   "user-volume-size": "10Gi",
   "license-user-maps-dynamodb-table": "gen3-license-user-maps",
-  "license-user-maps-global-seconday-index": "activeUsersIndex",
+  "license-user-maps-global-secondary-index": "activeUsersIndex",
   "sidecar": {
     "cpu-limit": "1.0",
     "memory-limit": "256Mi",

@@ -655,7 +655,6 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		//fmt.Fprint(w, string(out))
 		_ = textResult.Execute(w, TextOutput{string(out)})
 		return
 	}

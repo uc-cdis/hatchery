@@ -204,18 +204,24 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	if data.Config.LicenseUserMapsTable == "" {
 		data.Logger.Printf("Warning: no 'license-user-maps-dynamodb-table' in configuration: will be unable to store license-user-map data in DynamoDB")
 	} else if data.Config.LicenseUserMapsGSI == "" {
-		data.Logger.Printf("Error: dynamodb table present but missing 'license-user-maps-global-secondary-index'")
+		err = fmt.Errorf("'license-user-maps-dynamodb-table' is present but missing 'license-user-maps-global-secondary-index'")
+		data.Logger.Printf("Error in config: %v", err)
+		return nil, err
 	}
 
 	for _, container := range data.Config.Containers {
 		data.Logger.Printf("Checking license config info for container %s", container.Name)
 		if container.License.Enabled {
 			if data.Config.LicenseUserMapsTable == "" {
-				data.Logger.Printf("Error: no 'license-user-maps-dynamodb-table' in configuration but container is configured for license %s", container.Name)
+				err = fmt.Errorf("no 'license-user-maps-dynamodb-table' in configuration but license is configured for container %s", container.Name)
+				data.Logger.Printf("Error in configuration: %v", err)
+				return nil, err
 			}
 			ok := validateContainerLicenseInfo(container.Name, container.License)
 			if !ok {
-				data.Logger.Printf("Error: container '%s' has an invalid 'license' configuration.", container.Name)
+				err = fmt.Errorf("container '%s' has an invalid 'license' configuration", container.Name)
+				data.Logger.Printf("Error in configuration: %v", err)
+				return nil, err
 			}
 		}
 	}
