@@ -18,6 +18,7 @@ type NextflowConfig struct {
 	S3BucketWhitelist      []string `json:"s3-bucket-whitelist"`
 	ComputeEnvironmentType string   `json:"compute-environment-type"`
 	InstanceAMI            string   `json:"instance-ami"`
+	InstanceAmiBuilderArn  string   `json:"instance-ami-builder-arn"`
 	InstanceType           string   `json:"instance-type"`
 	InstanceMinVCpus       int32    `json:"instance-min-vcpus"`
 	InstanceMaxVCpus       int32    `json:"instance-max-vcpus"`

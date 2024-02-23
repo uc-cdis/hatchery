@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/batch"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go/service/imagebuilder"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
@@ -603,13 +604,22 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	// Configure the specified AMI. At the time of writing, CPU workflows launch on ECS_AL2 (default for all
 	// non-GPU instances) and GPU workflows on ECS_AL2_NVIDIA (default for all GPU instances). Setting the AMI
 	// for both types is easier than switching the image type based on which AMI (CPU or GPU) is configured.
+	ami := nextflowConfig.InstanceAMI
+	if ami != "" {
+		Config.Logger.Printf("Using configured 'nextflow.instance-ami' '%s' and ignoring 'nextflow.instance-ami-builder-arn'", ami)
+	} else {
+		ami, err = getLatestImageBuilderAmi(nextflowConfig.InstanceAmiBuilderArn)
+		if err != nil {
+			return "", err
+		}
+	}
 	ec2Configuration := []*batch.Ec2Configuration{
 		{
-			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageIdOverride: aws.String(ami),
 			ImageType:       aws.String("ECS_AL2"),
 		},
 		{
-			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageIdOverride: aws.String(ami),
 			ImageType:       aws.String("ECS_AL2_NVIDIA"),
 		},
 	}
@@ -1362,7 +1372,58 @@ func getLatestAmazonLinuxAmi(ec2svc *ec2.EC2) (*string, error) {
 		Config.Logger.Printf("Info: Found latest amazonlinux AMI: '%s'", *latestImage.ImageId)
 		return latestImage.ImageId, nil
 	}
-	return nil, errors.New("No amazonlinux AMI found")
+	return nil, errors.New("no amazonlinux AMI found")
+}
+
+func getLatestImageBuilderAmi(imagePipelineArn string) (string, error) {
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("us-east-1"),
+	}))
+	imageBuilderSvc := imagebuilder.New(sess, &aws.Config{})
+
+	// get all images created by the image builder pipeline
+	listImagePipelineImagesOutput, err := imageBuilderSvc.ListImagePipelineImages(&imagebuilder.ListImagePipelineImagesInput{
+		ImagePipelineArn: aws.String(imagePipelineArn),
+	})
+	if err != nil {
+		Config.Logger.Printf("Error getting '%s' AMIs: %v", imagePipelineArn, err)
+		return "", err
+	}
+	imagePipelineImages := listImagePipelineImagesOutput.ImageSummaryList
+
+	// if the result is paginated, get the rest of the images
+	for listImagePipelineImagesOutput.NextToken != nil {
+		listImagePipelineImagesOutput, err = imageBuilderSvc.ListImagePipelineImages(&imagebuilder.ListImagePipelineImagesInput{
+			ImagePipelineArn: aws.String(imagePipelineArn),
+			NextToken:        listImagePipelineImagesOutput.NextToken,
+		})
+		if err != nil {
+			Config.Logger.Printf("Error getting '%s' AMIs: %v", imagePipelineArn, err)
+			return "", err
+		}
+		imagePipelineImages = append(imagePipelineImages, listImagePipelineImagesOutput.ImageSummaryList...)
+	}
+
+	if len(imagePipelineImages) == 0 {
+		return "", fmt.Errorf("no '%s' AMI found", imagePipelineArn)
+	}
+
+	// find the most recently created image
+	latestImage := imagePipelineImages[0]
+	latestTimeStamp, _ := time.Parse(time.RFC3339, *latestImage.DateCreated)
+	if len(imagePipelineImages) > 1 {
+		for _, image := range imagePipelineImages[1:] {
+			creationTimeStamp, _ := time.Parse(time.RFC3339, *image.DateCreated)
+			if creationTimeStamp.After(latestTimeStamp) {
+				latestTimeStamp = creationTimeStamp
+				latestImage = image
+			}
+		}
+	}
+
+	ami := latestImage.OutputResources.Amis[0].Image
+	Config.Logger.Printf("Using latest '%s' AMI '%s', created on %s", imagePipelineArn, *ami, latestTimeStamp)
+	return *ami, nil
 }
 
 // delete the AWS resources created to launch nextflow workflows
