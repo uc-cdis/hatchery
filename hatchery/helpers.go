@@ -15,6 +15,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/imagebuilder"
 	"github.com/aws/aws-sdk-go/service/sts"
 )
 
@@ -226,4 +227,60 @@ func stringArrayContains(s []string, e string) bool {
 		}
 	}
 	return false
+}
+
+func getLatestImageBuilderAmi(imagePipelineArn string, imagebuilderListImagePipelineImages func(*imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error)) (string, error) {
+	// the `imagebuilderListImagePipelineImages` parameter should not be provided in production. It allows
+	// us to test this function by mocking `imagebuilder.ListImagePipelineImages` in the tests.
+	if imagebuilderListImagePipelineImages == nil {
+		sess := session.Must(session.NewSession(&aws.Config{
+			Region: aws.String("us-east-1"),
+		}))
+		imageBuilderSvc := imagebuilder.New(sess, &aws.Config{})
+		imagebuilderListImagePipelineImages = imageBuilderSvc.ListImagePipelineImages
+	}
+
+	// get all images created by the image builder pipeline
+	listImagePipelineImagesOutput, err := imagebuilderListImagePipelineImages(&imagebuilder.ListImagePipelineImagesInput{
+		ImagePipelineArn: aws.String(imagePipelineArn),
+	})
+	if err != nil {
+		Config.Logger.Printf("Error getting '%s' AMIs: %v", imagePipelineArn, err)
+		return "", err
+	}
+	imagePipelineImages := listImagePipelineImagesOutput.ImageSummaryList
+
+	// if the result is paginated, get the rest of the images
+	for listImagePipelineImagesOutput.NextToken != nil {
+		listImagePipelineImagesOutput, err = imagebuilderListImagePipelineImages(&imagebuilder.ListImagePipelineImagesInput{
+			ImagePipelineArn: aws.String(imagePipelineArn),
+			NextToken:        listImagePipelineImagesOutput.NextToken,
+		})
+		if err != nil {
+			Config.Logger.Printf("Error getting '%s' AMIs: %v", imagePipelineArn, err)
+			return "", err
+		}
+		imagePipelineImages = append(imagePipelineImages, listImagePipelineImagesOutput.ImageSummaryList...)
+	}
+
+	if len(imagePipelineImages) == 0 {
+		return "", fmt.Errorf("no '%s' AMI found", imagePipelineArn)
+	}
+
+	// find the most recently created image
+	latestImage := imagePipelineImages[0]
+	latestTimeStamp, _ := time.Parse(time.RFC3339, *latestImage.DateCreated)
+	if len(imagePipelineImages) > 1 {
+		for _, image := range imagePipelineImages[1:] {
+			creationTimeStamp, _ := time.Parse(time.RFC3339, *image.DateCreated)
+			if creationTimeStamp.After(latestTimeStamp) {
+				latestTimeStamp = creationTimeStamp
+				latestImage = image
+			}
+		}
+	}
+
+	ami := latestImage.OutputResources.Amis[0].Image
+	Config.Logger.Printf("Using latest '%s' AMI '%s', created on %s", imagePipelineArn, *ami, latestTimeStamp)
+	return *ami, nil
 }
