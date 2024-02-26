@@ -11,6 +11,16 @@ An example manifest entry may look like
   "hatchery": {
     "user-namespace": "jupyter-pods",
     "sub-dir": "/lw-workspace",
+    "user-volume-size": "10Gi",
+    "prisma": {
+      "enable": true,
+      "console-address": ""
+    },
+    "pay-models-dynamodb-table": "dynamodb-table-name",
+    "default-pay-model": {
+      "workspace_type": "Trial Workspace",
+      "local": true
+    },
     "sidecar": {
       "cpu-limit": "1.0",
       "memory-limit": "256Mi",
@@ -62,6 +72,13 @@ An example manifest entry may look like
             "instance-max-vcpus": 9
         }
       }
+    ],
+    "more-configs": [
+      {
+        "type": "dockstore-compose:1.0.0",
+        "path": "/hatchery-more-configs/test-app.yaml",
+        "name": "Dockstore App"
+      }
     ]
   }
 ```
@@ -69,6 +86,9 @@ An example manifest entry may look like
 * `user-namespace` is which namespace the pods will be deployed into.
 * `sub-dir` is the path to Hatchery off the host domain, i.e. if the full domain path is `https://nci-crdc-demo.datacommons.io/lw-workspace` then `sub-dir` is `/lw-workspace`.
 * `user-volume-size` the size of the user volume to be created. Applies to all containers because the user storage is the same across all of them.
+* `prisma`: TODO document
+* `pay-models-dynamodb-table` is the name of the DynamoDB table where Hatchery can get users' pay model information
+* `default-pay-model` is the pay model to fall back to when a user does not have a pay model set up in the `pay-models-dynamodb-table` table
 * `sidecar` is the sidecar container launched in the same pod as each workspace container. In Gen3 this is used for the FUSE mount system to the manifests that the user has loaded in.
     * `cpu-limit` the CPU limit for the container matching Kubernetes resource spec.
     * `memory-limit` the memory limit for the container matching Kubernetes resource spec.
@@ -108,3 +128,4 @@ An example manifest entry may look like
       * `s3-bucket-whitelist` are public buckets that Nextflow jobs are allowed to get data objects from. Access to actions "s3:GetObject" and "s3:ListBucket" for `arn:aws:s3:::<bucket>` and `arn:aws:s3:::<bucket>/*` will be granted.
       * `compute-environment-type` ("EC2", "SPOT", "FARGATE" or "FARGATE_SPOT"), `instance-ami`, `instance-type` ("optimal", "g4dn.xlarge"...), `instance-min-vcpus` and `instance-max-vcpus` are AWS Batch Compute Environment settings.
       * `instance-ami-builder-arn` is the ARN of an AWS image builder pipeline. The latest AMI built by this pipeline will be used. If `instance-ami` is specified, it overrides `instance-ami-builder-arn`.
+* `more-configs`: see https://github.com/uc-cdis/hatchery/blob/master/doc/explanation/dockstore.md

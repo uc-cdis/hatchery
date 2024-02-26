@@ -93,9 +93,9 @@ type AllPayModels struct {
 
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
-	UserNamespace          string           `json:"user-namespace"`
-	DefaultPayModel        PayModel         `json:"default-pay-model"`
-	DisableLocalWS         bool             `json:"disable-local-ws"`
+	UserNamespace   string   `json:"user-namespace"`
+	DefaultPayModel PayModel `json:"default-pay-model"`
+	// DisableLocalWS         bool             `json:"disable-local-ws"`
 	PayModels              []PayModel       `json:"pay-models"`
 	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
 	SubDir                 string           `json:"sub-dir"`
