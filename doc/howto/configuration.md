@@ -107,4 +107,4 @@ An example manifest entry may look like
         * **Warning:** on the ECR side, tags are ignored and users are allowed access to the whole repo.
       * `s3-bucket-whitelist` are public buckets that Nextflow jobs are allowed to get data objects from. Access to actions "s3:GetObject" and "s3:ListBucket" for `arn:aws:s3:::<bucket>` and `arn:aws:s3:::<bucket>/*` will be granted.
       * `compute-environment-type` ("EC2", "SPOT", "FARGATE" or "FARGATE_SPOT"), `instance-ami`, `instance-type` ("optimal", "g4dn.xlarge"...), `instance-min-vcpus` and `instance-max-vcpus` are AWS Batch Compute Environment settings.
-      * `instance-ami-builder-arn` is the ARN of an AWS image builder pipeline. The latest AMI built by this pipeline will be used. If `instance-ami` is specified, `instance-ami-builder-arn` is ignored.
+      * `instance-ami-builder-arn` is the ARN of an AWS image builder pipeline. The latest AMI built by this pipeline will be used. If `instance-ami` is specified, it overrides `instance-ami-builder-arn`.

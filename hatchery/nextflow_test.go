@@ -87,39 +87,38 @@ func TestGetNextflowInstanceAmi(t *testing.T) {
 		},
 	}
 
+	// mock the `imagebuilder.ListImagePipelineImages` call to AWS
 	mockedListImagePipelineImages := func(input *imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error) {
-		oldImage := imagebuilder.ImageSummary{
-			DateCreated: aws.String("2023-03-03T00:00:00Z"),
-			OutputResources: &imagebuilder.OutputResources{
-				Amis: []*imagebuilder.Ami{
-					{
-						Image: aws.String("old-ami"),
-					},
-				},
-			},
-		}
-		newImage := imagebuilder.ImageSummary{
-			DateCreated: aws.String("2024-02-02T00:00:00Z"),
-			OutputResources: &imagebuilder.OutputResources{
-				Amis: []*imagebuilder.Ami{
-					{
-						Image: &builderLatestAmi,
-					},
-				},
-			},
-		}
-		// on the 1st call, return the old image and a NextToken to trigger a 2nd call
+		// on the 1st call, return an old image and a NextToken to trigger a 2nd call
 		output := imagebuilder.ListImagePipelineImagesOutput{
 			ImageSummaryList: []*imagebuilder.ImageSummary{
-				&oldImage,
+				{
+					DateCreated: aws.String("2023-03-03T00:00:00Z"),
+					OutputResources: &imagebuilder.OutputResources{
+						Amis: []*imagebuilder.Ami{
+							{
+								Image: aws.String("old-ami"),
+							},
+						},
+					},
+				},
 			},
 			NextToken: aws.String("next-token"),
 		}
-		// on the 2nd call, return the new image and no NextToken
+		// on the 2nd call, return a new image and no NextToken
 		if input.NextToken != nil {
 			output = imagebuilder.ListImagePipelineImagesOutput{
 				ImageSummaryList: []*imagebuilder.ImageSummary{
-					&newImage,
+					{
+						DateCreated: aws.String("2024-02-02T00:00:00Z"),
+						OutputResources: &imagebuilder.OutputResources{
+							Amis: []*imagebuilder.Ami{
+								{
+									Image: &builderLatestAmi,
+								},
+							},
+						},
+					},
 				},
 			}
 		}
