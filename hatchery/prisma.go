@@ -101,7 +101,7 @@ func getPrismaImage() (*string, error) {
 		return nil, err
 	}
 
-	imageEndpoint := Config.Config.PrismaConfig.ConsoleAddress + "/api/v22.06/defenders/image-name"
+	imageEndpoint := Config.Config.PrismaConfig.ConsoleAddress + "/api/v32.02/defenders/image-name"
 	var bearer = "Bearer " + *token
 	// Create a new request using http
 	req, err := http.NewRequest("GET", imageEndpoint, nil)
