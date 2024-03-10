@@ -693,7 +693,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func getMountFileContents(fileId string, userName string) (string, error) {
-	filePathConfigs := getFilePathConfigs()
+	filePathConfigs := getLicenceFilePathConfigs()
 
 	if fileId == "sample-nextflow-config.txt" {
 		out, err := generateNextflowConfig(userName)
@@ -701,7 +701,7 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}
 		return out, nil
-	} else if filePathInConfigs(fileId, filePathConfigs) {
+	} else if filePathInLicenseConfigs(fileId, filePathConfigs) {
 		// get g3auto kube secret
 		g3autoName, g3autoKey, ok := getG3autoInfoForFilepath(fileId, filePathConfigs)
 		if !ok {

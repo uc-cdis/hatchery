@@ -273,7 +273,7 @@ var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3Li
 }
 
 // Get the file-path related configurations
-func getFilePathConfigs() []LicenseInfo {
+func getLicenceFilePathConfigs() []LicenseInfo {
 	var config LicenseInfo
 	var filePathConfigs []LicenseInfo
 
@@ -290,7 +290,7 @@ func getFilePathConfigs() []LicenseInfo {
 	return filePathConfigs
 }
 
-func filePathInConfigs(filePath string, configs []LicenseInfo) bool {
+func filePathInLicenseConfigs(filePath string, configs []LicenseInfo) bool {
 	for _, v := range configs {
 		if filePath == v.FilePath {
 			return true
