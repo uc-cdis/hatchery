@@ -3,9 +3,12 @@ package hatchery
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/costexplorer"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
@@ -117,6 +120,16 @@ var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 	if err != nil {
 		Config.Logger.Printf("Got error unmarshalling: %s", err)
 		return nil, err
+	}
+
+	// TODO: Add configuration option
+	if Config.Config.AWSCostTracking {
+		Config.Logger.Printf("DEBUG: getting live cost from AWS")
+		liveCost, err := getCostFromAWS(payModel)
+		if err != nil {
+			return nil, err
+		}
+		payModel.TotalUsage = *liveCost
 	}
 	return &payModel, nil
 }
@@ -284,4 +297,56 @@ func resetCurrentPaymodelInDB(userName string, svc *dynamodb.DynamoDB) error {
 		}
 	}
 	return nil
+}
+
+func getCostFromAWS(paymodel PayModel) (*float32, error) {
+
+	sess := session.Must(session.NewSession(&aws.Config{
+		// TODO: Make this configurable
+		Region: aws.String("us-east-1"),
+	}))
+
+	roleARN := "arn:aws:iam::" + paymodel.AWSAccountId + ":role/csoc_adminvm"
+	creds := NewSVC(sess, roleARN)
+
+	sess2, err := session.NewSession(&aws.Config{
+		Credentials: creds.creds,
+		Region:      aws.String("us-east-1"),
+	})
+	if err != nil {
+		fmt.Println("Error creating session:", err)
+		return nil, err
+	}
+
+	svc := costexplorer.New(sess2)
+
+	currentTime := time.Now()
+	startDate := currentTime.AddDate(0, -12, 0).Format("2006-01-02")
+	endDate := currentTime.Format("2006-01-02")
+
+	input := &costexplorer.GetCostAndUsageInput{
+		TimePeriod: &costexplorer.DateInterval{
+			Start: aws.String(startDate),
+			End:   aws.String(endDate),
+		},
+		Granularity: aws.String("MONTHLY"),
+		Metrics:     []*string{aws.String("UnblendedCost")},
+	}
+
+	// Use AWS cost usage explorer sdk to find total cost over last 12 months
+	result, err := svc.GetCostAndUsage(input)
+	if err != nil {
+		return nil, err
+	}
+
+	var totalCost float32
+	for _, resultByTime := range result.ResultsByTime {
+		amount, err := strconv.ParseFloat(*resultByTime.Total["UnblendedCost"].Amount, 32)
+		if err != nil {
+			return nil, err
+		}
+		totalCost += float32(amount)
+	}
+
+	return &totalCost, nil
 }
