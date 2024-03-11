@@ -103,6 +103,7 @@ type HatcheryConfig struct {
 	Sidecar                SidecarContainer `json:"sidecar"`
 	MoreConfigs            []AppConfigInfo  `json:"more-configs"`
 	PrismaConfig           PrismaConfig     `json:"prisma"`
+	AWSCostTracking        bool             `json:"aws-cost-tracking"`
 }
 
 // Config to allow for Prisma Agents
