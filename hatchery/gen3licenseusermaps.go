@@ -80,6 +80,25 @@ var validateContainerLicenseInfo = func(containerName string, licenseInfo Licens
 	return ok
 }
 
+func getItemsFromQuery(dbconfig *DbConfig, queryInput *dynamodb.QueryInput) ([]map[string]*dynamodb.AttributeValue, error) {
+	// Get items from a db query
+	queryOutput, err := dbconfig.DynamoDb.Query(queryInput)
+	if err != nil {
+		return nil, err
+	}
+	tableItems := queryOutput.Items
+	// If the query result is paginated then get the rest of the items
+	for queryOutput.LastEvaluatedKey != nil {
+		queryInput.ExclusiveStartKey = queryOutput.LastEvaluatedKey
+		queryOutput, err = dbconfig.DynamoDb.Query(queryInput)
+		if err != nil {
+			return nil, err
+		}
+		tableItems = append(tableItems, queryOutput.Items...)
+	}
+	return tableItems, nil
+}
+
 var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container) (gen3LicenseUserMaps *[]Gen3LicenseUserMap, err error) {
 	// Query the table to get all active gen3 license user map items
 
@@ -95,14 +114,15 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container)
 		Config.Logger.Printf("Error in building expression for query: %s", err)
 		return nil, err
 	}
-	res, err := dbconfig.DynamoDb.Query(&dynamodb.QueryInput{
+	queryUserMapsInput := &dynamodb.QueryInput{
 		TableName:                 aws.String(Config.Config.LicenseUserMapsTable),
 		IndexName:                 aws.String(Config.Config.LicenseUserMapsGSI),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 		KeyConditionExpression:    expr.KeyCondition(),
 		FilterExpression:          expr.Filter(),
-	})
+	}
+	licenseUserMapItems, err := getItemsFromQuery(dbconfig, queryUserMapsInput)
 	if err != nil {
 		Config.Logger.Printf("Error in active user query: %s", err)
 		return nil, err
@@ -110,12 +130,11 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container)
 
 	// Populate list of all active gen3 license user maps
 	var gen3LicenseUsers []Gen3LicenseUserMap
-	err = dynamodbattribute.UnmarshalListOfMaps(res.Items, &gen3LicenseUsers)
+	err = dynamodbattribute.UnmarshalListOfMaps(licenseUserMapItems, &gen3LicenseUsers)
 	if err != nil {
 		Config.Logger.Printf("Error in unmarshalling active gen3 license user maps: %s", err)
 		return nil, err
 	}
-
 	Config.Logger.Printf("Debug: active gen3 license user maps %v", gen3LicenseUsers)
 	return &gen3LicenseUsers, nil
 }
@@ -134,28 +153,28 @@ var getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (gen3Lic
 		Config.Logger.Printf("Error in building expression for query: %s", err)
 		return nil, err
 	}
-	res, err := dbconfig.DynamoDb.Query(&dynamodb.QueryInput{
+	queryUserMapsInput := &dynamodb.QueryInput{
 		TableName:                 aws.String(Config.Config.LicenseUserMapsTable),
 		IndexName:                 aws.String(Config.Config.LicenseUserMapsGSI),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 		KeyConditionExpression:    expr.KeyCondition(),
 		FilterExpression:          expr.Filter(),
-	})
+	}
+	licenseUserMapItems, err := getItemsFromQuery(dbconfig, queryUserMapsInput)
 	if err != nil {
-		Config.Logger.Printf("Error in active user query: %s", err)
+		Config.Logger.Printf("Error in items for user query: %s", err)
 		return nil, err
 	}
 
-	// Populate list of all active gen3 license user maps
+	// Populate list of gen3 license user maps for user
 	var gen3LicenseUsers []Gen3LicenseUserMap
-	err = dynamodbattribute.UnmarshalListOfMaps(res.Items, &gen3LicenseUsers)
+	err = dynamodbattribute.UnmarshalListOfMaps(licenseUserMapItems, &gen3LicenseUsers)
 	if err != nil {
-		Config.Logger.Printf("Error in unmarshalling active gen3 license user maps: %s", err)
+		Config.Logger.Printf("Error in unmarshalling gen3 license user maps for user: %s", err)
 		return nil, err
 	}
-
-	Config.Logger.Printf("Debug: active gen3 license user maps %v", gen3LicenseUsers)
+	Config.Logger.Printf("Debug: gen3 license user maps for user %v", gen3LicenseUsers)
 	return &gen3LicenseUsers, nil
 }
 
