@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/imagebuilder"
 	"github.com/aws/aws-sdk-go/service/sts"
@@ -229,14 +230,15 @@ func stringArrayContains(s []string, e string) bool {
 	return false
 }
 
-func getLatestImageBuilderAmi(imagePipelineArn string, imagebuilderListImagePipelineImages func(*imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error)) (string, error) {
+func getLatestImageBuilderAmi(imageBuilderReaderRoleArn string, imagePipelineArn string, imagebuilderListImagePipelineImages func(*imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error)) (string, error) {
 	// the `imagebuilderListImagePipelineImages` parameter should not be provided in production. It allows
 	// us to test this function by mocking `imagebuilder.ListImagePipelineImages` in the tests.
 	if imagebuilderListImagePipelineImages == nil {
 		sess := session.Must(session.NewSession(&aws.Config{
 			Region: aws.String("us-east-1"),
 		}))
-		imageBuilderSvc := imagebuilder.New(sess, &aws.Config{})
+		creds := stscreds.NewCredentials(sess, imageBuilderReaderRoleArn)
+		imageBuilderSvc := imagebuilder.New(sess, &aws.Config{Credentials: creds})
 		imagebuilderListImagePipelineImages = imageBuilderSvc.ListImagePipelineImages
 	}
 

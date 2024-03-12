@@ -31,7 +31,7 @@ General TODOS:
 */
 
 // create the AWS resources required to launch nextflow workflows
-func createNextflowResources(userName string, nextflowConfig NextflowConfig) (string, string, error) {
+func createNextflowResources(userName string, nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig) (string, string, error) {
 	var err error
 
 	// credentials and AWS services init
@@ -110,7 +110,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	}
 
 	// Create nextflow compute environment if it does not exist
-	batchComputeEnvArn, err := createBatchComputeEnvironment(userName, hostname, tagsMap, batchSvc, ec2Svc, iamSvc, *vpcid, *subnetids, payModel, awsAccountId, nextflowConfig)
+	batchComputeEnvArn, err := createBatchComputeEnvironment(nextflowGlobalConfig, nextflowConfig, userName, hostname, tagsMap, batchSvc, ec2Svc, iamSvc, *vpcid, *subnetids, payModel, awsAccountId)
 	if err != nil {
 		Config.Logger.Printf("Error creating compute environment for user %s: %s", userName, err.Error())
 		return "", "", err
@@ -575,7 +575,7 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 }
 
 // Create AWS Batch compute environment
-func createBatchComputeEnvironment(userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string, payModel *PayModel, awsAccountId string, nextflowConfig NextflowConfig) (string, error) {
+func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig, userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string, payModel *PayModel, awsAccountId string) (string, error) {
 	instanceProfileArn, err := createEcsInstanceProfile(iamSvc, fmt.Sprintf("%s-nf-ecsInstanceRole", hostname))
 	if err != nil {
 		Config.Logger.Printf("Unable to create ECS instance profile: %s", err.Error())
@@ -604,7 +604,7 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	// Configure the specified AMI. At the time of writing, CPU workflows launch on ECS_AL2 (default for all
 	// non-GPU instances) and GPU workflows on ECS_AL2_NVIDIA (default for all GPU instances). Setting the AMI
 	// for both types is easier than switching the image type based on which AMI (CPU or GPU) is configured.
-	ami, err := getNextflowInstanceAmi(nextflowConfig, nil)
+	ami, err := getNextflowInstanceAmi(nextflowGlobalConfig.ImageBuilderReaderRoleArn, nextflowConfig, nil)
 	if err != nil {
 		return "", err
 	}
@@ -1370,7 +1370,7 @@ func getLatestAmazonLinuxAmi(ec2svc *ec2.EC2) (*string, error) {
 	return nil, errors.New("no amazonlinux AMI found")
 }
 
-func getNextflowInstanceAmi(nextflowConfig NextflowConfig, imagebuilderListImagePipelineImages func(*imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error)) (string, error) {
+func getNextflowInstanceAmi(imageBuilderReaderRoleArn string, nextflowConfig NextflowConfig, imagebuilderListImagePipelineImages func(*imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error)) (string, error) {
 	// the `imagebuilderListImagePipelineImages` parameter should not be provided in production. It allows
 	// us to test this function by mocking `imagebuilder.ListImagePipelineImages` in the tests.
 	var err error
@@ -1378,7 +1378,7 @@ func getNextflowInstanceAmi(nextflowConfig NextflowConfig, imagebuilderListImage
 	if ami != "" {
 		Config.Logger.Printf("Using configured 'nextflow.instance-ami' '%s' and ignoring 'nextflow.instance-ami-builder-arn'", ami)
 	} else if nextflowConfig.InstanceAmiBuilderArn != "" {
-		ami, err = getLatestImageBuilderAmi(nextflowConfig.InstanceAmiBuilderArn, imagebuilderListImagePipelineImages)
+		ami, err = getLatestImageBuilderAmi(imageBuilderReaderRoleArn, nextflowConfig.InstanceAmiBuilderArn, imagebuilderListImagePipelineImages)
 		if err != nil {
 			return "", err
 		}

@@ -30,6 +30,9 @@ An example manifest entry may look like
       "command": ["su", "-c", "/home/jovyan/sidecarDockerrun.sh", "-s", "/bin/sh", "jovyan"],
       "lifecycle-pre-stop": ["su", "-c", "cd /data; for f in *; do fusermount -u $f; rm -rf $f; done", "-s", "/bin/sh", "jovyan"]
     },
+    "nextflow-global": {
+      "imagebuilder-reader-role-arn": ""
+    },
     "containers": [
       {
         "target-port": 8888,
@@ -128,4 +131,6 @@ An example manifest entry may look like
       * `s3-bucket-whitelist` are public buckets that Nextflow jobs are allowed to get data objects from. Access to actions "s3:GetObject" and "s3:ListBucket" for `arn:aws:s3:::<bucket>` and `arn:aws:s3:::<bucket>/*` will be granted.
       * `compute-environment-type` ("EC2", "SPOT", "FARGATE" or "FARGATE_SPOT"), `instance-ami`, `instance-type` ("optimal", "g4dn.xlarge"...), `instance-min-vcpus` and `instance-max-vcpus` are AWS Batch Compute Environment settings.
       * `instance-ami-builder-arn` is the ARN of an AWS image builder pipeline. The latest AMI built by this pipeline will be used. If `instance-ami` is specified, it overrides `instance-ami-builder-arn`.
+* `nextflow-global` is for global configuration specific to Nextflow containers.
+    * `imagebuilder-reader-role-arn`: see the [nextflow-global.imagebuilder-reader-role-arn section](/doc/explanation/nextflow.md#nextflow-globalimagebuilder-reader-role-arn) of the Nextflow workspaces documentation.
 * `more-configs`: see https://github.com/uc-cdis/hatchery/blob/master/doc/explanation/dockstore.md

@@ -11,6 +11,11 @@ import (
 	"os"
 )
 
+// Global configuration shared by all Nextflow containers
+type NextflowGlobalConfig struct {
+	ImageBuilderReaderRoleArn string `json:"imagebuilder-reader-role-arn"`
+}
+
 // Configuration specific to Nextflow containers
 type NextflowConfig struct {
 	Enabled                bool     `json:"enabled"`
@@ -96,14 +101,15 @@ type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
 	DefaultPayModel PayModel `json:"default-pay-model"`
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
-	PayModels              []PayModel       `json:"pay-models"`
-	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
-	SubDir                 string           `json:"sub-dir"`
-	Containers             []Container      `json:"containers"`
-	UserVolumeSize         string           `json:"user-volume-size"`
-	Sidecar                SidecarContainer `json:"sidecar"`
-	MoreConfigs            []AppConfigInfo  `json:"more-configs"`
-	PrismaConfig           PrismaConfig     `json:"prisma"`
+	PayModels              []PayModel           `json:"pay-models"`
+	PayModelsDynamodbTable string               `json:"pay-models-dynamodb-table"`
+	SubDir                 string               `json:"sub-dir"`
+	Containers             []Container          `json:"containers"`
+	UserVolumeSize         string               `json:"user-volume-size"`
+	Sidecar                SidecarContainer     `json:"sidecar"`
+	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
+	PrismaConfig           PrismaConfig         `json:"prisma"`
+	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
 }
 
 // Config to allow for Prisma Agents

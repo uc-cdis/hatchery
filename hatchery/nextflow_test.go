@@ -126,7 +126,7 @@ func TestGetNextflowInstanceAmi(t *testing.T) {
 	}
 
 	for containerId, container := range Config.ContainersMap {
-		ami, err := getNextflowInstanceAmi(container.NextflowConfig, mockedListImagePipelineImages)
+		ami, err := getNextflowInstanceAmi("", container.NextflowConfig, mockedListImagePipelineImages)
 		if containerId == "container_with_neither" {
 			if err == nil {
 				t.Errorf("Expected `getNextflowInstanceAmi()` to error but it returned an AMI: '%s'", ami)
