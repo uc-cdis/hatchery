@@ -13,13 +13,22 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
+type MockOutputPages struct {
+	first  dynamodb.QueryOutput
+	second dynamodb.QueryOutput
+}
+
 type DynamodbMockClient struct {
 	dynamodbiface.DynamoDBAPI
-	mockOutput *dynamodb.QueryOutput
+	mockOutput *MockOutputPages
 }
 
 func (m *DynamodbMockClient) Query(input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
-	return m.mockOutput, nil
+	if input.ExclusiveStartKey == nil {
+		return &m.mockOutput.first, nil
+	} else {
+		return &m.mockOutput.second, nil
+	}
 }
 
 func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
@@ -28,15 +37,44 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 	targetEnvironment := "test.planx-pla.net"
 	t.Setenv("GEN3_ENDPOINT", targetEnvironment)
 
+	firstMockItems := []map[string]*dynamodb.AttributeValue{
+		{
+			"ItemId":      {S: aws.String("1234-abcd")},
+			"Environment": {S: aws.String(targetEnvironment)},
+			"IsActive":    {S: aws.String("True")},
+			"LicenseId":   {N: aws.String("1")},
+		},
+		{
+			"ItemId":      {S: aws.String("1234-efgh")},
+			"Environment": {S: aws.String(targetEnvironment)},
+			"IsActive":    {S: aws.String("True")},
+			"LicenseId":   {N: aws.String("2")},
+		},
+	}
+	secondMockItems := []map[string]*dynamodb.AttributeValue{
+		{
+			"ItemId":      {S: aws.String("5678-abcd")},
+			"Environment": {S: aws.String(targetEnvironment)},
+			"IsActive":    {S: aws.String("True")},
+			"LicenseId":   {N: aws.String("3")},
+		},
+		{
+			"ItemId":      {S: aws.String("5678-efgh")},
+			"Environment": {S: aws.String(targetEnvironment)},
+			"IsActive":    {S: aws.String("True")},
+			"LicenseId":   {N: aws.String("4")},
+		},
+	}
+
 	testCases := []struct {
 		name            string
 		want            *[]Gen3LicenseUserMap
-		mockQueryOutput *dynamodb.QueryOutput
+		mockQueryOutput *MockOutputPages
 	}{
 		{
 			name:            "NoActiveLicenses",
 			want:            &[]Gen3LicenseUserMap{},
-			mockQueryOutput: &dynamodb.QueryOutput{},
+			mockQueryOutput: &MockOutputPages{},
 		},
 		{
 			name: "SomeActiveLicenses",
@@ -48,26 +86,55 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 					LicenseId:   1,
 				},
 				{
-					ItemId:      "5678-efgh",
+					ItemId:      "1234-efgh",
 					Environment: targetEnvironment,
 					IsActive:    "True",
 					LicenseId:   2,
 				},
 			},
-			mockQueryOutput: &dynamodb.QueryOutput{
-				Items: []map[string]*dynamodb.AttributeValue{
-					{
-						"ItemId":      {S: aws.String("1234-abcd")},
-						"Environment": {S: aws.String(targetEnvironment)},
-						"IsActive":    {S: aws.String("True")},
-						"LicenseId":   {N: aws.String("1")},
+			mockQueryOutput: &MockOutputPages{
+				first: dynamodb.QueryOutput{
+					Items: firstMockItems,
+				},
+			},
+		},
+		{
+			name: "PaginatedActiveLicenses",
+			want: &[]Gen3LicenseUserMap{
+				{
+					ItemId:      "1234-abcd",
+					Environment: targetEnvironment,
+					IsActive:    "True",
+					LicenseId:   1,
+				},
+				{
+					ItemId:      "1234-efgh",
+					Environment: targetEnvironment,
+					IsActive:    "True",
+					LicenseId:   2,
+				},
+				{
+					ItemId:      "5678-abcd",
+					Environment: targetEnvironment,
+					IsActive:    "True",
+					LicenseId:   3,
+				},
+				{
+					ItemId:      "5678-efgh",
+					Environment: targetEnvironment,
+					IsActive:    "True",
+					LicenseId:   4,
+				},
+			},
+			mockQueryOutput: &MockOutputPages{
+				first: dynamodb.QueryOutput{
+					Items: firstMockItems,
+					LastEvaluatedKey: map[string]*dynamodb.AttributeValue{
+						"ItemId": {S: aws.String("1234-efgh")},
 					},
-					{
-						"ItemId":      {S: aws.String("5678-efgh")},
-						"Environment": {S: aws.String(targetEnvironment)},
-						"IsActive":    {S: aws.String("True")},
-						"LicenseId":   {N: aws.String("2")},
-					},
+				},
+				second: dynamodb.QueryOutput{
+					Items: secondMockItems,
 				},
 			},
 		},
