@@ -128,6 +128,7 @@ type HatcheryConfig struct {
 // Config to allow for Prisma Agents
 type PrismaConfig struct {
 	ConsoleAddress string `json:"console-address"`
+	ConsoleVersion string `json:"console-version"`
 	Enable         bool   `json:"enable"`
 }
 
@@ -233,6 +234,11 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	for _, payModel := range data.Config.PayModels {
 		user := payModel.User
 		data.PayModelMap[user] = payModel
+	}
+
+	// Set default prisma console version
+	if data.Config.PrismaConfig.ConsoleVersion == "" {
+		data.Config.PrismaConfig.ConsoleVersion = "v32.02"
 	}
 
 	return data, nil

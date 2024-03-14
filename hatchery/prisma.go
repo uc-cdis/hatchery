@@ -59,7 +59,7 @@ func getInstallBundle() (*InstallBundle, error) {
 		return nil, err
 	}
 
-	installBundleEndpoint := Config.Config.PrismaConfig.ConsoleAddress + "/api/v22.06/defenders/install-bundle?consoleaddr=" + Config.Config.PrismaConfig.ConsoleAddress + "&defenderType=appEmbedded"
+	installBundleEndpoint := Config.Config.PrismaConfig.ConsoleAddress + fmt.Sprintf("/api/%s/defenders/install-bundle?consoleaddr=", Config.Config.PrismaConfig.ConsoleVersion) + Config.Config.PrismaConfig.ConsoleAddress + "&defenderType=appEmbedded"
 	var bearer = "Bearer " + *token
 	// Create a new request using http
 	req, err := http.NewRequest("GET", installBundleEndpoint, nil)
@@ -101,7 +101,7 @@ func getPrismaImage() (*string, error) {
 		return nil, err
 	}
 
-	imageEndpoint := Config.Config.PrismaConfig.ConsoleAddress + "/api/v32.02/defenders/image-name"
+	imageEndpoint := Config.Config.PrismaConfig.ConsoleAddress + fmt.Sprintf("/api/%s/defenders/image-name", Config.Config.PrismaConfig.ConsoleVersion)
 	var bearer = "Bearer " + *token
 	// Create a new request using http
 	req, err := http.NewRequest("GET", imageEndpoint, nil)
