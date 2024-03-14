@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -27,6 +28,12 @@ type containerOption struct {
 	ID            string `json:"id"`
 	IdleTimeLimit int    `json:"idle-time-limit"`
 }
+
+type TextOutput struct {
+	Text string
+}
+
+var textResult = template.Must(template.New("").Parse(`{{ .Text }}`))
 
 // RegisterHatchery setup endpoints with the http engine
 func RegisterHatchery(mux *httptrace.ServeMux) {
@@ -306,6 +313,8 @@ func options(w http.ResponseWriter, r *http.Request) {
 func getWorkspaceFlavor(container Container) string {
 	if container.NextflowConfig.Enabled {
 		return "nextflow"
+	} else if container.License.Enabled {
+		return container.License.WorkspaceFlavor
 	} else if strings.Contains(strings.ToLower(container.Name), "jupyter") {
 		return "jupyter"
 	} else {
@@ -401,6 +410,28 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Debug: Nextflow is not enabled: skipping Nextflow resources creation")
 	}
 
+	if Config.ContainersMap[hash].License.Enabled {
+		Config.Logger.Printf(
+			"Info: Running licensed workspace: %s", Config.ContainersMap[hash].License.WorkspaceFlavor)
+		dbconfig := initializeDbConfig()
+		activeGen3LicenseUsers, err := getActiveGen3LicenseUserMaps(dbconfig, Config.ContainersMap[hash])
+		if err != nil {
+			Config.Logger.Printf(err.Error())
+		}
+		// Check for config max
+		nextLicenseId := getNextLicenseId(activeGen3LicenseUsers, Config.ContainersMap[hash].License.MaxLicenseIds)
+		if nextLicenseId == 0 {
+			Config.Logger.Printf("Error: no available license ids")
+			return
+		}
+		newItem, err := createGen3LicenseUserMap(dbconfig, userName, nextLicenseId, Config.ContainersMap[hash])
+		if err != nil {
+			Config.Logger.Printf(err.Error())
+		}
+		Config.Logger.Printf("Created new license-user-map item: %v", newItem)
+
+	}
+
 	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
 		Config.Logger.Printf(err.Error())
@@ -455,8 +486,29 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No username found. Unable to terminate", http.StatusBadRequest)
 		return
 	}
-
 	Config.Logger.Printf("Terminating workspace for user %s", userName)
+
+	// mark any gen3-licensed sessions as inactive
+	Config.Logger.Printf("Checking for gen3 license items for user: %s", userName)
+	dbconfig := initializeDbConfig()
+	activeGen3LicenseUsers, userlicerr := getLicenseUserMapsForUser(dbconfig, userName)
+	if userlicerr != nil {
+		Config.Logger.Printf(userlicerr.Error())
+	}
+	Config.Logger.Printf("Debug: Active gen3 license user maps %v", activeGen3LicenseUsers)
+	if len(*activeGen3LicenseUsers) == 0 {
+		Config.Logger.Printf("No active gen3 license sessions for user: %s", userName)
+	} else {
+		for _, v := range *activeGen3LicenseUsers {
+			if v.UserId == userName {
+				Config.Logger.Printf("Debug: updating gen3 license user map as inactive for itemId %s", v.ItemId)
+				_, err := setGen3LicenseUserInactive(dbconfig, v.ItemId)
+				if err != nil {
+					Config.Logger.Printf(err.Error())
+				}
+			}
+		}
+	}
 
 	// delete nextflow resources. There is no way to know if the actual workspace being
 	// terminated is a nextflow workspace or not, so always attempt to delete
@@ -603,7 +655,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		fmt.Fprint(w, string(out))
+		_ = textResult.Execute(w, TextOutput{string(out)})
 		return
 	}
 
@@ -621,6 +673,15 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		FilePath:        "sample-nextflow-config.txt",
 		WorkspaceFlavor: "nextflow",
 	})
+	// Look for any `license` configs in containers
+	for _, v := range Config.ContainersMap {
+		if v.License.Enabled {
+			fileList = append(fileList, file{
+				FilePath:        v.License.FilePath,
+				WorkspaceFlavor: v.License.WorkspaceFlavor,
+			})
+		}
+	}
 
 	out, err := json.Marshal(fileList)
 	if err != nil {
@@ -632,10 +693,27 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func getMountFileContents(fileId string, userName string) (string, error) {
+	filePathConfigs := getLicenceFilePathConfigs()
+
 	if fileId == "sample-nextflow-config.txt" {
 		out, err := generateNextflowConfig(userName)
 		if err != nil {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
+		}
+		return out, nil
+	} else if filePathInLicenseConfigs(fileId, filePathConfigs) {
+		// get g3auto kube secret
+		g3autoName, g3autoKey, ok := getG3autoInfoForFilepath(fileId, filePathConfigs)
+		if !ok {
+			return "", fmt.Errorf("could not get g3auto name and key for file-path '%s'", fileId)
+		}
+		clientset, err := getKubeClientSet()
+		if err != nil {
+			Config.Logger.Printf("unable to get kube client set: %v", err)
+		}
+		out, err := getLicenseFromKubernetes(clientset, g3autoName, g3autoKey)
+		if err != nil {
+			Config.Logger.Printf("unable to get license from kubernetes: %v", err)
 		}
 		return out, nil
 	} else {
