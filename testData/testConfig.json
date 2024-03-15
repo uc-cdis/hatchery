@@ -2,6 +2,8 @@
   "user-namespace": "jupyter-pods",
   "sub-dir": "/lw-workspace",
   "user-volume-size": "10Gi",
+  "license-user-maps-dynamodb-table": "gen3-license-user-maps",
+  "license-user-maps-global-secondary-index": "activeUsersIndex",
   "sidecar": {
     "cpu-limit": "1.0",
     "memory-limit": "256Mi",
@@ -15,6 +17,26 @@
     "lifecycle-pre-stop": ["su", "-c", "echo test", "-s", "/bin/sh", "root"]
   },
   "containers": [{
+      "target-port": 8888,
+      "cpu-limit": "1.0",
+      "memory-limit": "2Gi",
+      "name": "(Generic, Limited Gen3-licensed) Stata Notebook",
+      "image": "quay.io/cdis/jupyter-pystata-gen3-licensed:master",
+      "env": {
+        "FRAME_ANCESTORS": "https://dev.planx-pla.net"
+      },
+      "license": {
+        "enabled": true,
+        "license-type": "TEST-LICENSE",
+        "max-license-ids": 6,
+        "g3auto-name": "test-license-g3auto",
+        "g3auto-key": "test_license.txt",
+        "file-path": "licence-path.txt",
+        "workspace-flavor": "gen3-licensed"
+      },
+      "args": []
+    },
+    {
       "target-port": 8787,
       "cpu-limit": "1.0",
       "memory-limit": "1024Mi",

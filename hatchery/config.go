@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	k8sv1 "k8s.io/api/core/v1"
 
 	"crypto/md5"
@@ -29,6 +30,17 @@ type NextflowConfig struct {
 	InstanceMaxVCpus       int32    `json:"instance-max-vcpus"`
 }
 
+// LicenseInfo contains configuration for Gen3 supplied licenses.
+type LicenseInfo struct {
+	Enabled         bool   `json:"enabled"`
+	LicenseType     string `json:"license-type"`
+	MaxLicenseIds   int    `json:"max-license-ids"`
+	G3autoName      string `json:"g3auto-name"`
+	G3autoKey       string `json:"g3auto-key"`
+	FilePath        string `json:"file-path"`
+	WorkspaceFlavor string `json:"workspace-flavor"`
+}
+
 // Container Struct to hold the configuration for Pod Container
 type Container struct {
 	Name               string            `json:"name"`
@@ -53,6 +65,7 @@ type Container struct {
 	UseSharedMemory    string            `json:"use-shared-memory"`
 	Friends            []k8sv1.Container `json:"friends"`
 	NextflowConfig     NextflowConfig    `json:"nextflow"`
+	License            LicenseInfo       `json:"license"`
 	Authz              AuthzConfig       `json:"authz"`
 }
 
@@ -96,6 +109,10 @@ type AllPayModels struct {
 	PayModels       []PayModel `json:"all_pay_models"`
 }
 
+type DbConfig struct {
+	DynamoDb dynamodbiface.DynamoDBAPI
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
@@ -103,6 +120,9 @@ type HatcheryConfig struct {
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
 	PayModels              []PayModel           `json:"pay-models"`
 	PayModelsDynamodbTable string               `json:"pay-models-dynamodb-table"`
+	LicenseUserMapsTable   string               `json:"license-user-maps-dynamodb-table"`
+	LicenseUserMapsGSI     string               `json:"license-user-maps-global-secondary-index"`
+	License                LicenseInfo          `json:"license"`
 	SubDir                 string               `json:"sub-dir"`
 	Containers             []Container          `json:"containers"`
 	UserVolumeSize         string               `json:"user-volume-size"`
@@ -115,6 +135,7 @@ type HatcheryConfig struct {
 // Config to allow for Prisma Agents
 type PrismaConfig struct {
 	ConsoleAddress string `json:"console-address"`
+	ConsoleVersion string `json:"console-version"`
 	Enable         bool   `json:"enable"`
 }
 
@@ -188,6 +209,31 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.ContainersMap[hash] = container
 	}
 
+	if data.Config.LicenseUserMapsTable == "" {
+		data.Logger.Printf("Warning: no 'license-user-maps-dynamodb-table' in configuration: will be unable to store license-user-map data in DynamoDB")
+	} else if data.Config.LicenseUserMapsGSI == "" {
+		err = fmt.Errorf("'license-user-maps-dynamodb-table' is present but missing 'license-user-maps-global-secondary-index'")
+		data.Logger.Printf("Error in config: %v", err)
+		return nil, err
+	}
+
+	for _, container := range data.Config.Containers {
+		data.Logger.Printf("Checking license config info for container %s", container.Name)
+		if container.License.Enabled {
+			if data.Config.LicenseUserMapsTable == "" {
+				err = fmt.Errorf("no 'license-user-maps-dynamodb-table' in configuration but license is configured for container %s", container.Name)
+				data.Logger.Printf("Error in configuration: %v", err)
+				return nil, err
+			}
+			ok := validateContainerLicenseInfo(container.Name, container.License)
+			if !ok {
+				err = fmt.Errorf("container '%s' has an invalid 'license' configuration", container.Name)
+				data.Logger.Printf("Error in configuration: %v", err)
+				return nil, err
+			}
+		}
+	}
+
 	if data.Config.PayModelsDynamodbTable == "" {
 		data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
 	}
@@ -195,6 +241,11 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	for _, payModel := range data.Config.PayModels {
 		user := payModel.User
 		data.PayModelMap[user] = payModel
+	}
+
+	// Set default prisma console version
+	if data.Config.PrismaConfig.ConsoleVersion == "" {
+		data.Config.PrismaConfig.ConsoleVersion = "v32.02"
 	}
 
 	return data, nil

@@ -834,6 +834,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 	original_deleteK8sPod := deleteK8sPod
 	original_terminateEcsWorkspace := terminateEcsWorkspace
 	original_getCurrentPayModel := getCurrentPayModel
+	original_getLicenseUserMapsForUser := getLicenseUserMapsForUser
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_resetCurrentPaymodel := resetCurrentPaymodel
 	defer func() {
@@ -841,6 +842,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 		deleteK8sPod = original_deleteK8sPod
 		terminateEcsWorkspace = original_terminateEcsWorkspace
 		getCurrentPayModel = original_getCurrentPayModel
+		getLicenseUserMapsForUser = original_getLicenseUserMapsForUser
 		getWorkspaceStatus = original_getWorkspaceStatus
 		resetCurrentPaymodel = original_resetCurrentPaymodel
 	}()
@@ -894,6 +896,10 @@ func Test_TerminateEndpoint(t *testing.T) {
 		resetCurrentPaymodel = func(string) error {
 			waitGroup.Done()
 			return nil
+		}
+
+		getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (*[]Gen3LicenseUserMap, error) {
+			return &[]Gen3LicenseUserMap{}, nil
 		}
 
 		url := "/terminate"
@@ -1050,7 +1056,14 @@ func TestMountFilesEndpoint(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
 	// mock the nextflow config generation, which makes calls to AWS
-	fileContents := "here's the output"
+	fileContents := `here's the output
+aws {
+	batch {
+		cliPath = '/home/ec2-user/miniconda/bin/aws'
+		jobRole = '[arn:aws:s3:::my_corporate_bucket/*
+		arn:aws:s3:::my_corporate_bucket/Development/*]'
+	}
+}`
 	originalGenerateNextflowConfig := generateNextflowConfig
 	generateNextflowConfig = func(userName string) (string, error) {
 		return fileContents, nil
@@ -1058,6 +1071,18 @@ func TestMountFilesEndpoint(t *testing.T) {
 	defer func() {
 		generateNextflowConfig = originalGenerateNextflowConfig // restore original function
 	}()
+	// mock license file path config
+	licenseInfo := LicenseInfo{
+		Enabled:         true,
+		FilePath:        "license-path.txt",
+		WorkspaceFlavor: "licensed-flavor",
+	}
+	Config.ContainersMap = map[string]Container{
+		"container_a": {
+			Name:    "Container with license",
+			License: licenseInfo,
+		},
+	}
 
 	// list files
 	url := "/mount-files"
@@ -1074,7 +1099,8 @@ func TestMountFilesEndpoint(t *testing.T) {
 		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
 		return
 	}
-	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\",\"workspace_flavor\":\"nextflow\"}]"
+	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\",\"workspace_flavor\":\"nextflow\"}," +
+		"{\"file_path\":\"license-path.txt\",\"workspace_flavor\":\"licensed-flavor\"}]"
 	if w.Body.String() != expectedOutput {
 		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, expectedOutput, w.Body)
 		return

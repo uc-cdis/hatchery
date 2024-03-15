@@ -21,6 +21,8 @@ An example manifest entry may look like
       "workspace_type": "Trial Workspace",
       "local": true
     },
+    "license-user-maps-dynamodb-table": "gen3-license-user-maps",
+    "license-user-maps-global-seconday-index": "activeUsersIndex",
     "sidecar": {
       "cpu-limit": "1.0",
       "memory-limit": "256Mi",
@@ -74,6 +76,26 @@ An example manifest entry may look like
             "instance-min-vcpus": 0,
             "instance-max-vcpus": 9
         }
+      },
+      {
+        "target-port": 8888,
+        "cpu-limit": "1.0",
+        "memory-limit": "2Gi",
+        "name": "(Generic, Limited Gen3-licensed) Stata Notebook",
+        "image": "quay.io/cdis/jupyter-pystata-gen3-licensed:master",
+        "env": {
+          "FRAME_ANCESTORS": "https://dev.planx-pla.net"
+        },
+        "license": {
+          "enabled": true,
+          "license-type": "STATA",
+          "max-license-ids": 6,
+          "g3auto-name": "license-g3auto",
+          "g3auto-key": "license.txt",
+          "file-path": "licence-path.txt",
+          "workspace-flavor": "gen3-licensed"
+        },
+        "args": []
       }
     ],
     "more-configs": [
@@ -92,6 +114,8 @@ An example manifest entry may look like
 * `prisma`: TODO document
 * `pay-models-dynamodb-table` is the name of the DynamoDB table where Hatchery can get users' pay model information
 * `default-pay-model` is the pay model to fall back to when a user does not have a pay model set up in the `pay-models-dynamodb-table` table
+* `license-user-maps-dynamodb-table` is the optional table name if using dynamodb for managing user sessions of gen3-licensed workspaces.
+* `license-user-maps-global-seconday-index` the global secondary index for active users in the license-user-maps table.
 * `sidecar` is the sidecar container launched in the same pod as each workspace container. In Gen3 this is used for the FUSE mount system to the manifests that the user has loaded in.
     * `cpu-limit` the CPU limit for the container matching Kubernetes resource spec.
     * `memory-limit` the memory limit for the container matching Kubernetes resource spec.
@@ -100,6 +124,8 @@ An example manifest entry may look like
     * `args` the arguments to pass to the container.
     * `command` a string array as the command to run in the container overriding the default.
     * `lifecycle-pre-stop` a string array as the container prestop command.
+* `nextflow-global` is for global configuration specific to Nextflow containers.
+    * `imagebuilder-reader-role-arn`: see the [nextflow-global.imagebuilder-reader-role-arn section](/doc/explanation/nextflow.md#nextflow-globalimagebuilder-reader-role-arn) of the Nextflow workspaces documentation.
 * `containers` is the list of workspaces available to be run by this instance of Hatchery. Each container must be a single image and expose a web server.
     * `target-port` specifies the port that the container is exposing the webserver on.
     * `cpu-limit` the CPU limit for the container matching Kubernetes resource spec.
@@ -131,6 +157,12 @@ An example manifest entry may look like
       * `s3-bucket-whitelist` are public buckets that Nextflow jobs are allowed to get data objects from. Access to actions "s3:GetObject" and "s3:ListBucket" for `arn:aws:s3:::<bucket>` and `arn:aws:s3:::<bucket>/*` will be granted.
       * `compute-environment-type` ("EC2", "SPOT", "FARGATE" or "FARGATE_SPOT"), `instance-ami`, `instance-type` ("optimal", "g4dn.xlarge"...), `instance-min-vcpus` and `instance-max-vcpus` are AWS Batch Compute Environment settings.
       * `instance-ami-builder-arn` is the ARN of an AWS image builder pipeline. The latest AMI built by this pipeline will be used. If `instance-ami` is specified, it overrides `instance-ami-builder-arn`.
-* `nextflow-global` is for global configuration specific to Nextflow containers.
-    * `imagebuilder-reader-role-arn`: see the [nextflow-global.imagebuilder-reader-role-arn section](/doc/explanation/nextflow.md#nextflow-globalimagebuilder-reader-role-arn) of the Nextflow workspaces documentation.
+    * `license` is for configuration specific to any gen3-licensed containers.
+      * `enabled` set to `true` to enable management of license and user-sessions.
+      * `license-type` name of the license type, eg `"STATA"`.
+      * `max-license-ids` integer for maximum users of the license, eg `6`.
+      * `g3auto-name` g3auto secret with license.
+      * `g3auto-key` g3auto key for the secret, eg `"license_file.txt"`.
+      * `file-path` container file-path where license should be copied.
+      * `workspace-flavor` description of type of gen3-licensed container.
 * `more-configs`: see https://github.com/uc-cdis/hatchery/blob/master/doc/explanation/dockstore.md

@@ -7,6 +7,7 @@ import (
 
 func TestLoadConfig(t *testing.T) {
 	defer SetupAndTeardownTest()()
+	expectedContainers := 8
 
 	config, err := LoadConfig("../testData/testConfig.json", nil)
 	if nil != err {
@@ -14,8 +15,8 @@ func TestLoadConfig(t *testing.T) {
 		return
 	}
 	numContainers := len(config.Config.Containers)
-	if numContainers != 7 {
-		t.Errorf("config did not load the expected number of containers: %v != %v", numContainers, 7)
+	if numContainers != expectedContainers {
+		t.Errorf("config did not load the expected number of containers: %v != %v", numContainers, expectedContainers)
 		return
 	}
 	jsBytes, err2 := json.MarshalIndent(config.Config, "", "  ")
