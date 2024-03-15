@@ -77,4 +77,4 @@ Trust policy (allows Acct2):
 
 ## Note about cloud-automation deployments
 
-To enable the Nextflow feature in a Hatchery deployment created before version 2023.11/1.4.0, run `gen3 kube-setup-hatchery` in order to recreate the Hatchery IAM role with additional access.
+To enable the Nextflow feature in a Hatchery deployment created before version 2023.11/1.4.0, run `kubectl delete sa hatchery-service-account && gen3 kube-setup-hatchery` in order to recreate the Hatchery IAM role with additional access.
