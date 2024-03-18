@@ -1548,7 +1548,6 @@ var generateNextflowConfig = func(userName string) (string, error) {
 
 	Config.Logger.Printf("Generating Nextflow configuration with: Batch queue: '%s'. Job role: '%s'. Workdir: '%s'.", batchJobQueueName, nextflowJobsRoleArn, workDir)
 
-	// TODO "ubuntu" container may not always be authorized - replace with a public approved container?
 	configContents := fmt.Sprintf(
 		`plugins {
 	id 'nf-amazon'
@@ -1556,7 +1555,7 @@ var generateNextflowConfig = func(userName string) (string, error) {
 process {
 	executor = 'awsbatch'
 	queue = '%s'
-	container = 'ubuntu'
+	container = 'public.ecr.aws/l5b8a5z6/nextflow-approved/public:gen3-amazonlinux-base-AL2023fix'
 }
 aws {
 	batch {
