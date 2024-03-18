@@ -898,8 +898,8 @@ func Test_TerminateEndpoint(t *testing.T) {
 			return nil
 		}
 
-		getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (*[]Gen3LicenseUserMap, error) {
-			return &[]Gen3LicenseUserMap{}, nil
+		getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) ([]Gen3LicenseUserMap, error) {
+			return []Gen3LicenseUserMap{}, nil
 		}
 
 		url := "/terminate"

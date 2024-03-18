@@ -67,18 +67,26 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name            string
-		want            *[]Gen3LicenseUserMap
-		mockQueryOutput *MockOutputPages
+		name               string
+		want               []Gen3LicenseUserMap
+		mockLicenseEnabled bool
+		mockQueryOutput    *MockOutputPages
 	}{
 		{
-			name:            "NoActiveLicenses",
-			want:            &[]Gen3LicenseUserMap{},
-			mockQueryOutput: &MockOutputPages{},
+			name:               "LicenseNotEnabled",
+			want:               []Gen3LicenseUserMap{},
+			mockLicenseEnabled: false,
+			mockQueryOutput:    &MockOutputPages{},
+		},
+		{
+			name:               "NoActiveLicenses",
+			want:               []Gen3LicenseUserMap{},
+			mockLicenseEnabled: true,
+			mockQueryOutput:    &MockOutputPages{},
 		},
 		{
 			name: "SomeActiveLicenses",
-			want: &[]Gen3LicenseUserMap{
+			want: []Gen3LicenseUserMap{
 				{
 					ItemId:      "1234-abcd",
 					Environment: targetEnvironment,
@@ -92,6 +100,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 					LicenseId:   2,
 				},
 			},
+			mockLicenseEnabled: true,
 			mockQueryOutput: &MockOutputPages{
 				first: dynamodb.QueryOutput{
 					Items: firstMockItems,
@@ -100,7 +109,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 		},
 		{
 			name: "PaginatedActiveLicenses",
-			want: &[]Gen3LicenseUserMap{
+			want: []Gen3LicenseUserMap{
 				{
 					ItemId:      "1234-abcd",
 					Environment: targetEnvironment,
@@ -126,6 +135,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 					LicenseId:   4,
 				},
 			},
+			mockLicenseEnabled: true,
 			mockQueryOutput: &MockOutputPages{
 				first: dynamodb.QueryOutput{
 					Items: firstMockItems,
@@ -144,9 +154,12 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 	dbconfig := initializeDbConfig()
 
 	licenseInfo := LicenseInfo{
-		Enabled:       true,
-		LicenseType:   "some-license",
-		MaxLicenseIds: 6,
+		LicenseType:     "some-license",
+		MaxLicenseIds:   6,
+		G3autoName:      "stata-workspace-gen3-license-g3auto",
+		G3autoKey:       "stata_license.txt",
+		FilePath:        "stata.lic",
+		WorkspaceFlavor: "gen3-licensed",
 	}
 	mockContainer := Container{
 		Name:    "container-name",
@@ -155,12 +168,14 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 
 	// getActiveGen3LicenseUserMaps
 	for _, testcase := range testCases {
-		t.Logf("Testing GetActiveGen3LicenseUserMaps")
+		t.Logf("Testing GetActiveGen3LicenseUserMaps case: %s", testcase.name)
 
 		dbconfig.DynamoDb = &DynamodbMockClient{
 			DynamoDBAPI: nil,
 			mockOutput:  testcase.mockQueryOutput,
 		}
+
+		mockContainer.License.Enabled = testcase.mockLicenseEnabled
 
 		/* Act */
 		got, err := getActiveGen3LicenseUserMaps(dbconfig, mockContainer)
@@ -181,7 +196,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 
 	// getLicenseUserMapsForUser
 	for _, testcase := range testCases {
-		t.Logf("Testing getLicenseUserMapsForUser")
+		t.Logf("Testing getLicenseUserMapsForUser case: %s", testcase.name)
 
 		dbconfig.DynamoDb = &DynamodbMockClient{
 			DynamoDBAPI: nil,
@@ -305,19 +320,19 @@ func Test_GetNextLicenseId(t *testing.T) {
 		name                          string
 		maxLicenseIds                 int
 		want                          int
-		mockActiveGen3LicenseUserMaps *[]Gen3LicenseUserMap
+		mockActiveGen3LicenseUserMaps []Gen3LicenseUserMap
 	}{
 		{
 			name:                          "Gen3UserLicensesIsEmpty",
 			maxLicenseIds:                 6,
 			want:                          1,
-			mockActiveGen3LicenseUserMaps: &[]Gen3LicenseUserMap{},
+			mockActiveGen3LicenseUserMaps: []Gen3LicenseUserMap{},
 		},
 		{
 			name:          "OneLicenseUsed",
 			maxLicenseIds: 6,
 			want:          2,
-			mockActiveGen3LicenseUserMaps: &[]Gen3LicenseUserMap{
+			mockActiveGen3LicenseUserMaps: []Gen3LicenseUserMap{
 				{
 					IsActive:  "True",
 					LicenseId: 1,
@@ -328,7 +343,7 @@ func Test_GetNextLicenseId(t *testing.T) {
 			name:          "MaxLicensesActive",
 			maxLicenseIds: 2,
 			want:          0,
-			mockActiveGen3LicenseUserMaps: &[]Gen3LicenseUserMap{
+			mockActiveGen3LicenseUserMaps: []Gen3LicenseUserMap{
 				{
 					IsActive:  "True",
 					LicenseId: 1,
