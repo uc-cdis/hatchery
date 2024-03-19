@@ -450,11 +450,11 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 	testCases := []struct {
 		name        string
 		licenseInfo LicenseInfo
-		want        bool
+		expectError bool
 	}{
 		{
-			name: "ValidLicenseInfo",
-			want: true,
+			name:        "ValidLicenseInfo",
+			expectError: false,
 			licenseInfo: LicenseInfo{
 				Enabled:         true,
 				LicenseType:     "test-license-type",
@@ -466,8 +466,8 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 			},
 		},
 		{
-			name: "LicenseNotEnabled",
-			want: false,
+			name:        "LicenseNotEnabled",
+			expectError: true,
 			licenseInfo: LicenseInfo{
 				Enabled:         false,
 				LicenseType:     "test-license-type",
@@ -479,8 +479,8 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 			},
 		},
 		{
-			name: "MissingLicenseType",
-			want: false,
+			name:        "MissingLicenseType",
+			expectError: true,
 			licenseInfo: LicenseInfo{
 				Enabled:         true,
 				MaxLicenseIds:   3,
@@ -491,8 +491,8 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 			},
 		},
 		{
-			name: "ZeroMaxIds",
-			want: false,
+			name:        "ZeroMaxIds",
+			expectError: true,
 			licenseInfo: LicenseInfo{
 				Enabled:         true,
 				LicenseType:     "test-license-type",
@@ -504,15 +504,51 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 			},
 		},
 		{
-			name: "MissingG3AutoName",
-			want: false,
+			name:        "MissingG3AutoName",
+			expectError: true,
 			licenseInfo: LicenseInfo{
 				Enabled:         true,
 				LicenseType:     "test-license-type",
 				MaxLicenseIds:   3,
-				G3autoKey:       "test0g3auto-key",
+				G3autoKey:       "test-g3auto-key",
 				FilePath:        "test-file-path",
 				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+		{
+			name:        "MissingG3AutoKey",
+			expectError: true,
+			licenseInfo: LicenseInfo{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+		{
+			name:        "MissingFilePath",
+			expectError: true,
+			licenseInfo: LicenseInfo{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test-g3auto-key",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+		{
+			name:        "MissingWorkspaceFlavor",
+			expectError: true,
+			licenseInfo: LicenseInfo{
+				Enabled:       true,
+				LicenseType:   "test-license-type",
+				MaxLicenseIds: 3,
+				G3autoName:    "test-g3auto-name",
+				G3autoKey:     "test-g3auto-key",
+				FilePath:      "test-file-path",
 			},
 		},
 	}
@@ -520,12 +556,13 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Logf("Testing validateContainerLicenseInfo when %s", testcase.name)
 
-		got := validateContainerLicenseInfo("container-name", testcase.licenseInfo)
-
+		err := validateContainerLicenseInfo("container-name", testcase.licenseInfo)
 		/* Assert */
-		if got != testcase.want {
-			t.Errorf("\nassertion error while testing `validateContainerLicenseInfo`: \nWant:%+v\nGot:%+v", testcase.want, got)
+		if testcase.expectError == true && err == nil {
+			t.Errorf("\nWanted error but got nil.")
+		}
+		if testcase.expectError == false && err != nil {
+			t.Errorf("\nWanted nil but got error: %s", err)
 		}
 	}
-
 }

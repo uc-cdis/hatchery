@@ -2,6 +2,7 @@ package hatchery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -46,9 +47,10 @@ var initializeDbConfig = func() *DbConfig {
 	}
 }
 
-var validateContainerLicenseInfo = func(containerName string, licenseInfo LicenseInfo) bool {
+var validateContainerLicenseInfo = func(containerName string, licenseInfo LicenseInfo) error {
 
-	ok := true
+	var ok = true
+	// print any items that are missing from LicenseInfo
 	if !licenseInfo.Enabled {
 		fmt.Printf("Warning: License is not enabled for container %s\n", containerName)
 		ok = false
@@ -77,7 +79,11 @@ var validateContainerLicenseInfo = func(containerName string, licenseInfo Licens
 		fmt.Printf("Error in container config. Empty WorkspaceFlavor for container %s\n", containerName)
 		ok = false
 	}
-	return ok
+	if ok {
+		return nil
+	} else {
+		return errors.New("Error in container LicenseInfo config.")
+	}
 }
 
 func getItemsFromQuery(dbconfig *DbConfig, queryInput *dynamodb.QueryInput) ([]map[string]*dynamodb.AttributeValue, error) {
@@ -104,8 +110,8 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container)
 	emptyList := []Gen3LicenseUserMap{}
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
-	ok := validateContainerLicenseInfo(container.Name, container.License)
-	if !ok {
+	err = validateContainerLicenseInfo(container.Name, container.License)
+	if err != nil {
 		Config.Logger.Printf("Gen3License table info for container is not configured.")
 		return emptyList, nil
 	}
@@ -306,13 +312,16 @@ var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3Li
 }
 
 // Get the file-path related configurations
-func getLicenceFilePathConfigs() []LicenseInfo {
+func getLicenceFilePathConfigs() ([]LicenseInfo, error) {
 	var config LicenseInfo
 	var filePathConfigs []LicenseInfo
 
 	for _, v := range Config.ContainersMap {
 		if v.License.Enabled {
-			validateContainerLicenseInfo(v.Name, v.License)
+			err := validateContainerLicenseInfo(v.Name, v.License)
+			if err != nil {
+				return nil, err
+			}
 			config.FilePath = v.License.FilePath
 			config.WorkspaceFlavor = v.License.WorkspaceFlavor
 			config.G3autoName = v.License.G3autoName
@@ -320,7 +329,7 @@ func getLicenceFilePathConfigs() []LicenseInfo {
 			filePathConfigs = append(filePathConfigs, config)
 		}
 	}
-	return filePathConfigs
+	return filePathConfigs, nil
 }
 
 func filePathInLicenseConfigs(filePath string, configs []LicenseInfo) bool {

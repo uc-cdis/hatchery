@@ -1075,6 +1075,10 @@ aws {
 	licenseInfo := LicenseInfo{
 		Enabled:         true,
 		FilePath:        "license-path.txt",
+		LicenseType:     "test-license-type",
+		MaxLicenseIds:   3,
+		G3autoName:      "test-g3auto-name",
+		G3autoKey:       "test-g3auto-key",
 		WorkspaceFlavor: "licensed-flavor",
 	}
 	Config.ContainersMap = map[string]Container{

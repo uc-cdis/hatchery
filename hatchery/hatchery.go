@@ -693,7 +693,11 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func getMountFileContents(fileId string, userName string) (string, error) {
-	filePathConfigs := getLicenceFilePathConfigs()
+	filePathConfigs, err := getLicenceFilePathConfigs()
+	if err != nil {
+		Config.Logger.Printf("unable to filepaths from config: %v", err)
+		return "", err
+	}
 
 	if fileId == "sample-nextflow-config.txt" {
 		out, err := generateNextflowConfig(userName)
