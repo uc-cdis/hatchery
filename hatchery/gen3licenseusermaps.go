@@ -82,7 +82,7 @@ var validateContainerLicenseInfo = func(containerName string, licenseInfo Licens
 	if ok {
 		return nil
 	} else {
-		return errors.New("Error in container LicenseInfo config.")
+		return errors.New("container LicenseInfo is misconfigured")
 	}
 }
 
@@ -112,7 +112,7 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container)
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	err = validateContainerLicenseInfo(container.Name, container.License)
 	if err != nil {
-		Config.Logger.Printf("Gen3License table info for container is not configured.")
+		Config.Logger.Printf("Gen3License table info for container is not configured or is misconfigured.")
 		return emptyList, nil
 	}
 	if Config.Config.LicenseUserMapsTable == "" || Config.Config.LicenseUserMapsGSI == "" {
