@@ -106,7 +106,11 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container)
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
 	ok := validateContainerLicenseInfo(container.Name, container.License)
 	if !ok {
-		Config.Logger.Printf("Gen3License not set up for container: %s", err)
+		Config.Logger.Printf("Gen3License table info for container is not configured: %s", err)
+		return emptyList, nil
+	}
+	if Config.Config.LicenseUserMapsTable == "" || Config.Config.LicenseUserMapsGSI == "" {
+		Config.Logger.Printf("Gen3License table info is not configured: %s", err)
 		return emptyList, nil
 	}
 
@@ -149,6 +153,10 @@ var getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (gen3Lic
 	emptyList := []Gen3LicenseUserMap{}
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
+	if Config.Config.LicenseUserMapsTable == "" || Config.Config.LicenseUserMapsGSI == "" {
+		Config.Logger.Printf("Gen3License table info is not configured: %s", err)
+		return emptyList, nil
+	}
 
 	// Query on global secondary index and filter by userId
 	keyEx1 := expression.Key("environment").Equal(expression.Value(aws.String(targetEnvironment)))

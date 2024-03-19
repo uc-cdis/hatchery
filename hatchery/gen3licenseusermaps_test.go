@@ -165,10 +165,12 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 		Name:    "container-name",
 		License: licenseInfo,
 	}
+	Config.Config.LicenseUserMapsTable = "test_license_user_maps"
+	Config.Config.LicenseUserMapsGSI = "test_gsi"
 
 	// getActiveGen3LicenseUserMaps
 	for _, testcase := range testCases {
-		t.Logf("Testing GetActiveGen3LicenseUserMaps case: %s", testcase.name)
+		t.Logf("Testing GetActiveGen3LicenseUserMaps when %s", testcase.name)
 
 		dbconfig.DynamoDb = &DynamodbMockClient{
 			DynamoDBAPI: nil,
@@ -196,7 +198,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 
 	// getLicenseUserMapsForUser
 	for _, testcase := range testCases {
-		t.Logf("Testing getLicenseUserMapsForUser case: %s", testcase.name)
+		t.Logf("Testing getLicenseUserMapsForUser when %s", testcase.name)
 
 		dbconfig.DynamoDb = &DynamodbMockClient{
 			DynamoDBAPI: nil,
