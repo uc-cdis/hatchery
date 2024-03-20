@@ -71,7 +71,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 		"Name": &tag,
 	}
 	tags := []*iam.Tag{
-		&iam.Tag{
+		{
 			Key:   aws.String("Name"),
 			Value: &tag,
 		},
@@ -1387,8 +1387,8 @@ func cancelBatchJobsInStatus(batchSvc *batch.Batch, batchJobQueueName string, st
 		Config.Logger.Printf("Debug: No %s jobs to cancel", status)
 	}
 
-	// `TerminateJob` cancels jobs in SUBMITTED, PENDING or RUNNABLE states and terminates jobs
-	// in STARTING or RUNNING states
+	// `TerminateJob` cancels jobs in SUBMITTED, PENDING or RUNNABLE state and terminates jobs
+	// in STARTING or RUNNING state
 	for _, job := range runningJobs {
 		Config.Logger.Printf("Canceling %s job: ID '%s', name '%s'", status, *job.JobId, *job.JobName)
 		_, err := batchSvc.TerminateJob(&batch.TerminateJobInput{
@@ -1469,9 +1469,9 @@ func cleanUpNextflowResources(userName string) error {
 
 	// cancel any Batch jobs that are still running (or about to run) for this user
 	batchJobQueueName := fmt.Sprintf("%s-nf-job-queue-%s", hostname, userName)
-	// cancel jobs that are already incurring cost first, then cancel in the order a job goes through
-	// statuses (first submitted, then pending, etc). Finally cancel any jobs that reached the "running"
-	// status in the meantime. Ignore jobs in "succeeded" or "failed" status.
+	// First cancel jobs that are already incurring cost ("running" status). Then cancel in the order a job goes
+	// through statuses (first submitted, then pending, etc) to ensure all jobs are deleted. Finally cancel any
+	// jobs that reached the "running" status in the meantime. Ignore jobs in "succeeded" or "failed" status.
 	statusToCancel := []string{batch.JobStatusRunning, batch.JobStatusSubmitted, batch.JobStatusPending, batch.JobStatusRunnable, batch.JobStatusStarting, batch.JobStatusRunning}
 	Config.Logger.Printf("Canceling user's jobs in Batch queue '%s'...", batchJobQueueName)
 	for _, status := range statusToCancel {
