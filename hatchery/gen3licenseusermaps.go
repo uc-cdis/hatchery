@@ -2,6 +2,7 @@ package hatchery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -46,9 +47,10 @@ var initializeDbConfig = func() *DbConfig {
 	}
 }
 
-var validateContainerLicenseInfo = func(containerName string, licenseInfo LicenseInfo) bool {
+var validateContainerLicenseInfo = func(containerName string, licenseInfo LicenseInfo) error {
 
-	ok := true
+	var ok = true
+	// print any items that are missing from LicenseInfo
 	if !licenseInfo.Enabled {
 		fmt.Printf("Warning: License is not enabled for container %s\n", containerName)
 		ok = false
@@ -77,7 +79,11 @@ var validateContainerLicenseInfo = func(containerName string, licenseInfo Licens
 		fmt.Printf("Error in container config. Empty WorkspaceFlavor for container %s\n", containerName)
 		ok = false
 	}
-	return ok
+	if ok {
+		return nil
+	} else {
+		return errors.New("container LicenseInfo is misconfigured")
+	}
 }
 
 func getItemsFromQuery(dbconfig *DbConfig, queryInput *dynamodb.QueryInput) ([]map[string]*dynamodb.AttributeValue, error) {
@@ -99,11 +105,20 @@ func getItemsFromQuery(dbconfig *DbConfig, queryInput *dynamodb.QueryInput) ([]m
 	return tableItems, nil
 }
 
-var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container) (gen3LicenseUserMaps *[]Gen3LicenseUserMap, err error) {
+var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container) (gen3LicenseUserMaps []Gen3LicenseUserMap, err error) {
 	// Query the table to get all active gen3 license user map items
+	emptyList := []Gen3LicenseUserMap{}
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
-	validateContainerLicenseInfo(container.Name, container.License)
+	err = validateContainerLicenseInfo(container.Name, container.License)
+	if err != nil {
+		Config.Logger.Printf("Gen3License table info for container is not configured or is misconfigured.")
+		return emptyList, nil
+	}
+	if Config.Config.LicenseUserMapsTable == "" || Config.Config.LicenseUserMapsGSI == "" {
+		Config.Logger.Printf("Gen3License table info is not configured.")
+		return emptyList, nil
+	}
 
 	// Query on global secondary index and filter by license type (eg. "STATA")
 	keyEx1 := expression.Key("environment").Equal(expression.Value(aws.String(targetEnvironment)))
@@ -112,7 +127,7 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container)
 	expr, err := expression.NewBuilder().WithKeyCondition(expression.KeyAnd(keyEx1, keyEx2)).WithFilter(filt).Build()
 	if err != nil {
 		Config.Logger.Printf("Error in building expression for query: %s", err)
-		return nil, err
+		return emptyList, err
 	}
 	queryUserMapsInput := &dynamodb.QueryInput{
 		TableName:                 aws.String(Config.Config.LicenseUserMapsTable),
@@ -125,7 +140,7 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container)
 	licenseUserMapItems, err := getItemsFromQuery(dbconfig, queryUserMapsInput)
 	if err != nil {
 		Config.Logger.Printf("Error in active user query: %s", err)
-		return nil, err
+		return emptyList, err
 	}
 
 	// Populate list of all active gen3 license user maps
@@ -133,16 +148,21 @@ var getActiveGen3LicenseUserMaps = func(dbconfig *DbConfig, container Container)
 	err = dynamodbattribute.UnmarshalListOfMaps(licenseUserMapItems, &gen3LicenseUsers)
 	if err != nil {
 		Config.Logger.Printf("Error in unmarshalling active gen3 license user maps: %s", err)
-		return nil, err
+		return emptyList, err
 	}
 	Config.Logger.Printf("Debug: active gen3 license user maps %v", gen3LicenseUsers)
-	return &gen3LicenseUsers, nil
+	return gen3LicenseUsers, nil
 }
 
-var getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (gen3LicenseUserMaps *[]Gen3LicenseUserMap, err error) {
+var getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (gen3LicenseUserMaps []Gen3LicenseUserMap, err error) {
 	// Query the table to get all gen3 license user map items for user
+	emptyList := []Gen3LicenseUserMap{}
 
 	targetEnvironment := os.Getenv("GEN3_ENDPOINT")
+	if Config.Config.LicenseUserMapsTable == "" || Config.Config.LicenseUserMapsGSI == "" {
+		Config.Logger.Printf("Gen3License table info is not configured.")
+		return emptyList, nil
+	}
 
 	// Query on global secondary index and filter by userId
 	keyEx1 := expression.Key("environment").Equal(expression.Value(aws.String(targetEnvironment)))
@@ -151,7 +171,7 @@ var getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (gen3Lic
 	expr, err := expression.NewBuilder().WithKeyCondition(expression.KeyAnd(keyEx1, keyEx2)).WithFilter(filt).Build()
 	if err != nil {
 		Config.Logger.Printf("Error in building expression for query: %s", err)
-		return nil, err
+		return emptyList, err
 	}
 	queryUserMapsInput := &dynamodb.QueryInput{
 		TableName:                 aws.String(Config.Config.LicenseUserMapsTable),
@@ -164,7 +184,7 @@ var getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (gen3Lic
 	licenseUserMapItems, err := getItemsFromQuery(dbconfig, queryUserMapsInput)
 	if err != nil {
 		Config.Logger.Printf("Error in items for user query: %s", err)
-		return nil, err
+		return emptyList, err
 	}
 
 	// Populate list of gen3 license user maps for user
@@ -172,21 +192,21 @@ var getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) (gen3Lic
 	err = dynamodbattribute.UnmarshalListOfMaps(licenseUserMapItems, &gen3LicenseUsers)
 	if err != nil {
 		Config.Logger.Printf("Error in unmarshalling gen3 license user maps for user: %s", err)
-		return nil, err
+		return emptyList, err
 	}
 	Config.Logger.Printf("Debug: gen3 license user maps for user %v", gen3LicenseUsers)
-	return &gen3LicenseUsers, nil
+	return gen3LicenseUsers, nil
 }
 
-func getNextLicenseId(activeGen3LicenseUserMaps *[]Gen3LicenseUserMap, maxLicenseIds int) int {
+func getNextLicenseId(activeGen3LicenseUserMaps []Gen3LicenseUserMap, maxLicenseIds int) int {
 	// Determine the next available licenseId [1..6], return 0 if no ids
-	if len(*activeGen3LicenseUserMaps) == 0 {
+	if len(activeGen3LicenseUserMaps) == 0 {
 		return 1
 	}
 	var idInUsedIds bool
 	for i := 1; i <= maxLicenseIds; i++ {
 		idInUsedIds = false
-		for _, v := range *activeGen3LicenseUserMaps {
+		for _, v := range activeGen3LicenseUserMaps {
 			if i == v.LicenseId {
 				idInUsedIds = true
 				break
@@ -292,13 +312,16 @@ var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3Li
 }
 
 // Get the file-path related configurations
-func getLicenceFilePathConfigs() []LicenseInfo {
+func getLicenceFilePathConfigs() ([]LicenseInfo, error) {
 	var config LicenseInfo
 	var filePathConfigs []LicenseInfo
 
 	for _, v := range Config.ContainersMap {
 		if v.License.Enabled {
-			validateContainerLicenseInfo(v.Name, v.License)
+			err := validateContainerLicenseInfo(v.Name, v.License)
+			if err != nil {
+				return nil, err
+			}
 			config.FilePath = v.License.FilePath
 			config.WorkspaceFlavor = v.License.WorkspaceFlavor
 			config.G3autoName = v.License.G3autoName
@@ -306,7 +329,7 @@ func getLicenceFilePathConfigs() []LicenseInfo {
 			filePathConfigs = append(filePathConfigs, config)
 		}
 	}
-	return filePathConfigs
+	return filePathConfigs, nil
 }
 
 func filePathInLicenseConfigs(filePath string, configs []LicenseInfo) bool {
