@@ -529,7 +529,6 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 // Function to make sure launch template is created, and configured correctly
 // We need a launch template since we need a user data script to authenticate with private ECR repositories
 func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, jobImageWhitelist []string) (*string, error) {
-
 	// user data script to authenticate with private ECR repositories
 	userData := generateEcrLoginUserData(jobImageWhitelist, userName)
 
@@ -1349,24 +1348,70 @@ func getLatestAmazonLinuxAmi(ec2svc *ec2.EC2) (*string, error) {
 		latestTimeStamp := time.Unix(0, 0).UTC()
 
 		for _, image := range ami.Images {
-
 			creationTimeStamp, _ := time.Parse(time.RFC3339, *image.CreationDate)
-
 			if creationTimeStamp.After(latestTimeStamp) {
 				latestTimeStamp = creationTimeStamp
 				latestImage = image
 			}
-
 		}
 
 		Config.Logger.Printf("Info: Found latest amazonlinux AMI: '%s'", *latestImage.ImageId)
 		return latestImage.ImageId, nil
 	}
-	return nil, errors.New("No amazonlinux AMI found")
+	return nil, errors.New("no amazonlinux AMI found")
+}
+
+func cancelBatchJobsInStatus(batchSvc *batch.Batch, batchJobQueueName string, status string) error {
+	listJobsOutput, err := batchSvc.ListJobs(&batch.ListJobsInput{
+		JobQueue:  &batchJobQueueName,
+		JobStatus: aws.String(status),
+	})
+	if err != nil {
+		Config.Logger.Printf("Error listing %s jobs in Batch queue '%s': %v", status, batchJobQueueName, err)
+		return err
+	}
+	runningJobs := listJobsOutput.JobSummaryList
+	for listJobsOutput.NextToken != nil { // if the result is paginated, get the rest
+		listJobsOutput, err = batchSvc.ListJobs(&batch.ListJobsInput{
+			JobQueue:  &batchJobQueueName,
+			JobStatus: aws.String(status),
+			NextToken: listJobsOutput.NextToken,
+		})
+		if err != nil {
+			Config.Logger.Printf("Error listing %s jobs in Batch queue '%s': %v", status, batchJobQueueName, err)
+			return err
+		}
+		runningJobs = append(runningJobs, listJobsOutput.JobSummaryList...)
+	}
+	if len(runningJobs) == 0 {
+		Config.Logger.Printf("Debug: No %s jobs to cancel", status)
+	}
+
+	// `TerminateJob` cancels jobs in SUBMITTED, PENDING or RUNNABLE states and terminates jobs
+	// in STARTING or RUNNING states
+	for _, job := range runningJobs {
+		Config.Logger.Printf("Canceling %s job: ID '%s', name '%s'", status, *job.JobId, *job.JobName)
+		_, err := batchSvc.TerminateJob(&batch.TerminateJobInput{
+			JobId:  job.JobId,
+			Reason: aws.String("User's workspace was terminated"),
+		})
+		if err != nil {
+			Config.Logger.Printf("Error terminating job '%s': %v", *job.JobId, err)
+			return err
+		}
+	}
+
+	return nil
 }
 
 // delete the AWS resources created to launch nextflow workflows
 func cleanUpNextflowResources(userName string) error {
+	/*	Clean up Nextflow resource when a workspace is terminated:
+		- delete IAM user access keys
+		- stop Squid instance
+		- (S3 bucket cleanup is disabled)
+		- cancel any running Batch jobs
+	*/
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return err
@@ -1383,6 +1428,7 @@ func cleanUpNextflowResources(userName string) error {
 	Config.Logger.Printf("Debug: AWS account ID: '%v'", awsAccountId)
 	iamSvc := iam.New(sess, &awsConfig)
 	ec2Svc := ec2.New(sess, &awsConfig)
+	batchSvc := batch.New(sess, &awsConfig)
 
 	userName = escapism(userName)
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
@@ -1420,6 +1466,21 @@ func cleanUpNextflowResources(userName string) error {
 	// } else {
 	// 	Config.Logger.Printf("Debug: Deleted objects in bucket '%s' at '%s'", bucketName, objectsKey)
 	// }
+
+	// cancel any Batch jobs that are still running (or about to run) for this user
+	batchJobQueueName := fmt.Sprintf("%s-nf-job-queue-%s", hostname, userName)
+	// cancel jobs that are already incurring cost first, then cancel in the order a job goes through
+	// statuses (first submitted, then pending, etc). Finally cancel any jobs that reached the "running"
+	// status in the meantime. Ignore jobs in "succeeded" or "failed" status.
+	statusToCancel := []string{batch.JobStatusRunning, batch.JobStatusSubmitted, batch.JobStatusPending, batch.JobStatusRunnable, batch.JobStatusStarting, batch.JobStatusRunning}
+	Config.Logger.Printf("Canceling user's jobs in Batch queue '%s'...", batchJobQueueName)
+	for _, status := range statusToCancel {
+		err = cancelBatchJobsInStatus(batchSvc, batchJobQueueName, status)
+		if err != nil {
+			Config.Logger.Printf("Error canceling user's Batch jobs: %v", err)
+			return err
+		}
+	}
 
 	return nil
 }
