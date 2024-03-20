@@ -225,8 +225,8 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 				data.Logger.Printf("Error in configuration: %v", err)
 				return nil, err
 			}
-			ok := validateContainerLicenseInfo(container.Name, container.License)
-			if !ok {
+			err := validateContainerLicenseInfo(container.Name, container.License)
+			if err != nil {
 				err = fmt.Errorf("container '%s' has an invalid 'license' configuration", container.Name)
 				data.Logger.Printf("Error in configuration: %v", err)
 				return nil, err

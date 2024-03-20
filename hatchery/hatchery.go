@@ -496,10 +496,10 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf(userlicerr.Error())
 	}
 	Config.Logger.Printf("Debug: Active gen3 license user maps %v", activeGen3LicenseUsers)
-	if len(*activeGen3LicenseUsers) == 0 {
+	if len(activeGen3LicenseUsers) == 0 {
 		Config.Logger.Printf("No active gen3 license sessions for user: %s", userName)
 	} else {
-		for _, v := range *activeGen3LicenseUsers {
+		for _, v := range activeGen3LicenseUsers {
 			if v.UserId == userName {
 				Config.Logger.Printf("Debug: updating gen3 license user map as inactive for itemId %s", v.ItemId)
 				_, err := setGen3LicenseUserInactive(dbconfig, v.ItemId)
@@ -693,7 +693,11 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func getMountFileContents(fileId string, userName string) (string, error) {
-	filePathConfigs := getLicenceFilePathConfigs()
+	filePathConfigs, err := getLicenceFilePathConfigs()
+	if err != nil {
+		Config.Logger.Printf("unable to get filepaths from config: %v", err)
+		return "", err
+	}
 
 	if fileId == "sample-nextflow-config.txt" {
 		out, err := generateNextflowConfig(userName)

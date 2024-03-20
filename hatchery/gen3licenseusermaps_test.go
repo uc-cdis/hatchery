@@ -67,18 +67,26 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name            string
-		want            *[]Gen3LicenseUserMap
-		mockQueryOutput *MockOutputPages
+		name               string
+		want               []Gen3LicenseUserMap
+		mockLicenseEnabled bool
+		mockQueryOutput    *MockOutputPages
 	}{
 		{
-			name:            "NoActiveLicenses",
-			want:            &[]Gen3LicenseUserMap{},
-			mockQueryOutput: &MockOutputPages{},
+			name:               "LicenseNotEnabled",
+			want:               []Gen3LicenseUserMap{},
+			mockLicenseEnabled: false,
+			mockQueryOutput:    &MockOutputPages{},
+		},
+		{
+			name:               "NoActiveLicenses",
+			want:               []Gen3LicenseUserMap{},
+			mockLicenseEnabled: true,
+			mockQueryOutput:    &MockOutputPages{},
 		},
 		{
 			name: "SomeActiveLicenses",
-			want: &[]Gen3LicenseUserMap{
+			want: []Gen3LicenseUserMap{
 				{
 					ItemId:      "1234-abcd",
 					Environment: targetEnvironment,
@@ -92,6 +100,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 					LicenseId:   2,
 				},
 			},
+			mockLicenseEnabled: true,
 			mockQueryOutput: &MockOutputPages{
 				first: dynamodb.QueryOutput{
 					Items: firstMockItems,
@@ -100,7 +109,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 		},
 		{
 			name: "PaginatedActiveLicenses",
-			want: &[]Gen3LicenseUserMap{
+			want: []Gen3LicenseUserMap{
 				{
 					ItemId:      "1234-abcd",
 					Environment: targetEnvironment,
@@ -126,6 +135,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 					LicenseId:   4,
 				},
 			},
+			mockLicenseEnabled: true,
 			mockQueryOutput: &MockOutputPages{
 				first: dynamodb.QueryOutput{
 					Items: firstMockItems,
@@ -144,23 +154,30 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 	dbconfig := initializeDbConfig()
 
 	licenseInfo := LicenseInfo{
-		Enabled:       true,
-		LicenseType:   "some-license",
-		MaxLicenseIds: 6,
+		LicenseType:     "some-license",
+		MaxLicenseIds:   6,
+		G3autoName:      "stata-workspace-gen3-license-g3auto",
+		G3autoKey:       "stata_license.txt",
+		FilePath:        "stata.lic",
+		WorkspaceFlavor: "gen3-licensed",
 	}
 	mockContainer := Container{
 		Name:    "container-name",
 		License: licenseInfo,
 	}
+	Config.Config.LicenseUserMapsTable = "test_license_user_maps"
+	Config.Config.LicenseUserMapsGSI = "test_gsi"
 
 	// getActiveGen3LicenseUserMaps
 	for _, testcase := range testCases {
-		t.Logf("Testing GetActiveGen3LicenseUserMaps")
+		t.Logf("Testing GetActiveGen3LicenseUserMaps when %s", testcase.name)
 
 		dbconfig.DynamoDb = &DynamodbMockClient{
 			DynamoDBAPI: nil,
 			mockOutput:  testcase.mockQueryOutput,
 		}
+
+		mockContainer.License.Enabled = testcase.mockLicenseEnabled
 
 		/* Act */
 		got, err := getActiveGen3LicenseUserMaps(dbconfig, mockContainer)
@@ -181,7 +198,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 
 	// getLicenseUserMapsForUser
 	for _, testcase := range testCases {
-		t.Logf("Testing getLicenseUserMapsForUser")
+		t.Logf("Testing getLicenseUserMapsForUser when %s", testcase.name)
 
 		dbconfig.DynamoDb = &DynamodbMockClient{
 			DynamoDBAPI: nil,
@@ -305,19 +322,19 @@ func Test_GetNextLicenseId(t *testing.T) {
 		name                          string
 		maxLicenseIds                 int
 		want                          int
-		mockActiveGen3LicenseUserMaps *[]Gen3LicenseUserMap
+		mockActiveGen3LicenseUserMaps []Gen3LicenseUserMap
 	}{
 		{
 			name:                          "Gen3UserLicensesIsEmpty",
 			maxLicenseIds:                 6,
 			want:                          1,
-			mockActiveGen3LicenseUserMaps: &[]Gen3LicenseUserMap{},
+			mockActiveGen3LicenseUserMaps: []Gen3LicenseUserMap{},
 		},
 		{
 			name:          "OneLicenseUsed",
 			maxLicenseIds: 6,
 			want:          2,
-			mockActiveGen3LicenseUserMaps: &[]Gen3LicenseUserMap{
+			mockActiveGen3LicenseUserMaps: []Gen3LicenseUserMap{
 				{
 					IsActive:  "True",
 					LicenseId: 1,
@@ -328,7 +345,7 @@ func Test_GetNextLicenseId(t *testing.T) {
 			name:          "MaxLicensesActive",
 			maxLicenseIds: 2,
 			want:          0,
-			mockActiveGen3LicenseUserMaps: &[]Gen3LicenseUserMap{
+			mockActiveGen3LicenseUserMaps: []Gen3LicenseUserMap{
 				{
 					IsActive:  "True",
 					LicenseId: 1,
@@ -433,11 +450,11 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 	testCases := []struct {
 		name        string
 		licenseInfo LicenseInfo
-		want        bool
+		expectError bool
 	}{
 		{
-			name: "ValidLicenseInfo",
-			want: true,
+			name:        "ValidLicenseInfo",
+			expectError: false,
 			licenseInfo: LicenseInfo{
 				Enabled:         true,
 				LicenseType:     "test-license-type",
@@ -449,8 +466,8 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 			},
 		},
 		{
-			name: "LicenseNotEnabled",
-			want: false,
+			name:        "LicenseNotEnabled",
+			expectError: true,
 			licenseInfo: LicenseInfo{
 				Enabled:         false,
 				LicenseType:     "test-license-type",
@@ -462,8 +479,8 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 			},
 		},
 		{
-			name: "MissingLicenseType",
-			want: false,
+			name:        "MissingLicenseType",
+			expectError: true,
 			licenseInfo: LicenseInfo{
 				Enabled:         true,
 				MaxLicenseIds:   3,
@@ -474,8 +491,8 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 			},
 		},
 		{
-			name: "ZeroMaxIds",
-			want: false,
+			name:        "ZeroMaxIds",
+			expectError: true,
 			licenseInfo: LicenseInfo{
 				Enabled:         true,
 				LicenseType:     "test-license-type",
@@ -487,15 +504,51 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 			},
 		},
 		{
-			name: "MissingG3AutoName",
-			want: false,
+			name:        "MissingG3AutoName",
+			expectError: true,
 			licenseInfo: LicenseInfo{
 				Enabled:         true,
 				LicenseType:     "test-license-type",
 				MaxLicenseIds:   3,
-				G3autoKey:       "test0g3auto-key",
+				G3autoKey:       "test-g3auto-key",
 				FilePath:        "test-file-path",
 				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+		{
+			name:        "MissingG3AutoKey",
+			expectError: true,
+			licenseInfo: LicenseInfo{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+		{
+			name:        "MissingFilePath",
+			expectError: true,
+			licenseInfo: LicenseInfo{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test-g3auto-key",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+		{
+			name:        "MissingWorkspaceFlavor",
+			expectError: true,
+			licenseInfo: LicenseInfo{
+				Enabled:       true,
+				LicenseType:   "test-license-type",
+				MaxLicenseIds: 3,
+				G3autoName:    "test-g3auto-name",
+				G3autoKey:     "test-g3auto-key",
+				FilePath:      "test-file-path",
 			},
 		},
 	}
@@ -503,12 +556,13 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Logf("Testing validateContainerLicenseInfo when %s", testcase.name)
 
-		got := validateContainerLicenseInfo("container-name", testcase.licenseInfo)
-
+		err := validateContainerLicenseInfo("container-name", testcase.licenseInfo)
 		/* Assert */
-		if got != testcase.want {
-			t.Errorf("\nassertion error while testing `validateContainerLicenseInfo`: \nWant:%+v\nGot:%+v", testcase.want, got)
+		if testcase.expectError == true && err == nil {
+			t.Errorf("\nWanted error but got nil.")
+		}
+		if testcase.expectError == false && err != nil {
+			t.Errorf("\nWanted nil but got error: %s", err)
 		}
 	}
-
 }
