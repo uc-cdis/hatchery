@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/batch"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go/service/imagebuilder"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
@@ -30,7 +31,7 @@ General TODOS:
 */
 
 // create the AWS resources required to launch nextflow workflows
-func createNextflowResources(userName string, nextflowConfig NextflowConfig) (string, string, error) {
+func createNextflowResources(userName string, nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig) (string, string, error) {
 	var err error
 
 	// credentials and AWS services init
@@ -109,7 +110,7 @@ func createNextflowResources(userName string, nextflowConfig NextflowConfig) (st
 	}
 
 	// Create nextflow compute environment if it does not exist
-	batchComputeEnvArn, err := createBatchComputeEnvironment(userName, hostname, tagsMap, batchSvc, ec2Svc, iamSvc, *vpcid, *subnetids, payModel, awsAccountId, nextflowConfig)
+	batchComputeEnvArn, err := createBatchComputeEnvironment(nextflowGlobalConfig, nextflowConfig, userName, hostname, tagsMap, batchSvc, ec2Svc, iamSvc, *vpcid, *subnetids, payModel, awsAccountId)
 	if err != nil {
 		Config.Logger.Printf("Error creating compute environment for user %s: %s", userName, err.Error())
 		return "", "", err
@@ -574,7 +575,7 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 }
 
 // Create AWS Batch compute environment
-func createBatchComputeEnvironment(userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string, payModel *PayModel, awsAccountId string, nextflowConfig NextflowConfig) (string, error) {
+func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig, userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string, payModel *PayModel, awsAccountId string) (string, error) {
 	instanceProfileArn, err := createEcsInstanceProfile(iamSvc, fmt.Sprintf("%s-nf-ecsInstanceRole", hostname))
 	if err != nil {
 		Config.Logger.Printf("Unable to create ECS instance profile: %s", err.Error())
@@ -603,13 +604,17 @@ func createBatchComputeEnvironment(userName string, hostname string, tagsMap map
 	// Configure the specified AMI. At the time of writing, CPU workflows launch on ECS_AL2 (default for all
 	// non-GPU instances) and GPU workflows on ECS_AL2_NVIDIA (default for all GPU instances). Setting the AMI
 	// for both types is easier than switching the image type based on which AMI (CPU or GPU) is configured.
+	ami, err := getNextflowInstanceAmi(nextflowGlobalConfig.ImageBuilderReaderRoleArn, nextflowConfig, nil)
+	if err != nil {
+		return "", err
+	}
 	ec2Configuration := []*batch.Ec2Configuration{
 		{
-			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageIdOverride: aws.String(ami),
 			ImageType:       aws.String("ECS_AL2"),
 		},
 		{
-			ImageIdOverride: aws.String(nextflowConfig.InstanceAMI),
+			ImageIdOverride: aws.String(ami),
 			ImageType:       aws.String("ECS_AL2_NVIDIA"),
 		},
 	}
@@ -1362,7 +1367,25 @@ func getLatestAmazonLinuxAmi(ec2svc *ec2.EC2) (*string, error) {
 		Config.Logger.Printf("Info: Found latest amazonlinux AMI: '%s'", *latestImage.ImageId)
 		return latestImage.ImageId, nil
 	}
-	return nil, errors.New("No amazonlinux AMI found")
+	return nil, errors.New("no amazonlinux AMI found")
+}
+
+func getNextflowInstanceAmi(imageBuilderReaderRoleArn string, nextflowConfig NextflowConfig, imagebuilderListImagePipelineImages func(*imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error)) (string, error) {
+	// the `imagebuilderListImagePipelineImages` parameter should not be provided in production. It allows
+	// us to test this function by mocking `imagebuilder.ListImagePipelineImages` in the tests.
+	var err error
+	ami := nextflowConfig.InstanceAmi
+	if ami != "" {
+		Config.Logger.Printf("Using configured 'nextflow.instance-ami' '%s' and ignoring 'nextflow.instance-ami-builder-arn'", ami)
+	} else if nextflowConfig.InstanceAmiBuilderArn != "" {
+		ami, err = getLatestImageBuilderAmi(imageBuilderReaderRoleArn, nextflowConfig.InstanceAmiBuilderArn, imagebuilderListImagePipelineImages)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		return "", fmt.Errorf("one of 'nextflow.instance-ami' and 'nextflow.instance-ami-builder-arn' must be configured")
+	}
+	return ami, err
 }
 
 // delete the AWS resources created to launch nextflow workflows
@@ -1525,7 +1548,6 @@ var generateNextflowConfig = func(userName string) (string, error) {
 
 	Config.Logger.Printf("Generating Nextflow configuration with: Batch queue: '%s'. Job role: '%s'. Workdir: '%s'.", batchJobQueueName, nextflowJobsRoleArn, workDir)
 
-	// TODO "ubuntu" container may not always be authorized - replace with a public approved container?
 	configContents := fmt.Sprintf(
 		`plugins {
 	id 'nf-amazon'
@@ -1533,7 +1555,7 @@ var generateNextflowConfig = func(userName string) (string, error) {
 process {
 	executor = 'awsbatch'
 	queue = '%s'
-	container = 'ubuntu'
+	container = 'public.ecr.aws/l5b8a5z6/nextflow-approved/public:gen3-amazonlinux-base-AL2023fix'
 }
 aws {
 	batch {
