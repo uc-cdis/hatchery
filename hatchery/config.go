@@ -12,13 +12,19 @@ import (
 	"os"
 )
 
+// Global configuration shared by all Nextflow containers
+type NextflowGlobalConfig struct {
+	ImageBuilderReaderRoleArn string `json:"imagebuilder-reader-role-arn"`
+}
+
 // Configuration specific to Nextflow containers
 type NextflowConfig struct {
 	Enabled                bool     `json:"enabled"`
 	JobImageWhitelist      []string `json:"job-image-whitelist"`
 	S3BucketWhitelist      []string `json:"s3-bucket-whitelist"`
 	ComputeEnvironmentType string   `json:"compute-environment-type"`
-	InstanceAMI            string   `json:"instance-ami"`
+	InstanceAmi            string   `json:"instance-ami"`
+	InstanceAmiBuilderArn  string   `json:"instance-ami-builder-arn"`
 	InstanceType           string   `json:"instance-type"`
 	InstanceMinVCpus       int32    `json:"instance-min-vcpus"`
 	InstanceMaxVCpus       int32    `json:"instance-max-vcpus"`
@@ -109,20 +115,21 @@ type DbConfig struct {
 
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
-	UserNamespace          string           `json:"user-namespace"`
-	DefaultPayModel        PayModel         `json:"default-pay-model"`
-	DisableLocalWS         bool             `json:"disable-local-ws"`
-	PayModels              []PayModel       `json:"pay-models"`
-	PayModelsDynamodbTable string           `json:"pay-models-dynamodb-table"`
-	LicenseUserMapsTable   string           `json:"license-user-maps-dynamodb-table"`
-	LicenseUserMapsGSI     string           `json:"license-user-maps-global-secondary-index"`
-	License                LicenseInfo      `json:"license"`
-	SubDir                 string           `json:"sub-dir"`
-	Containers             []Container      `json:"containers"`
-	UserVolumeSize         string           `json:"user-volume-size"`
-	Sidecar                SidecarContainer `json:"sidecar"`
-	MoreConfigs            []AppConfigInfo  `json:"more-configs"`
-	PrismaConfig           PrismaConfig     `json:"prisma"`
+	UserNamespace   string   `json:"user-namespace"`
+	DefaultPayModel PayModel `json:"default-pay-model"`
+	// DisableLocalWS         bool             `json:"disable-local-ws"`
+	PayModels              []PayModel           `json:"pay-models"`
+	PayModelsDynamodbTable string               `json:"pay-models-dynamodb-table"`
+	LicenseUserMapsTable   string               `json:"license-user-maps-dynamodb-table"`
+	LicenseUserMapsGSI     string               `json:"license-user-maps-global-secondary-index"`
+	License                LicenseInfo          `json:"license"`
+	SubDir                 string               `json:"sub-dir"`
+	Containers             []Container          `json:"containers"`
+	UserVolumeSize         string               `json:"user-volume-size"`
+	Sidecar                SidecarContainer     `json:"sidecar"`
+	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
+	PrismaConfig           PrismaConfig         `json:"prisma"`
+	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
 }
 
 // Config to allow for Prisma Agents

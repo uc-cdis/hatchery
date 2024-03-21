@@ -28,10 +28,53 @@ When a user **terminates** a Nextflow workspace, Hatchery automatically deletes 
 - The Squid instance is stopped
 - Note: The contents of `s3://<nextflow bucket>/<username>` are not deleted because researchers may need to keep the intermediary files. Instead of deleting, we could set bucket lifecycle rules to delete after X days.
 
-### Hatchery access
+## Hatchery access
 
-To do the above, the service account used by Hatchery needs various permissions in Batch, IAM and S3. In cloud-automation deployments, these permissions are set in the `kube-setup-hatchery` script.
+To do the above, the service account used by Hatchery needs various permissions in Batch, IAM and S3. In cloud-automation deployments, these permissions are set in the [kube-setup-hatchery.sh](https://github.com/uc-cdis/cloud-automation/blob/master/gen3/bin/kube-setup-hatchery.sh) script.
+
+### nextflow-global.imagebuilder-reader-role-arn
+
+When the `nextflow.instance-ami-builder-arn` setting is used, Hatchery also needs access to list image builder images in the appropriate account. `kube-setup-hatchery.sh` assumes that a "nextflow-imagebuilder-reader" role already exists in the account (Acct1) that contains the image builder pipelines, and lets Hatchery (in Acct2) assume that role.
+
+The role ARN is configured in Hatchery's `nextflow-global.imagebuilder-reader-role-arn` setting.
+
+**"nextflow-imagebuilder-reader" role which should already exist:**
+
+Permissions:
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ListNextflowAmis",
+            "Effect": "Allow",
+            "Action": "imagebuilder:ListImagePipelineImages",
+            "Resource": [
+                "arn:aws:imagebuilder:us-east-1:<Acct1 ID>:image-pipeline/nextflow-fips",
+                "arn:aws:imagebuilder:us-east-1:<Acct1 ID>:image-pipeline/nextflow-gpu-ami"
+            ]
+        }
+    ]
+}
+```
+
+Trust policy (allows Acct2):
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowAssumingRole",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::<Acct2 ID>:root"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
 
 ## Note about cloud-automation deployments
 
-To enable the Nextflow feature in a Hatchery deployment created before version 2023.11/1.4.0, run `kubectl delete sa hatchery-service-account; gen3 kube-setup-hatchery` in order to recreate the Hatchery IAM role with additional access.
+To enable the Nextflow feature in a Hatchery deployment created before version 2023.11/1.4.0, run `kubectl delete sa hatchery-service-account && gen3 kube-setup-hatchery` in order to recreate the Hatchery IAM role with additional access.
