@@ -125,10 +125,21 @@ func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint str
 	return resp, nil
 }
 
+func useInteralSerices() bool{
+	useInternalServicesValue, useInternalServices := os.LookupEnv("GEN3_USE_INTERNAL_SERVICES")
+	if useInternalServices && strings.ToLower(useInternalServicesValue) == "false" {
+		useInternalServices = false
+	}
+	if useInternalServices && useInternalServicesValue == "0" {
+		useInternalServices = false
+	}
+	return useInternalServices
+}
+
 func getFenceURL() string {
 	fenceURL := "http://fence-service/"
 	_, ok := os.LookupEnv("GEN3_ENDPOINT")
-	if ok {
+	if ok && !useInteralSerices() {
 		fenceURL = "https://" + os.Getenv("GEN3_ENDPOINT") + "/user/"
 	}
 	return fenceURL
@@ -137,7 +148,7 @@ func getFenceURL() string {
 func getAmbassadorURL() string {
 	ambassadorURL := "http://ambassador-service/"
 	_, ok := os.LookupEnv("GEN3_ENDPOINT")
-	if ok {
+	if ok && !useInteralSerices() {
 		ambassadorURL = "https://" + os.Getenv("GEN3_ENDPOINT") + "/lw-workspace/proxy/"
 	}
 	return ambassadorURL
