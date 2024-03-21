@@ -110,6 +110,7 @@ type DbConfig struct {
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace          string           `json:"user-namespace"`
+	LocalDev               bool             `json:"localdev"`
 	DefaultPayModel        PayModel         `json:"default-pay-model"`
 	DisableLocalWS         bool             `json:"disable-local-ws"`
 	PayModels              []PayModel       `json:"pay-models"`
@@ -229,6 +230,10 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 
 	if data.Config.PayModelsDynamodbTable == "" {
 		data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
+	}
+
+	if data.Config.LocalDev {
+		data.Logger.Printf("Warning: Running in LocalDev mode.")
 	}
 
 	for _, payModel := range data.Config.PayModels {
