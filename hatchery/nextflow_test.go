@@ -6,6 +6,10 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/batch"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/imagebuilder"
 )
 
@@ -146,4 +150,82 @@ func TestGetNextflowInstanceAmi(t *testing.T) {
 			t.Errorf("Expected `getNextflowInstanceAmi()` to return '%s' but it returned '%s'", expectedAmi, ami)
 		}
 	}
+}
+
+
+func TestCleanUpNextflowResources(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	userName := "test-user"
+
+	// mock functions
+	original_getPayModelsForUser := getPayModelsForUser
+	originalGetNextflowAwsSettings := getNextflowAwsSettings
+	originalStopSquidInstance := stopSquidInstance
+	defer func() {
+		// restore original functions
+		getPayModelsForUser = original_getPayModelsForUser
+		getNextflowAwsSettings = originalGetNextflowAwsSettings
+		stopSquidInstance = originalStopSquidInstance
+	}()
+
+	getPayModelsForUser = func(userName string) (result *AllPayModels, err error) {
+		return nil, nil
+	}
+
+	getNextflowAwsSettings = func(sess *session.Session, payModel *PayModel, userName string, action string) (string, aws.Config, error) {
+		return "test-aws-account-id", aws.Config{}, nil
+	}
+
+	stopSquidInstanceCallCount := 0
+	stopSquidInstance =  func(hostname string, userName string, ec2svc *ec2.EC2) error {
+		stopSquidInstanceCallCount += 1
+		return nil
+	}
+
+	mockedIamSvcListAccessKeys := func(*iam.ListAccessKeysInput) (*iam.ListAccessKeysOutput, error) {
+		output := iam.ListAccessKeysOutput{
+			AccessKeyMetadata: []*iam.AccessKeyMetadata{
+				{ AccessKeyId: aws.String("123") },
+				{ AccessKeyId: aws.String("789") },
+			},
+		}
+		return &output, nil
+	}
+
+	deleteAccessKeyCallIds := []string{}
+	mockedIamSvcDeleteAccessKey := func(input *iam.DeleteAccessKeyInput) (*iam.DeleteAccessKeyOutput, error) {
+		deleteAccessKeyCallIds = append(deleteAccessKeyCallIds, *input.AccessKeyId)
+		return &iam.DeleteAccessKeyOutput{}, nil
+	}
+
+	mockedBatchSvcListJobs := func(*batch.ListJobsInput) (*batch.ListJobsOutput, error) {
+		output := batch.ListJobsOutput{
+			// AccessKeyMetadata: []*iam.AccessKeyMetadata{
+			// 	{ AccessKeyId: aws.String("123") },
+			// 	{ AccessKeyId: aws.String("789") },
+			// },
+		}
+		return &output, nil
+	}
+
+	mockedBatchSvcTerminateJob := func(input *batch.TerminateJobInput) (*batch.TerminateJobOutput, error) {
+		// deleteAccessKeyCallIds = append(deleteAccessKeyCallIds, *input.AccessKeyId)
+		return &batch.TerminateJobOutput{}, nil
+	}
+
+	// run nextflow cleanup and run checks
+	err := cleanUpNextflowResources(userName, mockedIamSvcListAccessKeys, mockedIamSvcDeleteAccessKey, mockedBatchSvcListJobs, mockedBatchSvcTerminateJob)
+	if err != nil {
+		t.Errorf("Failed to clean up Nextflow resources: %v", err)
+	}
+
+	if stopSquidInstanceCallCount != 1 {
+		t.Errorf("'stopSquidInstance' function not called exactly once! Call count: %v", stopSquidInstanceCallCount)
+	}
+
+	if len(deleteAccessKeyCallIds) != 2 || deleteAccessKeyCallIds[0] != "123" || deleteAccessKeyCallIds[1] != "789" {
+		t.Errorf("'iam.DeleteAccessKey' function not called with expected input! Calls: %v", deleteAccessKeyCallIds)
+	}
+
 }
