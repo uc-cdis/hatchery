@@ -156,9 +156,7 @@ func TestGetNextflowInstanceAmi(t *testing.T) {
 func TestCleanUpNextflowResources(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
-	userName := "test-user"
-
-	// mock functions
+	// mock functions we are not testing
 	original_getPayModelsForUser := getPayModelsForUser
 	originalGetNextflowAwsSettings := getNextflowAwsSettings
 	originalStopSquidInstance := stopSquidInstance
@@ -183,6 +181,7 @@ func TestCleanUpNextflowResources(t *testing.T) {
 		return nil
 	}
 
+	// mock AWS SDK functions
 	mockedIamSvcListAccessKeys := func(*iam.ListAccessKeysInput) (*iam.ListAccessKeysOutput, error) {
 		output := iam.ListAccessKeysOutput{
 			AccessKeyMetadata: []*iam.AccessKeyMetadata{
@@ -199,33 +198,56 @@ func TestCleanUpNextflowResources(t *testing.T) {
 		return &iam.DeleteAccessKeyOutput{}, nil
 	}
 
-	mockedBatchSvcListJobs := func(*batch.ListJobsInput) (*batch.ListJobsOutput, error) {
+	mockedBatchSvcListJobs := func(input *batch.ListJobsInput) (*batch.ListJobsOutput, error) {
+		// on the 1st call, return a job and a NextToken to trigger a 2nd call
 		output := batch.ListJobsOutput{
-			// AccessKeyMetadata: []*iam.AccessKeyMetadata{
-			// 	{ AccessKeyId: aws.String("123") },
-			// 	{ AccessKeyId: aws.String("789") },
-			// },
+			JobSummaryList: []*batch.JobSummary{
+				{
+					JobId: aws.String("abc"),
+					JobName: aws.String("Job ABC"),
+				},
+			},
+			NextToken: aws.String("next-token"),
+		}
+		// on the 2nd call, return another job and no NextToken
+		if input.NextToken != nil {
+			output = batch.ListJobsOutput{
+				JobSummaryList: []*batch.JobSummary{
+					{
+						JobId: aws.String("xyz"),
+						JobName: aws.String("Job XYZ"),
+					},
+				},
+			}
 		}
 		return &output, nil
 	}
 
+	terminateJobCallIds := []string{}
 	mockedBatchSvcTerminateJob := func(input *batch.TerminateJobInput) (*batch.TerminateJobOutput, error) {
-		// deleteAccessKeyCallIds = append(deleteAccessKeyCallIds, *input.AccessKeyId)
+		terminateJobCallIds = append(terminateJobCallIds, *input.JobId)
 		return &batch.TerminateJobOutput{}, nil
 	}
 
-	// run nextflow cleanup and run checks
+	// run nextflow cleanup
+	userName := "test-user"
 	err := cleanUpNextflowResources(userName, mockedIamSvcListAccessKeys, mockedIamSvcDeleteAccessKey, mockedBatchSvcListJobs, mockedBatchSvcTerminateJob)
 	if err != nil {
 		t.Errorf("Failed to clean up Nextflow resources: %v", err)
 	}
 
+	// test assertions
 	if stopSquidInstanceCallCount != 1 {
 		t.Errorf("'stopSquidInstance' function not called exactly once! Call count: %v", stopSquidInstanceCallCount)
 	}
 
 	if len(deleteAccessKeyCallIds) != 2 || deleteAccessKeyCallIds[0] != "123" || deleteAccessKeyCallIds[1] != "789" {
 		t.Errorf("'iam.DeleteAccessKey' function not called with expected input! Calls: %v", deleteAccessKeyCallIds)
+	}
+
+	// the function should be called 12 times: 2 jobs * 6 statuses (see `statusToCancel` list)
+	if len(terminateJobCallIds) != 12 || terminateJobCallIds[0] != "abc" || terminateJobCallIds[1] != "xyz" {
+		t.Errorf("'batch.ListJobs' function not called with expected input! Calls: %v", terminateJobCallIds)
 	}
 
 }

@@ -1,8 +1,8 @@
 package hatchery
 
 import (
+	"io"
 	"log"
-	"os"
 )
 
 func SetupAndTeardownTest() func() {
@@ -15,8 +15,8 @@ func SetupAndTeardownTest() func() {
 	/* setup */
 	if Config == nil {
 		Config = &FullHatcheryConfig{
-			Logger: log.New(os.Stdout, "", log.LstdFlags), // Print all logs (for dev purposes)
-			// Logger: log.New(io.Discard, "", log.LstdFlags), // Discard all logs
+			// Logger: log.New(os.Stdout, "", log.LstdFlags), // Print all logs (for dev purposes)
+			Logger: log.New(io.Discard, "", log.LstdFlags), // Discard all logs
 		}
 	}
 
