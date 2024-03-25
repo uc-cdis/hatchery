@@ -513,7 +513,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	// delete nextflow resources. There is no way to know if the actual workspace being
 	// terminated is a nextflow workspace or not, so always attempt to delete
 	Config.Logger.Printf("Info: Deleting Nextflow resources in AWS...")
-	err := cleanUpNextflowResources(userName)
+	err := cleanUpNextflowResources(userName, nil, nil, nil, nil)
 	if err != nil {
 		Config.Logger.Printf("Unable to delete AWS resources for Nextflow... continuing anyway")
 	}

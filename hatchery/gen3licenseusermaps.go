@@ -3,7 +3,6 @@ package hatchery
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -52,31 +51,31 @@ var validateContainerLicenseInfo = func(containerName string, licenseInfo Licens
 	var ok = true
 	// print any items that are missing from LicenseInfo
 	if !licenseInfo.Enabled {
-		fmt.Printf("Warning: License is not enabled for container %s\n", containerName)
+		Config.Logger.Printf("Warning: License is not enabled for container %s\n", containerName)
 		ok = false
 	}
 	if licenseInfo.LicenseType == "" {
-		fmt.Printf("Error in container config. Empty LicenseType for container %s\n", containerName)
+		Config.Logger.Printf("Error in container config. Empty LicenseType for container %s\n", containerName)
 		ok = false
 	}
 	if licenseInfo.MaxLicenseIds == 0 {
-		fmt.Printf("Error in container config. Empty or 0 MaxLicenseIds for container %s\n", containerName)
+		Config.Logger.Printf("Error in container config. Empty or 0 MaxLicenseIds for container %s\n", containerName)
 		ok = false
 	}
 	if licenseInfo.G3autoName == "" {
-		fmt.Printf("Error in container config. Empty G3autoName for container %s\n", containerName)
+		Config.Logger.Printf("Error in container config. Empty G3autoName for container %s\n", containerName)
 		ok = false
 	}
 	if licenseInfo.G3autoKey == "" {
-		fmt.Printf("Error in container config. Empty G3autoKey for container %s\n", containerName)
+		Config.Logger.Printf("Error in container config. Empty G3autoKey for container %s\n", containerName)
 		ok = false
 	}
 	if licenseInfo.FilePath == "" {
-		fmt.Printf("Error in container config. Empty FilePath for container %s\n", containerName)
+		Config.Logger.Printf("Error in container config. Empty FilePath for container %s\n", containerName)
 		ok = false
 	}
 	if licenseInfo.WorkspaceFlavor == "" {
-		fmt.Printf("Error in container config. Empty WorkspaceFlavor for container %s\n", containerName)
+		Config.Logger.Printf("Error in container config. Empty WorkspaceFlavor for container %s\n", containerName)
 		ok = false
 	}
 	if ok {

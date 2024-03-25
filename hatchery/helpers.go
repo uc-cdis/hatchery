@@ -231,8 +231,9 @@ func stringArrayContains(s []string, e string) bool {
 }
 
 func getLatestImageBuilderAmi(imageBuilderReaderRoleArn string, imagePipelineArn string, imagebuilderListImagePipelineImages func(*imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error)) (string, error) {
-	// the `imagebuilderListImagePipelineImages` parameter should not be provided in production. It allows
-	// us to test this function by mocking `imagebuilder.ListImagePipelineImages` in the tests.
+	/*	The `imagebuilderListImagePipelineImages` parameter should not be provided in production. It allows
+		us to test this function by mocking the AWS SDK in the tests.
+	*/
 	if imagebuilderListImagePipelineImages == nil {
 		sess := session.Must(session.NewSession(&aws.Config{
 			Region: aws.String("us-east-1"),
