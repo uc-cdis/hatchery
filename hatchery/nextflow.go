@@ -1608,7 +1608,7 @@ var stopSquidInstance = func(hostname string, userName string, ec2svc *ec2.EC2) 
 	return nil
 }
 
-var generateNextflowConfig = func(userName string) (string, error) {
+var generateNextflowConfig = func(nextflowGlobalConfig NextflowGlobalConfig, userName string) (string, error) {
 	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String("us-east-1"),
 	}))
@@ -1652,7 +1652,7 @@ var generateNextflowConfig = func(userName string) (string, error) {
 process {
 	executor = 'awsbatch'
 	queue = '%s'
-	container = 'public.ecr.aws/l5b8a5z6/nextflow-approved/public:gen3-amazonlinux-base-AL2023fix'
+	container = '%s'
 }
 aws {
 	batch {
@@ -1662,6 +1662,7 @@ aws {
 }
 workDir = '%s'`,
 		batchJobQueueName,
+		nextflowGlobalConfig.SampleConfigPublicImage,
 		nextflowJobsRoleArn,
 		workDir,
 	)

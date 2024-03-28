@@ -700,7 +700,7 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 	}
 
 	if fileId == "sample-nextflow-config.txt" {
-		out, err := generateNextflowConfig(userName)
+		out, err := generateNextflowConfig(Config.Config.NextflowGlobalConfig, userName)
 		if err != nil {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}

@@ -14,6 +14,7 @@ import (
 
 // Global configuration shared by all Nextflow containers
 type NextflowGlobalConfig struct {
+	SampleConfigPublicImage   string `json:"sample-config-public-image"`
 	ImageBuilderReaderRoleArn string `json:"imagebuilder-reader-role-arn"`
 }
 
