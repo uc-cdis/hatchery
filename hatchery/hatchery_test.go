@@ -1065,7 +1065,7 @@ aws {
 	}
 }`
 	originalGenerateNextflowConfig := generateNextflowConfig
-	generateNextflowConfig = func(userName string) (string, error) {
+	generateNextflowConfig = func(nextflowGlobalConfig NextflowGlobalConfig, userName string) (string, error) {
 		return fileContents, nil
 	}
 	defer func() {
