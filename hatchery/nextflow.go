@@ -770,8 +770,9 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 			if err != nil {
 				return nil, err
 			}
+		} else {
+			return nil, err
 		}
-		return nil, err
 	}
 
 	// Create the IAM role
