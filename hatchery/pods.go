@@ -405,14 +405,14 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 
 	var lifeCycle = k8sv1.Lifecycle{}
 	if hatchApp.LifecyclePreStop != nil && len(hatchApp.LifecyclePreStop) > 0 {
-		lifeCycle.PreStop = &k8sv1.Handler{
+		lifeCycle.PreStop = &k8sv1.LifecycleHandler{
 			Exec: &k8sv1.ExecAction{
 				Command: hatchApp.LifecyclePreStop,
 			},
 		}
 	}
 	if hatchApp.LifecyclePostStart != nil && len(hatchApp.LifecyclePostStart) > 0 {
-		lifeCycle.PostStart = &k8sv1.Handler{
+		lifeCycle.PostStart = &k8sv1.LifecycleHandler{
 			Exec: &k8sv1.ExecAction{
 				Command: hatchApp.LifecyclePostStart,
 			},
@@ -537,7 +537,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 						},
 					},
 					Lifecycle: &k8sv1.Lifecycle{
-						PreStop: &k8sv1.Handler{
+						PreStop: &k8sv1.LifecycleHandler{
 							Exec: &k8sv1.ExecAction{
 								Command: hatchConfig.Config.Sidecar.LifecyclePreStop,
 							},
@@ -607,7 +607,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			},
 			Lifecycle: &lifeCycle,
 			ReadinessProbe: &k8sv1.Probe{
-				Handler: k8sv1.Handler{
+				ProbeHandler: k8sv1.ProbeHandler{
 					HTTPGet: &k8sv1.HTTPGetAction{
 						Path: hatchApp.ReadyProbe,
 						Port: intstr.FromInt(int(hatchApp.TargetPort)),
@@ -672,7 +672,7 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 				},
 				Spec: k8sv1.PersistentVolumeClaimSpec{
 					AccessModes: []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteOnce},
-					Resources: k8sv1.ResourceRequirements{
+					Resources: k8sv1.VolumeResourceRequirements{
 						Requests: k8sv1.ResourceList{
 							k8sv1.ResourceStorage: resource.MustParse(Config.Config.UserVolumeSize),
 						},
@@ -823,7 +823,7 @@ var createExternalK8sPod = func(ctx context.Context, hash string, userName strin
 				},
 				Spec: k8sv1.PersistentVolumeClaimSpec{
 					AccessModes: []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteOnce},
-					Resources: k8sv1.ResourceRequirements{
+					Resources: k8sv1.VolumeResourceRequirements{
 						Requests: k8sv1.ResourceList{
 							k8sv1.ResourceStorage: resource.MustParse(Config.Config.UserVolumeSize),
 						},

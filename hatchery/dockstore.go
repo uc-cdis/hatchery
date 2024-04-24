@@ -282,7 +282,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 
 	if 1 < len(service.Healthcheck.Test) && service.Healthcheck.Test[0] == "CMD" {
 		friend.ReadinessProbe = &k8sv1.Probe{
-			Handler: k8sv1.Handler{
+			ProbeHandler: k8sv1.ProbeHandler{
 				Exec: &k8sv1.ExecAction{
 					Command: service.Healthcheck.Test[1:],
 				},
