@@ -1,12 +1,10 @@
 module github.com/uc-cdis/hatchery
 
-go 1.22.0
-
-toolchain go1.22.2
+go 1.22.2
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
-	github.com/aws/aws-sdk-go v1.51.27
+	github.com/aws/aws-sdk-go v1.51.28
 	github.com/google/uuid v1.6.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.63.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -43,7 +41,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/pprof v0.0.0-20240422182052-72c8669ad3e7 // indirect
+	github.com/google/pprof v0.0.0-20240424203803-57759fc7b526 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
