@@ -14,6 +14,8 @@ require (
 	sigs.k8s.io/aws-iam-authenticator v0.6.19
 )
 
+replace github.com/mattn/go-sqlite3 v1.14.16 => github.com/mattn/go-sqlite3 v1.14.18
+
 require (
 	github.com/DataDog/appsec-internal-go v1.5.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.52.1 // indirect
