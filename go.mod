@@ -1,6 +1,6 @@
 module github.com/uc-cdis/hatchery
 
-go 1.22.2
+go 1.21
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
@@ -8,9 +8,9 @@ require (
 	github.com/google/uuid v1.6.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.63.0
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.30.0
-	k8s.io/apimachinery v0.30.0
-	k8s.io/client-go v0.30.0
+	k8s.io/api v0.29.0
+	k8s.io/apimachinery v0.29.0
+	k8s.io/client-go v0.29.0
 	sigs.k8s.io/aws-iam-authenticator v0.6.19
 )
 
@@ -31,7 +31,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.7.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.0 // indirect
-	github.com/evanphx/json-patch v4.12.0+incompatible // indirect
+	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
@@ -41,7 +41,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/pprof v0.0.0-20240424203803-57759fc7b526 // indirect
+	github.com/google/pprof v0.0.0-20240424215950-a892ee059fd6 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect

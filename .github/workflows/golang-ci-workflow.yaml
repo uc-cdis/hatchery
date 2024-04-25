@@ -7,7 +7,7 @@ jobs:
     name: golang-ci
     runs-on: ubuntu-latest
     env:
-      GO_VERSION: "1.22"
+      GO_VERSION: "1.21"
       COVERAGE_PROFILE_OUTPUT_LOCATION: "./profile.cov"
     steps:
       - name: Checkout code / lint code / install dependencies for goveralls / run tests

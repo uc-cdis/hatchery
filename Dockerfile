@@ -1,4 +1,4 @@
-FROM quay.io/cdis/golang:1.22-bullseye as build-deps
+FROM golang:1.21-bullseye as build-deps
 
 ENV CGO_ENABLED=0
 ENV GOOS=linux
