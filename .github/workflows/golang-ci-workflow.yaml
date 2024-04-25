@@ -11,7 +11,7 @@ jobs:
       COVERAGE_PROFILE_OUTPUT_LOCATION: "./profile.cov"
     steps:
       - name: Checkout code / lint code / install dependencies for goveralls / run tests
-        uses: uc-cdis/.github/.github/actions/golang-ci@master
+        uses: uc-cdis/.github/.github/actions/golang-ci@mfshao-patch-1
         with:
           COVERAGE_PROFILE_OUTPUT_LOCATION: ${{ env.COVERAGE_PROFILE_OUTPUT_LOCATION }}
           GO_VERSION: ${{ env.GO_VERSION }}
