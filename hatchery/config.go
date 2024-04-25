@@ -7,7 +7,6 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 )
@@ -154,7 +153,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	if nil == loggerIn {
 		logger = log.New(os.Stdout, "", log.LstdFlags)
 	}
-	plan, err := ioutil.ReadFile(configFilePath)
+	plan, err := os.ReadFile(configFilePath)
 
 	data := &FullHatcheryConfig{
 		Logger: logger,
