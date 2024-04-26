@@ -13,7 +13,12 @@ require (
 	sigs.k8s.io/aws-iam-authenticator v0.6.19
 )
 
-replace github.com/mattn/go-sqlite3 v1.14.16 => github.com/mattn/go-sqlite3 v1.14.18
+replace (
+	github.com/mattn/go-sqlite3 v1.14.16 => github.com/mattn/go-sqlite3 v1.14.18
+	golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2 => golang.org/x/crypto v0.1.0
+	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550 => golang.org/x/crypto v0.1.0
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9 => golang.org/x/crypto v0.1.0
+)
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
