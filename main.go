@@ -10,9 +10,6 @@ import (
 	"strings"
 
 	"github.com/uc-cdis/hatchery/hatchery"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
 func verifyPath(path string) (string, error) {
@@ -48,34 +45,11 @@ func main() {
 		return
 	}
 	hatchery.Config = config
-	ddEnabled := os.Getenv("DD_ENABLED")
-	if strings.ToLower(ddEnabled) == "true" {
-		config.Logger.Printf("Setting up datadog")
-		tracer.Start()
-		defer tracer.Stop()
-		if err := profiler.Start(
-			profiler.WithProfileTypes(
-				profiler.CPUProfile,
-				profiler.HeapProfile,
-
-				// The profiles below are disabled by default to keep overhead low, but can be enabled as needed.
-				// profiler.BlockProfile,
-				// profiler.MutexProfile,
-				// profiler.GoroutineProfile,
-			),
-		); err != nil {
-			config.Logger.Printf("DD profiler setup failed with error: %s", err)
-		}
-		defer profiler.Stop()
-	} else {
-		config.Logger.Printf("Datadog not enabled in manifest, skipping...")
-	}
 
 	config.Logger.Printf("Setting up routes")
-	mux := httptrace.NewServeMux()
-	hatchery.RegisterSystem(mux)
-	hatchery.RegisterHatchery(mux)
+	hatchery.RegisterSystem()
+	hatchery.RegisterHatchery()
 
 	config.Logger.Printf("Running main")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8000", mux))
+	log.Fatal(http.ListenAndServe("0.0.0.0:8000", nil))
 }

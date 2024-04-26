@@ -24,9 +24,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/eks"
 
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
-
-	awstrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/aws/aws-sdk-go/aws"
-	kubernetestrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/k8s.io/client-go/kubernetes"
 )
 
 var (
@@ -86,7 +83,6 @@ func getPodClient(ctx context.Context, userName string, payModelPtr *PayModel) (
 func getLocalPodClient() corev1.CoreV1Interface {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
-	config.WrapTransport = kubernetestrace.WrapRoundTripper
 	if err != nil {
 		Config.Logger.Printf("Error creating in-cluster config: %v", err)
 		return nil
@@ -106,9 +102,9 @@ func getLocalPodClient() corev1.CoreV1Interface {
 // Generate EKS kubeconfig using AWS role
 func NewEKSClientset(ctx context.Context, userName string, payModel PayModel) (corev1.CoreV1Interface, error) {
 	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
-	sess := awstrace.WrapSession(session.Must(session.NewSession(&aws.Config{
+	sess := session.Must(session.NewSession(&aws.Config{
 		Region: aws.String(payModel.Region),
-	})))
+	}))
 
 	creds := stscreds.NewCredentials(sess, roleARN)
 	eksSvc := eks.New(sess, &aws.Config{Credentials: creds})

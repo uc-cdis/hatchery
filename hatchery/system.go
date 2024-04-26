@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/uc-cdis/hatchery/hatchery/version"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 )
 
 type versionSummary struct {
@@ -14,9 +13,9 @@ type versionSummary struct {
 	Version string `json:"version"`
 }
 
-func RegisterSystem(mux *httptrace.ServeMux) {
-	mux.HandleFunc("/_status", systemStatus)
-	mux.HandleFunc("/_version", systemVersion)
+func RegisterSystem() {
+	http.HandleFunc("/_status", systemStatus)
+	http.HandleFunc("/_version", systemVersion)
 }
 
 func systemStatus(w http.ResponseWriter, r *http.Request) {
