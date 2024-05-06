@@ -14,7 +14,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	httptrace "gopkg.in/DataDog/dd-trace-go.v1/contrib/net/http"
 	k8sv1 "k8s.io/api/core/v1"
 )
 
@@ -36,20 +35,20 @@ type TextOutput struct {
 var textResult = template.Must(template.New("").Parse(`{{ .Text }}`))
 
 // RegisterHatchery setup endpoints with the http engine
-func RegisterHatchery(mux *httptrace.ServeMux) {
-	mux.HandleFunc("/", home)
-	mux.HandleFunc("/launch", launch)
-	mux.HandleFunc("/terminate", terminate)
-	mux.HandleFunc("/status", status)
-	mux.HandleFunc("/options", options)
-	mux.HandleFunc("/mount-files", mountFiles)
-	mux.HandleFunc("/paymodels", paymodels)
-	mux.HandleFunc("/setpaymodel", setpaymodel)
-	mux.HandleFunc("/resetpaymodels", resetPaymodels)
-	mux.HandleFunc("/allpaymodels", allpaymodels)
+func RegisterHatchery() {
+	http.HandleFunc("/", home)
+	http.HandleFunc("/launch", launch)
+	http.HandleFunc("/terminate", terminate)
+	http.HandleFunc("/status", status)
+	http.HandleFunc("/options", options)
+	http.HandleFunc("/mount-files", mountFiles)
+	http.HandleFunc("/paymodels", paymodels)
+	http.HandleFunc("/setpaymodel", setpaymodel)
+	http.HandleFunc("/resetpaymodels", resetPaymodels)
+	http.HandleFunc("/allpaymodels", allpaymodels)
 
 	// ECS functions
-	mux.HandleFunc("/create-ecs-cluster", createECSCluster)
+	http.HandleFunc("/create-ecs-cluster", createECSCluster)
 }
 
 func home(w http.ResponseWriter, r *http.Request) {

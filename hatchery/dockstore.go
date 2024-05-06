@@ -2,7 +2,6 @@ package hatchery
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -78,7 +77,7 @@ const magicPort = "${SERVICE_PORT}" // make it easy to test locally
 // DockstoreComposeFromFile loads a hatchery application (container)
 // config from a compose.yaml file
 func DockstoreComposeFromFile(filePath string) (model *ComposeFull, err error) {
-	fileBytes, err := ioutil.ReadFile(filePath)
+	fileBytes, err := os.ReadFile(filePath)
 
 	if nil != err {
 		return nil, err
@@ -282,7 +281,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 
 	if 1 < len(service.Healthcheck.Test) && service.Healthcheck.Test[0] == "CMD" {
 		friend.ReadinessProbe = &k8sv1.Probe{
-			Handler: k8sv1.Handler{
+			ProbeHandler: k8sv1.ProbeHandler{
 				Exec: &k8sv1.ExecAction{
 					Command: service.Healthcheck.Test[1:],
 				},
