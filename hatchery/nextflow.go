@@ -770,6 +770,12 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 			if err != nil {
 				return nil, err
 			}
+			instanceProfile, err = iamSvc.GetInstanceProfile(&iam.GetInstanceProfileInput{
+				InstanceProfileName: aws.String(name),
+			})
+			if err != nil {
+				return nil, err
+			}
 		} else {
 			return nil, err
 		}
