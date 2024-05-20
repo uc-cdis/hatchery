@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/imagebuilder"
+	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
@@ -51,6 +52,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	iamSvc := iam.New(sess, &awsConfig)
 	s3Svc := s3.New(sess, &awsConfig)
 	ec2Svc := ec2.New(sess, &awsConfig)
+	kmsSvc := kms.New(sess, &awsConfig)
 
 	userName = escapism(userName)
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
@@ -75,6 +77,12 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 		{
 			Key:   aws.String("Name"),
 			Value: &tag,
+		},
+	}
+	kmsTags := []*kms.Tag{
+		{
+			TagKey:   aws.String("Name"),
+			TagValue: &tag,
 		},
 	}
 	pathPrefix := aws.String(fmt.Sprintf("/%s/", tag))
@@ -117,7 +125,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	}
 
 	// Create S3 bucket
-	err = createS3bucket(s3Svc, bucketName)
+	kmsKeyArn, err := createS3bucket(s3Svc, kmsSvc, bucketName, kmsTags)
 	if err != nil {
 		Config.Logger.Printf("Error creating S3 bucket '%s': %v", bucketName, err)
 		return "", "", err
@@ -180,10 +188,21 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 				"Resource": [
 					"arn:aws:s3:::%s/%s/*"
 				]
+			},
+			{
+				"Sid": "BucketEncryption",
+				"Effect": "Allow",
+				"Action": [
+					"kms:GenerateDataKey",
+					"kms:Decrypt"
+				],
+				"Resource": [
+					"%s"
+				]
 			}
 			%s
 		]
-	}`, bucketName, userName, bucketName, userName, s3BucketWhitelistCondition)))
+	}`, bucketName, userName, bucketName, userName, kmsKeyArn, s3BucketWhitelistCondition)))
 	if err != nil {
 		return "", "", err
 	}
@@ -339,10 +358,21 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 				"Resource": [
 					"arn:aws:s3:::%s/%s/*"
 				]
+			},
+			{
+				"Sid": "BucketEncryption",
+				"Effect": "Allow",
+				"Action": [
+					"kms:GenerateDataKey",
+					"kms:Decrypt"
+				],
+				"Resource": [
+					"%s"
+				]
 			}
 			%s
 		]
-	}`, nextflowJobsRoleArn, batchJobQueueName, jobImageWhitelistCondition, bucketName, userName, bucketName, userName, s3BucketWhitelistCondition)))
+	}`, nextflowJobsRoleArn, batchJobQueueName, jobImageWhitelistCondition, bucketName, userName, bucketName, userName, kmsKeyArn, s3BucketWhitelistCondition)))
 	if err != nil {
 		return "", "", err
 	}
@@ -823,7 +853,7 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 	return instanceProfile.InstanceProfile.Arn, nil
 }
 
-func createS3bucket(s3Svc *s3.S3, bucketName string) error {
+func createS3bucket(s3Svc *s3.S3, kmsSvc *kms.KMS, bucketName string, kmsTags []*kms.Tag) (string, error) {
 	// create S3 bucket for nextflow input, output and intermediate files
 	_, err := s3Svc.CreateBucket(&s3.CreateBucketInput{
 		Bucket: &bucketName,
@@ -838,11 +868,96 @@ func createS3bucket(s3Svc *s3.S3, bucketName string) error {
 		// no need to check for a specific "bucket already exists" error since
 		// `s3Svc.CreateBucket` does not error when the bucket exists
 		Config.Logger.Printf("Error creating S3 bucket '%s': %v", bucketName, err)
-		return err
+		return "", err
+	}
+	Config.Logger.Printf("INFO: Created S3 bucket '%s'", bucketName)
+
+	// set up KMS encryption on the bucket.
+	// the only way to check if the KMS key has already been created is to use an alias
+	kmsKeyAlias := fmt.Sprintf("alias/key-%s", bucketName)
+	kmsDescribeKeyOutput, err := kmsSvc.DescribeKey(&kms.DescribeKeyInput{
+		KeyId: aws.String(kmsKeyAlias),
+	})
+	var kmsKeyArn *string
+	if err == nil {
+		kmsKeyArn = kmsDescribeKeyOutput.KeyMetadata.Arn
+		Config.Logger.Printf("DEBUG: Existing KMS key: '%s' - '%s'", kmsKeyAlias, *kmsKeyArn)
+	} else {
+		// if the KMS key doesn't exists, create it
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFoundException" {
+			kmsCreateKeyOutput, err := kmsSvc.CreateKey(&kms.CreateKeyInput{
+				Tags: kmsTags,
+			})
+			if err != nil {
+				Config.Logger.Printf("Error creating KMS key: %v", err)
+				return "", err
+			}
+			kmsKeyArn = kmsCreateKeyOutput.KeyMetadata.Arn
+			Config.Logger.Printf("INFO: Created KMS key: '%s'", *kmsKeyArn)
+
+			_, err = kmsSvc.CreateAlias(&kms.CreateAliasInput{
+				AliasName:   &kmsKeyAlias,
+				TargetKeyId: kmsKeyArn,
+			})
+			if err != nil {
+				Config.Logger.Printf("Error creating KMS key alias: %v", err)
+				return "", err
+			}
+			Config.Logger.Printf("INFO: Created KMS key alias: '%s'", kmsKeyAlias)
+		} else {
+			Config.Logger.Printf("Error describing existing KMS key '%s': %v", kmsKeyAlias, err)
+			return "", err
+		}
 	}
 
-	Config.Logger.Printf("Created S3 bucket '%s'", bucketName)
-	return nil
+	Config.Logger.Printf("DEBUG: Setting KMS encryption on bucket '%s'", bucketName)
+	_, err = s3Svc.PutBucketEncryption(&s3.PutBucketEncryptionInput{
+		Bucket: &bucketName,
+		ServerSideEncryptionConfiguration: &s3.ServerSideEncryptionConfiguration{
+			Rules: []*s3.ServerSideEncryptionRule{
+				{
+					ApplyServerSideEncryptionByDefault: &s3.ServerSideEncryptionByDefault{
+						SSEAlgorithm:   aws.String("aws:kms"),
+						KMSMasterKeyID: kmsKeyArn,
+					},
+					BucketKeyEnabled: aws.Bool(true),
+				},
+			},
+		},
+	})
+	if err != nil {
+		Config.Logger.Printf("Unable to set bucket encryption: %v", err)
+		return "", err
+	}
+
+	Config.Logger.Printf("DEBUG: Enforcing KMS encryption through bucket policy")
+	_, err = s3Svc.PutBucketPolicy(&s3.PutBucketPolicyInput{
+		Bucket: &bucketName,
+		Policy: aws.String(fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Sid": "RequireKMSEncryption",
+					"Effect": "Deny",
+					"Principal": "*",
+					"Action": "s3:PutObject",
+					"Resource": "arn:aws:s3:::%s/*",
+					"Condition": {
+						"StringNotLikeIfExists": {
+							"s3:x-amz-server-side-encryption-aws-kms-key-id": "%s"
+						}
+					}
+				}
+			]
+		}`, bucketName, *kmsKeyArn)),
+	})
+	if err != nil {
+		Config.Logger.Printf("Unable to set bucket policy: %v", err)
+		return "", err
+	}
+
+	Config.Logger.Printf("DEBUG: Done setting up S3 bucket!")
+	return *kmsKeyArn, nil
 }
 
 // Function to set up squid and subnets for squid
