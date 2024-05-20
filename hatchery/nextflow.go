@@ -68,24 +68,25 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	// TODO The VPC, subnets, route tables and squid instance do not have the
 	// same tag as the other resources, so we can't use the same tag to track
 	// costs. To use the same tag, we might need to update `vpc.go`.
-	tag := fmt.Sprintf("%s-hatchery-nf-%s", hostname, userName)
+	tagWithUsername := fmt.Sprintf("%s-hatchery-nf-%s", hostname, userName)
+	tagWithoutUsername := fmt.Sprintf("%s-hatchery-nf", hostname)
 	// TODO Jawad mentioned we should add more tags. Ask him which ones are needed
 	tagsMap := map[string]*string{
-		"Name": &tag,
+		"Name": &tagWithUsername,
 	}
-	tags := []*iam.Tag{
+	iamTags := []*iam.Tag{
 		{
 			Key:   aws.String("Name"),
-			Value: &tag,
+			Value: &tagWithUsername,
 		},
 	}
 	kmsTags := []*kms.Tag{
 		{
 			TagKey:   aws.String("Name"),
-			TagValue: &tag,
+			TagValue: &tagWithoutUsername,
 		},
 	}
-	pathPrefix := aws.String(fmt.Sprintf("/%s/", tag))
+	pathPrefix := aws.String(fmt.Sprintf("/%s/", tagWithUsername))
 
 	s3BucketWhitelistCondition := "" // if not configured, no buckets are allowed
 	if len(nextflowConfig.S3BucketWhitelist) > 0 {
@@ -157,7 +158,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 
 	// create IAM policy for nextflow-created jobs
 	policyName := fmt.Sprintf("%s-nf-jobs-%s", hostname, userName)
-	nextflowJobsPolicyArn, err := createOrUpdatePolicy(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
+	nextflowJobsPolicyArn, err := createOrUpdatePolicy(iamSvc, policyName, pathPrefix, iamTags, aws.String(fmt.Sprintf(`{
 		"Version": "2012-10-17",
 		"Statement": [
 			{
@@ -224,7 +225,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 			]
 		}`),
 		Path: pathPrefix, // so we can use the path later to get the role ARN
-		Tags: tags,
+		Tags: iamTags,
 	})
 	nextflowJobsRoleArn := ""
 	if err != nil {
@@ -280,7 +281,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 			}
 		}`, jobImageWhitelist)
 	}
-	nextflowPolicyArn, err := createOrUpdatePolicy(iamSvc, policyName, pathPrefix, tags, aws.String(fmt.Sprintf(`{
+	nextflowPolicyArn, err := createOrUpdatePolicy(iamSvc, policyName, pathPrefix, iamTags, aws.String(fmt.Sprintf(`{
 		"Version": "2012-10-17",
 		"Statement": [
 			{
@@ -381,7 +382,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	nextflowUserName := fmt.Sprintf("%s-nf-%s", hostname, userName)
 	_, err = iamSvc.CreateUser(&iam.CreateUserInput{
 		UserName: &nextflowUserName,
-		Tags:     tags,
+		Tags:     iamTags,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "EntityAlreadyExists") {
@@ -883,7 +884,7 @@ func createS3bucket(s3Svc *s3.S3, kmsSvc *kms.KMS, bucketName string, kmsTags []
 		kmsKeyArn = kmsDescribeKeyOutput.KeyMetadata.Arn
 		Config.Logger.Printf("DEBUG: Existing KMS key: '%s' - '%s'", kmsKeyAlias, *kmsKeyArn)
 	} else {
-		// if the KMS key doesn't exists, create it
+		// if the KMS key doesn't exist, create it
 		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFoundException" {
 			kmsCreateKeyOutput, err := kmsSvc.CreateKey(&kms.CreateKeyInput{
 				Tags: kmsTags,
