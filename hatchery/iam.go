@@ -162,14 +162,14 @@ func (creds *CREDS) CreateEcsTaskExecutionRole() (*string, error) {
 	return ecsTaskExecutionRoleArn, nil
 }
 
-func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string, tags []*iam.Tag, policyDocument *string) (string, error) {
+func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string, iamTags []*iam.Tag, policyDocument *string) (string, error) {
 	/* Create the policy if it does not exist. If it does, there can only be up to 5 versions, so
 	delete old versions and then update the policy. */
 	policyResult, err := iamSvc.CreatePolicy(&iam.CreatePolicyInput{
 		PolicyName:     &policyName,
 		PolicyDocument: policyDocument,
 		Path:           pathPrefix, // so we can use the path later to get the policy ARN
-		Tags:           tags,
+		Tags:           iamTags,
 	})
 	policyArn := ""
 	if err != nil {
