@@ -24,11 +24,10 @@ import (
 
 /*
 General TODOS:
-- Make the AWS region configurable in the hatchery config (although ideally, the user should be able to choose)
-- Make the `roleArn` configurable
-- The contents of `s3://<nextflow bucket>/<username>` are not deleted because researchers may need to keep the intermediary files.
-  We should set bucket lifecycle rules to delete after X days.
-- Can we do this long setup as a separate workspace launch step, instead of in the launch() function?
+- Make the AWS region configurable in the hatchery config (although ideally, the user should be able to choose) (MIDRC-743)
+- Make the `roleArn` configurable (MIDRC-744)
+- The contents of `s3://<nextflow bucket>/<username>` are not deleted because researchers may need to keep the intermediary files. We should set bucket lifecycle rules to delete after X days. (MIDRC-653 and MIDRC-536)
+- Can we do this long setup as a separate workspace launch step, instead of in the launch() function? (MIDRC-745)
 */
 
 // create the AWS resources required to launch nextflow workflows
@@ -67,10 +66,10 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	// different services accept different formats
 	// TODO The VPC, subnets, route tables and squid instance do not have the
 	// same tag as the other resources, so we can't use the same tag to track
-	// costs. To use the same tag, we might need to update `vpc.go`.
+	// costs. To use the same tag, we might need to update `vpc.go`. (MIDRC-746)
 	tagWithUsername := fmt.Sprintf("%s-hatchery-nf-%s", hostname, userName)
 	tagWithoutUsername := fmt.Sprintf("%s-hatchery-nf", hostname)
-	// TODO Jawad mentioned we should add more tags. Ask him which ones are needed
+	// TODO Add more tags: "Environment" and possibly "gen3username" (MIDRC-746)
 	tagsMap := map[string]*string{
 		"Name": &tagWithUsername,
 	}
@@ -457,7 +456,7 @@ var getNextflowAwsSettings = func(sess *session.Session, payModel *PayModel, use
 
 // Create VPC for aws batch compute environment
 func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*string, *[]string, error) {
-	// TODO: make base CIDR configurable?
+	// TODO: make base CIDR configurable? (MIDRC-747)
 	cidrstring := "192.168.0.0/16"
 	_, IPNet, _ := net.ParseCIDR(cidrstring)
 	numberOfSubnets := 3
@@ -499,7 +498,7 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 		return nil, nil, err
 	}
 	vpcid := ""
-	// TODO: Check that the VPC is configured correctly, and not just that it exists
+	// TODO: Check that the VPC is configured correctly, and not just that it exists (MIDRC-748)
 	if len(vpc.Vpcs) == 0 {
 		Config.Logger.Print("Debug: VPC does not exist, creating it now")
 		vpc, err := createVPC(cidrstring, vpcName, ec2Svc)
@@ -597,7 +596,8 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 	}
 
 	if len(launchTemplate.LaunchTemplates) == 1 {
-		// TODO: Make sure user data in the existing launch template matches the user data we want
+		// TODO: Make sure user data in the existing launch template matches the user data
+		// we want (MIDRC-749)
 		Config.Logger.Printf("Debug: Launch template '%s' already exists", launchTemplateName)
 		return launchTemplate.LaunchTemplates[0].LaunchTemplateName, nil
 	}
@@ -662,7 +662,8 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 
 		// update any settings that may have changed in the config
 		// TODO also make sure it is pointing at the correct subnets - if the VPC is deleted,
-		// we should recreate the compute environment as well because it will be pointing at old vpc subnets
+		// we should recreate the compute environment as well because it will be pointing at
+		// old vpc subnets (MIDRC-750)
 		_, err = batchSvc.UpdateComputeEnvironment(&batch.UpdateComputeEnvironmentInput{
 			ComputeEnvironment: &batchComputeEnvArn,
 			State:              aws.String("ENABLED"), // since the env already exists, make sure it's enabled
@@ -866,7 +867,7 @@ func createS3bucket(s3Svc *s3.S3, kmsSvc *kms.KMS, bucketName string, kmsTags []
 		Bucket: &bucketName,
 		// TODO We may need to add the LocationConstraint below if we change the region to not
 		// "us-east-1". It seems this block causes an error when the region is "us-east-1", so
-		// it would need to be added conditionally.
+		// it would need to be added conditionally. (MIDRC-743)
 		// CreateBucketConfiguration: &s3.CreateBucketConfiguration{
 		// 	LocationConstraint: aws.String("us-east-1"),
 		// },
@@ -1293,7 +1294,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 
 		// instance type
 		// TODO: we could make this configurable via hatchery config (would need to change this
-		// function to update the instance type if the instance already exists)
+		// function to update the instance type if the instance already exists) (MIDRC-751)
 		instanceType := "t2.micro"
 
 		// Launch EC2 instance
@@ -1432,7 +1433,7 @@ func setupFwSecurityGroup(hostname string, userName string, ec2svc *ec2.EC2, vpc
 				IpProtocol: aws.String("tcp"),
 				IpRanges: []*ec2.IpRange{
 					{
-						// TODO: make this configurable?
+						// TODO: make this configurable? (MIDRC-747)
 						CidrIp: aws.String("192.168.0.0/16"),
 					},
 				},
@@ -1812,7 +1813,7 @@ func generateEcrLoginUserData(jobImageWhitelist []string, userName string) strin
 		}
 	}
 
-	// TODO: read region from config
+	// TODO: read region from config (MIDRC-743)
 	runCmd := ""
 	for _, approvedRepo := range ecrRepos {
 		runCmd += fmt.Sprintf(`

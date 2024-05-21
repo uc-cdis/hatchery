@@ -152,7 +152,6 @@ func TestGetNextflowInstanceAmi(t *testing.T) {
 	}
 }
 
-
 func TestCleanUpNextflowResources(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
@@ -176,7 +175,7 @@ func TestCleanUpNextflowResources(t *testing.T) {
 	}
 
 	stopSquidInstanceCallCount := 0
-	stopSquidInstance =  func(hostname string, userName string, ec2svc *ec2.EC2) error {
+	stopSquidInstance = func(hostname string, userName string, ec2svc *ec2.EC2) error {
 		stopSquidInstanceCallCount += 1
 		return nil
 	}
@@ -185,8 +184,8 @@ func TestCleanUpNextflowResources(t *testing.T) {
 	mockedIamSvcListAccessKeys := func(*iam.ListAccessKeysInput) (*iam.ListAccessKeysOutput, error) {
 		output := iam.ListAccessKeysOutput{
 			AccessKeyMetadata: []*iam.AccessKeyMetadata{
-				{ AccessKeyId: aws.String("123") },
-				{ AccessKeyId: aws.String("789") },
+				{AccessKeyId: aws.String("123")},
+				{AccessKeyId: aws.String("789")},
 			},
 		}
 		return &output, nil
@@ -203,7 +202,7 @@ func TestCleanUpNextflowResources(t *testing.T) {
 		output := batch.ListJobsOutput{
 			JobSummaryList: []*batch.JobSummary{
 				{
-					JobId: aws.String("abc"),
+					JobId:   aws.String("abc"),
 					JobName: aws.String("Job ABC"),
 				},
 			},
@@ -214,7 +213,7 @@ func TestCleanUpNextflowResources(t *testing.T) {
 			output = batch.ListJobsOutput{
 				JobSummaryList: []*batch.JobSummary{
 					{
-						JobId: aws.String("xyz"),
+						JobId:   aws.String("xyz"),
 						JobName: aws.String("Job XYZ"),
 					},
 				},
@@ -249,5 +248,4 @@ func TestCleanUpNextflowResources(t *testing.T) {
 	if len(terminateJobCallIds) != 12 || terminateJobCallIds[0] != "abc" || terminateJobCallIds[1] != "xyz" {
 		t.Errorf("'batch.ListJobs' function not called with expected input! Calls: %v", terminateJobCallIds)
 	}
-
 }
