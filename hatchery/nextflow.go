@@ -1075,11 +1075,33 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) 
 		return exsubnet.Subnets[0].SubnetId, nil
 	}
 
+	// Fetch all availability zones
+	// this is being limited to a region by the ec2svc that gets passed in.
+	describeZonesOutput, err := ec2Svc.DescribeAvailabilityZones(&ec2.DescribeAvailabilityZonesInput{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe availability zones: %v", err)
+	}
+
+	// Avoid us-east-1e as it is technically neglected, and does not have modern instance types.
+	// Find a suitable availability zone that is not us-east-1e
+	var selectedZone string
+	for _, zone := range describeZonesOutput.AvailabilityZones {
+		if *zone.State == "available" && !strings.EqualFold(*zone.ZoneName, "us-east-1e") {
+			selectedZone = *zone.ZoneName
+			break
+		}
+	}
+
+	if selectedZone == "" {
+		return nil, fmt.Errorf("no suitable availability zone found")
+	}
+
 	// create subnet
 	Config.Logger.Printf("Debug: Creating subnet '%v' with name '%s'", cidr, subnetName)
 	sn, err := ec2Svc.CreateSubnet(&ec2.CreateSubnetInput{
-		CidrBlock: aws.String(cidr),
-		VpcId:     aws.String(vpcid),
+		CidrBlock:        aws.String(cidr),
+		VpcId:            aws.String(vpcid),
+		AvailabilityZone: aws.String(selectedZone),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				// Name
