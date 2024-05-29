@@ -660,6 +660,12 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 			return "", err
 		}
 
+		subnets := []*string{}
+		for _, subnet := range subnetids {
+			s := subnet
+			subnets = append(subnets, &s)
+		}
+
 		// update any settings that may have changed in the config
 		// TODO also make sure it is pointing at the correct subnets - if the VPC is deleted,
 		// we should recreate the compute environment as well because it will be pointing at
@@ -678,6 +684,7 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
 				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
 				InstanceTypes:      []*string{aws.String(nextflowConfig.InstanceType)},
+				Subnets:            subnets,
 				Type:               aws.String(nextflowConfig.ComputeEnvironmentType),
 				Tags:               tagsMap,
 			},
