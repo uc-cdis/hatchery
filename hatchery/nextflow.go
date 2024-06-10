@@ -1091,6 +1091,7 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) 
 
 	// Avoid us-east-1e as it is technically neglected, and does not have modern instance types.
 	// Find a suitable availability zone that is not us-east-1e
+	// as of june 2024, we cannot launch instance types of g4dn in us-east-1e
 	var selectedZone string
 	for _, zone := range describeZonesOutput.AvailabilityZones {
 		if *zone.State == "available" && !strings.EqualFold(*zone.ZoneName, "us-east-1e") {
