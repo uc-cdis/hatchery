@@ -26,7 +26,6 @@ import (
 General TODOS:
 - Make the AWS region configurable in the hatchery config (although ideally, the user should be able to choose) (MIDRC-743)
 - Make the `roleArn` configurable (MIDRC-744)
-- The contents of `s3://<nextflow bucket>/<username>` are not deleted because researchers may need to keep the intermediary files. We should set bucket lifecycle rules to delete after X days. (MIDRC-653 and MIDRC-536)
 - Can we do this long setup as a separate workspace launch step, instead of in the launch() function? (MIDRC-745)
 */
 
@@ -125,7 +124,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	}
 
 	// Create S3 bucket
-	kmsKeyArn, err := createS3bucket(s3Svc, kmsSvc, bucketName, kmsTags)
+	kmsKeyArn, err := createS3bucket(nextflowGlobalConfig, s3Svc, kmsSvc, bucketName, kmsTags)
 	if err != nil {
 		Config.Logger.Printf("Error creating S3 bucket '%s': %v", bucketName, err)
 		return "", "", err
@@ -861,7 +860,7 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 	return instanceProfile.InstanceProfile.Arn, nil
 }
 
-func createS3bucket(s3Svc *s3.S3, kmsSvc *kms.KMS, bucketName string, kmsTags []*kms.Tag) (string, error) {
+func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.S3, kmsSvc *kms.KMS, bucketName string, kmsTags []*kms.Tag) (string, error) {
 	// create S3 bucket for nextflow input, output and intermediate files
 	_, err := s3Svc.CreateBucket(&s3.CreateBucketInput{
 		Bucket: &bucketName,
@@ -961,6 +960,32 @@ func createS3bucket(s3Svc *s3.S3, kmsSvc *kms.KMS, bucketName string, kmsTags []
 	})
 	if err != nil {
 		Config.Logger.Printf("Unable to set bucket policy: %v", err)
+		return "", err
+	}
+
+	expirationDays := nextflowGlobalConfig.S3ObjectsExpirationDays
+	if expirationDays <= 0 {
+		expirationDays = 30
+	}
+	Config.Logger.Printf("DEBUG: Setting bucket objects expiration to %d days", expirationDays)
+	_, err = s3Svc.PutBucketLifecycleConfiguration(&s3.PutBucketLifecycleConfigurationInput{
+		Bucket: &bucketName,
+		LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
+			Rules: []*s3.LifecycleRule{
+				{
+					Expiration: &s3.LifecycleExpiration{
+						Days: aws.Int64(int64(expirationDays)),
+					},
+					Status: aws.String("Enabled"),
+					Filter: &s3.LifecycleRuleFilter{
+						Prefix: aws.String(""), // apply to all objects
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		Config.Logger.Printf("Unable to set lifecycle configuration: %v", err)
 		return "", err
 	}
 
