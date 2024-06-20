@@ -33,6 +33,7 @@ An example manifest entry may look like
       "lifecycle-pre-stop": ["su", "-c", "cd /data; for f in *; do fusermount -u $f; rm -rf $f; done", "-s", "/bin/sh", "jovyan"]
     },
     "nextflow-global": {
+      "s3-objects-expiration-days": 30,
       "sample-config-public-image": "",
       "imagebuilder-reader-role-arn": ""
     },
@@ -126,6 +127,7 @@ An example manifest entry may look like
     * `command` a string array as the command to run in the container overriding the default.
     * `lifecycle-pre-stop` a string array as the container prestop command.
 * `nextflow-global` is for global configuration specific to Nextflow containers.
+    * `s3-objects-expiration-days` (int, default 30): objects created in S3 by Nextflow are deleted after the specified number of days.
     * `sample-config-public-image`: a publicly-accessible image that any user can pull to test Nextflow workflows. Will be mentioned in the auto-generated sample configuration and documentation when a user launches a Nextflow workspace.
     * `imagebuilder-reader-role-arn`: see the [nextflow-global.imagebuilder-reader-role-arn section](/doc/explanation/nextflow.md#nextflow-globalimagebuilder-reader-role-arn) of the Nextflow workspaces documentation.
 * `containers` is the list of workspaces available to be run by this instance of Hatchery. Each container must be a single image and expose a web server.
