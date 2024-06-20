@@ -46,6 +46,11 @@ Valid `pay_models` values:
 - "STRIDES Grant"
 - "None" to allow no pay model (aka blanket billing)
 
+When `resource_paths` is used, users need access to the following to launch a workspace:
+- Resource: configured resource paths
+- Service: `jupyterhub`
+- Method: `launch`
+
 #### Examples of VALID authorization blocks
 
 - Authorize based on access to resource paths only:
