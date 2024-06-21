@@ -111,7 +111,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	}
 
 	// create the VPC if it doesn't exist
-	vpcid, subnetids, err := setupVpcAndSquid(ec2Svc, userName, hostname)
+	vpcid, subnetids, err := setupVpcAndSquid(ec2Svc, userName, hostname, nextflowConfig.InstanceType)
 	if err != nil {
 		Config.Logger.Printf("Unable to setup VPC: %v", err)
 		return "", "", err
@@ -455,7 +455,7 @@ var getNextflowAwsSettings = func(sess *session.Session, payModel *PayModel, use
 }
 
 // Create VPC for aws batch compute environment
-func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*string, *[]string, error) {
+func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string, instanceType string) (*string, *[]string, error) {
 	// TODO: make base CIDR configurable? (MIDRC-747)
 	cidrstring := "192.168.0.0/16"
 	_, IPNet, _ := net.ParseCIDR(cidrstring)
@@ -521,7 +521,7 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string) (*strin
 	// create subnets
 	for i, subnet := range subnets {
 		subnetName := fmt.Sprintf("%s-nf-subnet-%s-%d", hostname, userName, i)
-		subnetId, err := setupSubnet(subnetName, subnet, vpcid, ec2Svc)
+		subnetId, err := setupSubnet(subnetName, subnet, vpcid, ec2Svc, instanceType)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -660,6 +660,12 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 			return "", err
 		}
 
+		subnets := []*string{}
+		for _, subnet := range subnetids {
+			s := subnet
+			subnets = append(subnets, &s)
+		}
+
 		// update any settings that may have changed in the config
 		// TODO also make sure it is pointing at the correct subnets - if the VPC is deleted,
 		// we should recreate the compute environment as well because it will be pointing at
@@ -678,6 +684,7 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
 				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
 				InstanceTypes:      []*string{aws.String(nextflowConfig.InstanceType)},
+				Subnets:            subnets,
 				Type:               aws.String(nextflowConfig.ComputeEnvironmentType),
 				Tags:               tagsMap,
 			},
@@ -981,7 +988,8 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 	subnetName := fmt.Sprintf("%s-nf-subnet-fw-%s", hostname, userName)
 	Config.Logger.Printf("Debug: Creating subnet '%s' with name '%s'", subnet, subnetName)
 
-	subnetId, err := setupSubnet(subnetName, subnetString, vpcid, ec2svc)
+	// TODO: read instance type from config. (MIDRC-751)
+	subnetId, err := setupSubnet(subnetName, subnetString, vpcid, ec2svc, "t2.micro")
 	if err != nil {
 		return nil, err
 	}
@@ -1049,7 +1057,7 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 }
 
 // Generic function to create subnet, and route table
-func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) (*string, error) {
+func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2, instanceType string) (*string, error) {
 	// Check if subnet exists if not create it
 	exsubnet, err := ec2Svc.DescribeSubnets(&ec2.DescribeSubnetsInput{
 		Filters: []*ec2.Filter{
@@ -1075,11 +1083,53 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2) 
 		return exsubnet.Subnets[0].SubnetId, nil
 	}
 
+	// Fetch all availability zones
+	// this is being limited to a region by the ec2svc that gets passed in.
+	describeZonesOutput, err := ec2Svc.DescribeAvailabilityZones(&ec2.DescribeAvailabilityZonesInput{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe availability zones: %v", err)
+	}
+
+	// Make sure the selected AZ has the instance type from nextflow configuration available.
+	var selectedZone string
+	for _, zone := range describeZonesOutput.AvailabilityZones {
+		if *zone.State == "available" {
+			input := &ec2.DescribeInstanceTypeOfferingsInput{
+				LocationType: aws.String("availability-zone"),
+				Filters: []*ec2.Filter{
+					{
+						Name:   aws.String("location"),
+						Values: []*string{aws.String(*zone.ZoneName)},
+					},
+					{
+						Name: aws.String("instance-type"),
+						// TODO: Should this be configurable?
+						Values: []*string{aws.String(instanceType)},
+					},
+				},
+			}
+			result, err := ec2Svc.DescribeInstanceTypeOfferings(input)
+			if err != nil {
+				return nil, fmt.Errorf("Error describing instance type offerings: %v", err)
+			}
+			if len(result.InstanceTypeOfferings) > 0 {
+				Config.Logger.Printf("Debug: Zone: %v has instance type g4dn.xlarge available. Using that for subnet", *zone.ZoneName)
+				selectedZone = *zone.ZoneName
+				break // Exit the loop if we found a suitable zone
+			}
+		}
+	}
+
+	if selectedZone == "" {
+		return nil, fmt.Errorf("no suitable availability zone found")
+	}
+
 	// create subnet
 	Config.Logger.Printf("Debug: Creating subnet '%v' with name '%s'", cidr, subnetName)
 	sn, err := ec2Svc.CreateSubnet(&ec2.CreateSubnetInput{
-		CidrBlock: aws.String(cidr),
-		VpcId:     aws.String(vpcid),
+		CidrBlock:        aws.String(cidr),
+		VpcId:            aws.String(vpcid),
+		AvailabilityZone: aws.String(selectedZone),
 		TagSpecifications: []*ec2.TagSpecification{
 			{
 				// Name
