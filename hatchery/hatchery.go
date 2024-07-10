@@ -435,10 +435,12 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		Config.Logger.Printf(err.Error())
 	}
+	Config.Logger.Printf("DEBUG: allpaymodels = %v", allpaymodels)
 	if allpaymodels == nil { // Commons with no concept of paymodels
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
 	} else {
 		payModel := allpaymodels.CurrentPayModel
+		Config.Logger.Printf("DEBUG: payModel = %v", payModel)
 		if payModel == nil {
 			Config.Logger.Printf("Current Paymodel is not set. Launch forbidden for user %s", userName)
 			http.Error(w, "Current Paymodel is not set. Launch forbidden", http.StatusInternalServerError)
