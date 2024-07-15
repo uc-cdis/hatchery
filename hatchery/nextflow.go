@@ -117,7 +117,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	}
 
 	// Create nextflow compute environment if it does not exist
-	batchComputeEnvArn, err := createBatchComputeEnvironment(nextflowGlobalConfig, nextflowConfig, userName, hostname, tagsMap, batchSvc, ec2Svc, iamSvc, *vpcid, *subnetids, payModel, awsAccountId)
+	batchComputeEnvArn, err := createBatchComputeEnvironment(nextflowGlobalConfig, nextflowConfig, userName, hostname, tagsMap, batchSvc, ec2Svc, iamSvc, *vpcid, *subnetids)
 	if err != nil {
 		Config.Logger.Printf("Error creating compute environment for user %s: %s", userName, err.Error())
 		return "", "", err
@@ -444,10 +444,11 @@ var getNextflowAwsSettings = func(sess *session.Session, payModel *PayModel, use
 		Config.Logger.Printf("Info: pay model disabled for user '%s': %s Nextflow resources in main AWS account", userName, action)
 		awsConfig = aws.Config{}
 		Config.Logger.Printf("Debug: Getting AWS account ID...")
-		awsAccountId, err := getAwsAccountId(sess, &awsConfig)
+		var err error
+		awsAccountId, err = getAwsAccountId(sess, &awsConfig)
 		if err != nil {
 			Config.Logger.Printf("Error getting AWS account ID: %v", err)
-			return awsAccountId, awsConfig, err
+			return "", awsConfig, err
 		}
 	}
 	return awsAccountId, awsConfig, nil
@@ -604,7 +605,7 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 }
 
 // Create AWS Batch compute environment
-func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig, userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string, payModel *PayModel, awsAccountId string) (string, error) {
+func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig, userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string) (string, error) {
 	instanceProfileArn, err := createEcsInstanceProfile(iamSvc, fmt.Sprintf("%s-nf-ecsInstanceRole", hostname))
 	if err != nil {
 		Config.Logger.Printf("Unable to create ECS instance profile: %s", err.Error())
@@ -691,6 +692,7 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 			return "", err
 		}
 	} else { // compute environment does not exist, create it
+		Config.Logger.Printf("Debug: Batch compute environment '%s' does not exist, creating it", batchComputeEnvName)
 		subnets := []*string{}
 		for _, subnet := range subnetids {
 			s := subnet
