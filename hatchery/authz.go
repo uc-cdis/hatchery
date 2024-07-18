@@ -233,14 +233,14 @@ var isUserAuthorizedForPayModels = func(userName string, allowedPayModels []stri
 var isUserAuthorizedForResourcePaths = func(userName string, accessToken string, resourcePaths []string) (bool, error) {
 	Config.Logger.Printf("DEBUG: Checking user '%s' access to resource paths %v (service 'jupyterhub', method 'launch')", userName, resourcePaths)
 
-	body := "{ \"requests\": ["
+	body := fmt.Sprintf("{\"user\": {\"token\": \"%s\"}, \"requests\": [", accessToken)
 	for _, resource := range resourcePaths {
 		body += fmt.Sprintf("{\"resource\": \"%s\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}},", resource)
 	}
 	body = body[:len(body)-1] // remove the last trailing comma
 	body += "]}"
 
-	authorized, err := arboristAuthRequest(accessToken, body)
+	authorized, err := arboristAuthRequest(body)
 	if err != nil {
 		Config.Logger.Printf("something went wrong when making a call to arborist's `/auth/request` endpoint. Denying access. Details: %v", err.Error())
 		return false, nil
@@ -249,18 +249,11 @@ var isUserAuthorizedForResourcePaths = func(userName string, accessToken string,
 	return authorized, nil
 }
 
-var arboristAuthRequest = func(accessToken string, body string) (bool, error) {
+var arboristAuthRequest = func(body string) (bool, error) {
 	arboristUrl := "http://arborist-service/auth/request"
 	req, err := http.NewRequest("POST", arboristUrl, bytes.NewBufferString(body))
 	if err != nil {
 		return false, errors.New("Error occurred while generating HTTP request: " + err.Error())
-	}
-
-	headers := map[string]string{
-		"Authorization": fmt.Sprintf("Bearer %s", accessToken),
-	}
-	for k, v := range headers {
-		req.Header.Add(k, v)
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}

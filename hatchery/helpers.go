@@ -218,6 +218,9 @@ func getAwsAccountId(sess *session.Session, awsConfig *aws.Config) (string, erro
 	if err != nil {
 		return "", err
 	}
+	if *req.Account == "" {
+		return "", fmt.Errorf("unable to find AWS account ID: STS GetCallerIdentity returned: %v", *req)
+	}
 	return *req.Account, nil
 }
 

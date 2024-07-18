@@ -26,7 +26,6 @@ import (
 General TODOS:
 - Make the AWS region configurable in the hatchery config (although ideally, the user should be able to choose) (MIDRC-743)
 - Make the `roleArn` configurable (MIDRC-744)
-- The contents of `s3://<nextflow bucket>/<username>` are not deleted because researchers may need to keep the intermediary files. We should set bucket lifecycle rules to delete after X days. (MIDRC-653 and MIDRC-536)
 - Can we do this long setup as a separate workspace launch step, instead of in the launch() function? (MIDRC-745)
 */
 
@@ -118,14 +117,14 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	}
 
 	// Create nextflow compute environment if it does not exist
-	batchComputeEnvArn, err := createBatchComputeEnvironment(nextflowGlobalConfig, nextflowConfig, userName, hostname, tagsMap, batchSvc, ec2Svc, iamSvc, *vpcid, *subnetids, payModel, awsAccountId)
+	batchComputeEnvArn, err := createBatchComputeEnvironment(nextflowGlobalConfig, nextflowConfig, userName, hostname, tagsMap, batchSvc, ec2Svc, iamSvc, *vpcid, *subnetids)
 	if err != nil {
 		Config.Logger.Printf("Error creating compute environment for user %s: %s", userName, err.Error())
 		return "", "", err
 	}
 
 	// Create S3 bucket
-	kmsKeyArn, err := createS3bucket(s3Svc, kmsSvc, bucketName, kmsTags)
+	kmsKeyArn, err := createS3bucket(nextflowGlobalConfig, s3Svc, kmsSvc, bucketName, kmsTags)
 	if err != nil {
 		Config.Logger.Printf("Error creating S3 bucket '%s': %v", bucketName, err)
 		return "", "", err
@@ -445,10 +444,11 @@ var getNextflowAwsSettings = func(sess *session.Session, payModel *PayModel, use
 		Config.Logger.Printf("Info: pay model disabled for user '%s': %s Nextflow resources in main AWS account", userName, action)
 		awsConfig = aws.Config{}
 		Config.Logger.Printf("Debug: Getting AWS account ID...")
-		awsAccountId, err := getAwsAccountId(sess, &awsConfig)
+		var err error
+		awsAccountId, err = getAwsAccountId(sess, &awsConfig)
 		if err != nil {
 			Config.Logger.Printf("Error getting AWS account ID: %v", err)
-			return awsAccountId, awsConfig, err
+			return "", awsConfig, err
 		}
 	}
 	return awsAccountId, awsConfig, nil
@@ -605,7 +605,7 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 }
 
 // Create AWS Batch compute environment
-func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig, userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string, payModel *PayModel, awsAccountId string) (string, error) {
+func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig, userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string) (string, error) {
 	instanceProfileArn, err := createEcsInstanceProfile(iamSvc, fmt.Sprintf("%s-nf-ecsInstanceRole", hostname))
 	if err != nil {
 		Config.Logger.Printf("Unable to create ECS instance profile: %s", err.Error())
@@ -692,6 +692,7 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 			return "", err
 		}
 	} else { // compute environment does not exist, create it
+		Config.Logger.Printf("Debug: Batch compute environment '%s' does not exist, creating it", batchComputeEnvName)
 		subnets := []*string{}
 		for _, subnet := range subnetids {
 			s := subnet
@@ -861,7 +862,7 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 	return instanceProfile.InstanceProfile.Arn, nil
 }
 
-func createS3bucket(s3Svc *s3.S3, kmsSvc *kms.KMS, bucketName string, kmsTags []*kms.Tag) (string, error) {
+func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.S3, kmsSvc *kms.KMS, bucketName string, kmsTags []*kms.Tag) (string, error) {
 	// create S3 bucket for nextflow input, output and intermediate files
 	_, err := s3Svc.CreateBucket(&s3.CreateBucketInput{
 		Bucket: &bucketName,
@@ -961,6 +962,32 @@ func createS3bucket(s3Svc *s3.S3, kmsSvc *kms.KMS, bucketName string, kmsTags []
 	})
 	if err != nil {
 		Config.Logger.Printf("Unable to set bucket policy: %v", err)
+		return "", err
+	}
+
+	expirationDays := nextflowGlobalConfig.S3ObjectsExpirationDays
+	if expirationDays <= 0 {
+		expirationDays = 30
+	}
+	Config.Logger.Printf("DEBUG: Setting bucket objects expiration to %d days", expirationDays)
+	_, err = s3Svc.PutBucketLifecycleConfiguration(&s3.PutBucketLifecycleConfigurationInput{
+		Bucket: &bucketName,
+		LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
+			Rules: []*s3.LifecycleRule{
+				{
+					Expiration: &s3.LifecycleExpiration{
+						Days: aws.Int64(int64(expirationDays)),
+					},
+					Status: aws.String("Enabled"),
+					Filter: &s3.LifecycleRuleFilter{
+						Prefix: aws.String(""), // apply to all objects
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		Config.Logger.Printf("Unable to set lifecycle configuration: %v", err)
 		return "", err
 	}
 
