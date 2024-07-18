@@ -581,6 +581,16 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 				LaunchTemplateName: aws.String(launchTemplateName),
 				LaunchTemplateData: &ec2.RequestLaunchTemplateData{
 					UserData: aws.String(userData),
+					BlockDeviceMappings: []*ec2.LaunchTemplateBlockDeviceMappingRequest{
+						{
+							DeviceName: aws.String("/dev/xvdb"), // Or whatever device name you prefer
+							Ebs: &ec2.LaunchTemplateEbsBlockDeviceRequest{
+								VolumeSize:          aws.Int64(250),    // Size in GB
+								VolumeType:          aws.String("gp2"), // General Purpose SSD (you can change this if needed)
+								DeleteOnTermination: aws.Bool(true),    // This is the key to auto-delete on termination
+							},
+						},
+					},
 				},
 			})
 			if err != nil {
