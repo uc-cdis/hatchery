@@ -300,7 +300,8 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 					"batch:ListJobs",
 					"batch:SubmitJob",
 					"batch:CancelJob",
-					"batch:TerminateJob"
+					"batch:TerminateJob",
+     					"batch:TagResource"
 				],
 				"Resource": [
 					"arn:aws:batch:*:*:job-definition/*",
@@ -322,8 +323,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 				"Sid": "AllowWhitelistedImages",
 				"Effect": "Allow",
 				"Action": [
-					"batch:RegisterJobDefinition",
-					"batch:TagResource"
+					"batch:RegisterJobDefinition"
 				],
 				"Resource": [
 					"arn:aws:batch:*:*:job-definition/*"
