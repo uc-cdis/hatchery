@@ -322,7 +322,8 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 				"Sid": "AllowWhitelistedImages",
 				"Effect": "Allow",
 				"Action": [
-					"batch:RegisterJobDefinition"
+					"batch:RegisterJobDefinition",
+					"batch:TagResource"
 				],
 				"Resource": [
 					"arn:aws:batch:*:*:job-definition/*"
