@@ -300,7 +300,8 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 					"batch:ListJobs",
 					"batch:SubmitJob",
 					"batch:CancelJob",
-					"batch:TerminateJob"
+					"batch:TerminateJob",
+     					"batch:TagResource"
 				],
 				"Resource": [
 					"arn:aws:batch:*:*:job-definition/*",
