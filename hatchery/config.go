@@ -131,7 +131,9 @@ type HatcheryConfig struct {
 	Sidecar                SidecarContainer     `json:"sidecar"`
 	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
 	PrismaConfig           PrismaConfig         `json:"prisma"`
+	Karpenter              bool                 `json:"karpenter"`
 	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
+	Developement           bool                 `json:"developement"`
 }
 
 // Config to allow for Prisma Agents

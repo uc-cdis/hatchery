@@ -100,7 +100,7 @@ func getKubeConfig() (*rest.Config, error) {
 
 func getLocalPodClient() corev1.CoreV1Interface {
 	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
+	config, err := getKubeConfig()
 	if err != nil {
 		Config.Logger.Printf("Error creating in-cluster config: %v", err)
 		return nil
@@ -542,6 +542,16 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			return nil, err
 		}
 	}
+
+	tolerations := []k8sv1.Toleration{}
+	nodeSelector := map[string]string{}
+
+	if !Config.Config.Developement {
+		nodeSelector = map[string]string{
+			"role": role,
+		}
+		tolerations = []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: role, Effect: "NoSchedule", TolerationSeconds: nil}}
+	}
 	pod = &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        podName,
@@ -588,11 +598,9 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			},
 			RestartPolicy:    k8sv1.RestartPolicyNever,
 			ImagePullSecrets: []k8sv1.LocalObjectReference{},
-			NodeSelector: map[string]string{
-				"role": role,
-			},
-			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: role, Effect: "NoSchedule", TolerationSeconds: nil}},
-			Volumes:     volumes,
+			NodeSelector:     nodeSelector,
+			Tolerations:      tolerations,
+			Volumes:          volumes,
 		},
 	}
 
