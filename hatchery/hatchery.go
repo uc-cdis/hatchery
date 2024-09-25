@@ -46,9 +46,44 @@ func RegisterHatchery() {
 	http.HandleFunc("/setpaymodel", setpaymodel)
 	http.HandleFunc("/resetpaymodels", resetPaymodels)
 	http.HandleFunc("/allpaymodels", allpaymodels)
+	http.HandleFunc("/cost", cost)
 
 	// ECS functions
 	http.HandleFunc("/create-ecs-cluster", createECSCluster)
+}
+
+func cost(w http.ResponseWriter, r *http.Request) {
+	// create context for http call
+	// context, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	// defer cancel()
+
+	userName := getCurrentUserName(r)
+
+	workflowname := r.URL.Query().Get("workflowname")
+	// check if workflowname is empty
+
+	// get cost usage report
+	costUsageReport, err := getCostUsageReport(userName, workflowname)
+	if err != nil {
+		Config.Logger.Print(err)
+		// Send 500 error
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// make a return object with username and cost
+	cur, err := json.Marshal(costUsageReport)
+	if err != nil {
+		Config.Logger.Print(err)
+		// Send 500 error
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Add header indicating this is a json response
+	w.Header().Set("Content-Type", "application/json")
+
+	// return json
+	fmt.Fprint(w, string(cur))
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
@@ -118,6 +153,8 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Set header to indicate it's a json response
+	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(out))
 }
 
@@ -142,6 +179,8 @@ func allpaymodels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Set header to indicate it's a json response
+	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprint(w, string(out))
 }
 
@@ -540,24 +579,27 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Terminated workspace")
 	}
 
-	// Need to reset pay model only after workspace termination is completed.
-	go func() {
-		// Periodically poll for status, until it is set as "Not Found"
-		for {
-			status, err := getWorkspaceStatus(r.Context(), userName, accessToken)
+	// check if dynamoDB is enabled
+	if Config.Config.PayModelsDynamodbTable != "" {
+		// Need to reset pay model only after workspace termination is completed.
+		go func() {
+			// Periodically poll for status, until it is set as "Not Found"
+			for {
+				status, err := getWorkspaceStatus(r.Context(), userName, accessToken)
+				if err != nil {
+					Config.Logger.Printf("error fetching workspace status for user %s\n err: %s", userName, err)
+				}
+				if status.Status == "Not Found" {
+					break
+				}
+				time.Sleep(5 * time.Second)
+			}
+			err = resetCurrentPaymodel(userName)
 			if err != nil {
-				Config.Logger.Printf("error fetching workspace status for user %s\n err: %s", userName, err)
+				Config.Logger.Printf("unable to reset current paymodel for current user %s\nerr: %s", userName, err)
 			}
-			if status.Status == "Not Found" {
-				break
-			}
-			time.Sleep(5 * time.Second)
-		}
-		err = resetCurrentPaymodel(userName)
-		if err != nil {
-			Config.Logger.Printf("unable to reset current paymodel for current user %s\nerr: %s", userName, err)
-		}
-	}()
+		}()
+	}
 }
 
 func getBearerToken(r *http.Request) string {

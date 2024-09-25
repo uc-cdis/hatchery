@@ -50,6 +50,14 @@ func main() {
 	hatchery.RegisterSystem()
 	hatchery.RegisterHatchery()
 
+	if config.Config.Karpenter {
+		config.Logger.Printf("Using karpenter for cost tracking.")
+	}
+
+	if config.Config.Developement {
+		config.Logger.Printf("Using development mode.")
+	}
+
 	config.Logger.Printf("Running main")
 	log.Fatal(http.ListenAndServe("0.0.0.0:8000", nil))
 }
