@@ -115,6 +115,7 @@ An example manifest entry may look like
 * `sub-dir` is the path to Hatchery off the host domain, i.e. if the full domain path is `https://nci-crdc-demo.datacommons.io/lw-workspace` then `sub-dir` is `/lw-workspace`.
 * `user-volume-size` the size of the user volume to be created. Applies to all containers because the user storage is the same across all of them.
 * `use-internal-services-url` Use internal service URLs (http://fence-service/ and http://ambassador-service/) for communication with other services instead of using GEN3_ENDPOINT environmental variable
+* `skip-node-selector` if set to `true`, will not set a node selector for the pods, which will be scheduled on any node. Useful for single-node clusters.
 * `prisma`: TODO document
 * `pay-models-dynamodb-table` is the name of the DynamoDB table where Hatchery can get users' pay model information
 * `default-pay-model` is the pay model to fall back to when a user does not have a pay model set up in the `pay-models-dynamodb-table` table
