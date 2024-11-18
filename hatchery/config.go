@@ -119,6 +119,7 @@ type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
 	DefaultPayModel PayModel `json:"default-pay-model"`
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
+	SkipNodeSelector       bool                 `json:"skip-node-selector"`
 	UseInteralServicesURL  bool                 `json:"use-internal-services-url"`
 	PayModels              []PayModel           `json:"pay-models"`
 	PayModelsDynamodbTable string               `json:"pay-models-dynamodb-table"`

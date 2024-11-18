@@ -497,6 +497,15 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		})
 	}
 
+	tolerations := []k8sv1.Toleration{}
+	nodeSelector := map[string]string{}
+	if !Config.Config.SkipNodeSelector {
+		nodeSelector = map[string]string{
+			"role": "jupyter",
+		}
+		tolerations = []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}}
+	}
+
 	pod = &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        podName,
@@ -543,11 +552,9 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			},
 			RestartPolicy:    k8sv1.RestartPolicyNever,
 			ImagePullSecrets: []k8sv1.LocalObjectReference{},
-			NodeSelector: map[string]string{
-				"role": "jupyter",
-			},
-			Tolerations: []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}},
-			Volumes:     volumes,
+			NodeSelector:     nodeSelector,
+			Tolerations:      tolerations,
+			Volumes:          volumes,
 		},
 	}
 
