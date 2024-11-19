@@ -13,6 +13,7 @@ import (
 
 // Global configuration shared by all Nextflow containers
 type NextflowGlobalConfig struct {
+	S3ObjectsExpirationDays   int    `json:"s3-objects-expiration-days"`
 	SampleConfigPublicImage   string `json:"sample-config-public-image"`
 	ImageBuilderReaderRoleArn string `json:"imagebuilder-reader-role-arn"`
 }
@@ -118,6 +119,8 @@ type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
 	DefaultPayModel PayModel `json:"default-pay-model"`
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
+	SkipNodeSelector       bool                 `json:"skip-node-selector"`
+	UseInteralServicesURL  bool                 `json:"use-internal-services-url"`
 	PayModels              []PayModel           `json:"pay-models"`
 	PayModelsDynamodbTable string               `json:"pay-models-dynamodb-table"`
 	LicenseUserMapsTable   string               `json:"license-user-maps-dynamodb-table"`

@@ -12,6 +12,7 @@ An example manifest entry may look like
     "user-namespace": "jupyter-pods",
     "sub-dir": "/lw-workspace",
     "user-volume-size": "10Gi",
+    "use-internal-services-url": false
     "prisma": {
       "enable": true,
       "console-address": ""
@@ -33,6 +34,7 @@ An example manifest entry may look like
       "lifecycle-pre-stop": ["su", "-c", "cd /data; for f in *; do fusermount -u $f; rm -rf $f; done", "-s", "/bin/sh", "jovyan"]
     },
     "nextflow-global": {
+      "s3-objects-expiration-days": 30,
       "sample-config-public-image": "",
       "imagebuilder-reader-role-arn": ""
     },
@@ -112,6 +114,8 @@ An example manifest entry may look like
 * `user-namespace` is which namespace the pods will be deployed into.
 * `sub-dir` is the path to Hatchery off the host domain, i.e. if the full domain path is `https://nci-crdc-demo.datacommons.io/lw-workspace` then `sub-dir` is `/lw-workspace`.
 * `user-volume-size` the size of the user volume to be created. Applies to all containers because the user storage is the same across all of them.
+* `use-internal-services-url` Use internal service URLs (http://fence-service/ and http://ambassador-service/) for communication with other services instead of using GEN3_ENDPOINT environmental variable
+* `skip-node-selector` if set to `true`, will not set a node selector for the pods, which will be scheduled on any node. Useful for single-node clusters.
 * `prisma`: TODO document
 * `pay-models-dynamodb-table` is the name of the DynamoDB table where Hatchery can get users' pay model information
 * `default-pay-model` is the pay model to fall back to when a user does not have a pay model set up in the `pay-models-dynamodb-table` table
@@ -126,6 +130,7 @@ An example manifest entry may look like
     * `command` a string array as the command to run in the container overriding the default.
     * `lifecycle-pre-stop` a string array as the container prestop command.
 * `nextflow-global` is for global configuration specific to Nextflow containers.
+    * `s3-objects-expiration-days` (int, default 30): objects created in S3 by Nextflow are deleted after the specified number of days.
     * `sample-config-public-image`: a publicly-accessible image that any user can pull to test Nextflow workflows. Will be mentioned in the auto-generated sample configuration and documentation when a user launches a Nextflow workspace.
     * `imagebuilder-reader-role-arn`: see the [nextflow-global.imagebuilder-reader-role-arn section](/doc/explanation/nextflow.md#nextflow-globalimagebuilder-reader-role-arn) of the Nextflow workspaces documentation.
 * `containers` is the list of workspaces available to be run by this instance of Hatchery. Each container must be a single image and expose a web server.

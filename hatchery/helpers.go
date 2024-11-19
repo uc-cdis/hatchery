@@ -128,7 +128,7 @@ func MakeARequestWithContext(ctx context.Context, method string, apiEndpoint str
 func getFenceURL() string {
 	fenceURL := "http://fence-service/"
 	_, ok := os.LookupEnv("GEN3_ENDPOINT")
-	if ok {
+	if ok && !Config.Config.UseInteralServicesURL {
 		fenceURL = "https://" + os.Getenv("GEN3_ENDPOINT") + "/user/"
 	}
 	return fenceURL
@@ -137,7 +137,7 @@ func getFenceURL() string {
 func getAmbassadorURL() string {
 	ambassadorURL := "http://ambassador-service/"
 	_, ok := os.LookupEnv("GEN3_ENDPOINT")
-	if ok {
+	if ok && !Config.Config.UseInteralServicesURL {
 		ambassadorURL = "https://" + os.Getenv("GEN3_ENDPOINT") + "/lw-workspace/proxy/"
 	}
 	return ambassadorURL
@@ -217,6 +217,9 @@ func getAwsAccountId(sess *session.Session, awsConfig *aws.Config) (string, erro
 	req, err := stsSvc.GetCallerIdentity(&sts.GetCallerIdentityInput{})
 	if err != nil {
 		return "", err
+	}
+	if *req.Account == "" {
+		return "", fmt.Errorf("unable to find AWS account ID: STS GetCallerIdentity returned: %v", *req)
 	}
 	return *req.Account, nil
 }

@@ -256,7 +256,7 @@ func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
 	}
 
 	resourcePaths := []string{"/workspace/abc", "/workspace/xyz"}
-	expectedRequestBody := "{ \"requests\": [{\"resource\": \"/workspace/abc\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}},{\"resource\": \"/workspace/xyz\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}}]}"
+	expectedRequestBody := "{\"user\": {\"token\": \"accessToken\"}, \"requests\": [{\"resource\": \"/workspace/abc\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}},{\"resource\": \"/workspace/xyz\", \"action\": {\"service\": \"jupyterhub\", \"method\": \"launch\"}}]}"
 
 	originalArboristAuthRequest := arboristAuthRequest
 	defer func() {
@@ -267,7 +267,7 @@ func TestIsUserAuthorizedForResourcePaths(t *testing.T) {
 		t.Logf("Running test case: '%s'", testCase.name)
 
 		// mock the call to arborist
-		arboristAuthRequest = func(accessToken string, body string) (bool, error) {
+		arboristAuthRequest = func(body string) (bool, error) {
 			if testCase.arboristError {
 				return false, fmt.Errorf("mocking an error while making call to arborist")
 			}
