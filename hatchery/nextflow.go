@@ -1121,30 +1121,30 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2, 
 	// Make sure the selected AZ has the instance type from nextflow configuration available.
 	var selectedZone string
 	for _, zone := range describeZonesOutput.AvailabilityZones {
-		if *zone.State == "available" {
-			input := &ec2.DescribeInstanceTypeOfferingsInput{
-				LocationType: aws.String("availability-zone"),
-				Filters: []*ec2.Filter{
-					{
-						Name:   aws.String("location"),
-						Values: []*string{aws.String(*zone.ZoneName)},
-					},
-					{
-						Name: aws.String("instance-type"),
-						// TODO: Should this be configurable?
-						Values: []*string{aws.String(instanceType)},
-					},
+		if *zone.State != "available" {
+			continue
+		}
+		result, err := ec2Svc.DescribeInstanceTypeOfferings(&ec2.DescribeInstanceTypeOfferingsInput{
+			LocationType: aws.String("availability-zone"),
+			Filters: []*ec2.Filter{
+				{
+					Name:   aws.String("location"),
+					Values: []*string{aws.String(*zone.ZoneName)},
 				},
-			}
-			result, err := ec2Svc.DescribeInstanceTypeOfferings(input)
-			if err != nil {
-				return nil, fmt.Errorf("Error describing instance type offerings: %v", err)
-			}
-			if len(result.InstanceTypeOfferings) > 0 {
-				Config.Logger.Printf("Debug: Zone: %v has instance type g4dn.xlarge available. Using that for subnet", *zone.ZoneName)
-				selectedZone = *zone.ZoneName
-				break // Exit the loop if we found a suitable zone
-			}
+				{
+					Name: aws.String("instance-type"),
+					// TODO: Should this be configurable?
+					Values: []*string{aws.String(instanceType)},
+				},
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("Error describing instance type offerings: %v", err)
+		}
+		if len(result.InstanceTypeOfferings) > 0 {
+			Config.Logger.Printf("Debug: Zone: %v has instance type %v available. Using that for subnet", *zone.ZoneName, instanceType)
+			selectedZone = *zone.ZoneName
+			break // Exit the loop if we found a suitable zone
 		}
 	}
 
