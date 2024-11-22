@@ -123,6 +123,7 @@ type HatcheryConfig struct {
 	UseInteralServicesURL  bool                 `json:"use-internal-services-url"`
 	PayModels              []PayModel           `json:"pay-models"`
 	PayModelsDynamodbTable string               `json:"pay-models-dynamodb-table"`
+	PayModelsDynamodbArn   string               `json:"pay-models-dynamodb-arn"`
 	LicenseUserMapsTable   string               `json:"license-user-maps-dynamodb-table"`
 	LicenseUserMapsGSI     string               `json:"license-user-maps-global-secondary-index"`
 	License                LicenseInfo          `json:"license"`
@@ -239,6 +240,9 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 
 	if data.Config.PayModelsDynamodbTable == "" {
 		data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
+	}
+	if data.Config.PayModelsDynamodbArn == "" {
+		data.Logger.Printf("Warning: no 'pay-models-dynamodb-arn' in configuration: we will set up DynamoDB client with regular creds")
 	}
 
 	for _, payModel := range data.Config.PayModels {
