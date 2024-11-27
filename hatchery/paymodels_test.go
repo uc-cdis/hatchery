@@ -3,6 +3,9 @@ package hatchery
 import (
 	"reflect"
 	"testing"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 )
 
 func Test_GetCurrentPayModel(t *testing.T) {
@@ -311,6 +314,98 @@ func Test_GetPayModelsForUser(t *testing.T) {
 		} else if !reflect.DeepEqual(got, testcase.want) {
 			t.Errorf("\nassertion error while testing `GetPayModelsForUser` when %s : \nWant:\n\tCurrentPayModel: %+v,\n\tPaymodels %+v\nGot:\n\tCurrentPayModel: %+v,\n\tPaymodels %+v",
 				testcase.name, testcase.want.CurrentPayModel, testcase.want.PayModels, got.CurrentPayModel, got.PayModels)
+		}
+	}
+}
+
+func Test_GetPayModelTableCreds(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	configWithDbTable := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "random_non_empty_string",
+		},
+	}
+
+	testCases := []struct {
+		name       string
+		want       aws.Config
+		mockConfig *FullHatcheryConfig
+	}{
+		{
+			name:       "PayModelTableInConfig",
+			want:       aws.Config{},
+			mockConfig: configWithDbTable,
+		},
+	}
+
+	for _, testcase := range testCases {
+		t.Logf("Testing getPayModelTableCreds when %s", testcase.name)
+
+		/* Setup */
+		Config = testcase.mockConfig
+		//
+		sess := session.Must(session.NewSessionWithOptions(session.Options{
+			Config: aws.Config{
+				Region: aws.String("us-east-1"),
+			},
+		}))
+
+		/* Act */
+		got := getPayModelTableCreds(sess)
+
+		/* Assert */
+		if !reflect.DeepEqual(got, testcase.want) {
+			t.Errorf("\nassertion error while testing `GetPayModelTableCreds` when %s : \nWant:\n\taws.Config: %+v,\nGot:\n\taws.Config: %+v",
+				testcase.name, testcase.want, got)
+		}
+
+		// Credentials should be nil
+		if got.Credentials != nil {
+			t.Errorf("\nassertion error while testing `GetPayModelTableCreds` when %s : \ngot.Credentials should be nil. \nGot: %+v", testcase.name, got.Credentials)
+		}
+	}
+}
+
+func Test_GetPayModelTableCredsWithArn(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	configWithDbTableAndArn := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "random_non_empty_string",
+			PayModelsDynamodbArn:   `arn:aws:iam::12345:role/other-role`,
+		},
+	}
+
+	testCases := []struct {
+		name       string
+		mockConfig *FullHatcheryConfig
+	}{
+		{
+			name:       "PayModelTableAndArnInConfig",
+			mockConfig: configWithDbTableAndArn,
+		},
+	}
+
+	for _, testcase := range testCases {
+		t.Logf("Testing getPayModelTableCreds when %s", testcase.name)
+
+		/* Setup */
+		Config = testcase.mockConfig
+		sess := session.Must(session.NewSessionWithOptions(session.Options{
+			Config: aws.Config{
+				Region: aws.String("us-east-1"),
+			},
+		}))
+
+		/* Act */
+		got := getPayModelTableCreds(sess)
+
+		/* Assert */
+		// Credentials should not be nil
+		if got.Credentials == nil {
+			t.Errorf("\nassertion error while testing `GetPayModelTableCredsWithArn` when %s : \ngot.Credentials should not be nil.",
+				testcase.name)
 		}
 	}
 }
