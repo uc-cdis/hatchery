@@ -217,7 +217,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.Logger.Printf("Warning: no 'license-user-maps-dynamodb-table' in configuration: will be unable to store license-user-map data in DynamoDB")
 	} else if data.Config.LicenseUserMapsGSI == "" {
 		err = fmt.Errorf("'license-user-maps-dynamodb-table' is present but missing 'license-user-maps-global-secondary-index'")
-		data.Logger.Printf("Error in config: %v", err)
+		data.Logger.Printf("Error in configuration: %v", err)
 		return nil, err
 	}
 
