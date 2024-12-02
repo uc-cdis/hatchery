@@ -18,7 +18,7 @@
         "target-port": 8888,
         "cpu-limit": "1.0",
         "memory-limit": "2Gi",
-        "name": "(Generic, Limited Gen3-licensed) Stata Notebook",
+        "name": "Test-missing-license-table",
         "image": "quay.io/cdis/jupyter-pystata-gen3-licensed:master",
         "env": {
           "FRAME_ANCESTORS": "https://dev.planx-pla.net"
