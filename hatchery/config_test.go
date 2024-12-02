@@ -40,6 +40,37 @@ func TestLoadConfig(t *testing.T) {
 	config.Logger.Printf("config_test marshalled config: %v", string(jsBytes))
 }
 
+func TestMissingConfigFile(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	/* Act */
+	_, err := LoadConfig("../testData/testDoesNotExist.json", logger)
+
+	/* Assert */
+	if err == nil {
+		t.Errorf("failed to catch missing config file. err should have message but got nil.")
+	}
+	expectedSubString := "no such file or directory"
+	if !strings.Contains(err.Error(), expectedSubString) {
+		t.Errorf("Unexpected error message: \nWant substring :\n\t %+v,\n in actual error:\n\t %+v",
+			expectedSubString,
+			err)
+	}
+
+	logOutput := buf.String()
+	logLines := strings.Split(logOutput, "\n")
+	lastLine := logLines[len(logLines)-2]
+	if !strings.Contains(lastLine, expectedSubString) {
+		t.Errorf("Unexpected logger message: \nWant substring :\n\t %+v,\n in actual error:\n\t%+v",
+			expectedSubString,
+			lastLine)
+	}
+
+}
+
 func TestLoadConfigMissingGSI(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
@@ -94,6 +125,43 @@ func TestLoadConfigMissingLicenseTable(t *testing.T) {
 	}
 	containerName := "(Generic, Limited Gen3-licensed) Stata Notebook"
 	expectedErrorMessage := fmt.Sprintf("no 'license-user-maps-dynamodb-table' in configuration but license is configured for container %s", containerName)
+	expectedError := errors.New(expectedErrorMessage)
+	if err.Error() != expectedError.Error() {
+		t.Errorf("Unexpected error message: \nWant:\n\t %+v,\nGot:\n\t %+v",
+			expectedError,
+			err)
+	}
+
+	expectedLoggerMessage := fmt.Sprintf("Error in configuration: %v", expectedErrorMessage)
+	logOutput := buf.String()
+	logLines := strings.Split(logOutput, "\n")
+	lastLine := logLines[len(logLines)-2]
+	if lastLine != expectedLoggerMessage {
+		t.Errorf("Unexpected logger message: \nWant:\n\t %+v,\nGot:\n\t %+v",
+			expectedLoggerMessage,
+			lastLine)
+	}
+
+}
+
+func TestInvalidLicense(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	/* Act */
+	config, err := LoadConfig("../testData/testConfigInvalidLicense.json", logger)
+
+	/* Assert */
+	if config != nil {
+		t.Errorf("Config load should have failed with config=nil. Got %v", config)
+	}
+	if err == nil {
+		t.Errorf("failed to catch invalid license config. err should have message but got nil.")
+	}
+	configName := "Test-missing-license-type"
+	expectedErrorMessage := fmt.Sprintf("container '%s' has an invalid 'license' configuration", configName)
 	expectedError := errors.New(expectedErrorMessage)
 	if err.Error() != expectedError.Error() {
 		t.Errorf("Unexpected error message: \nWant:\n\t %+v,\nGot:\n\t %+v",
