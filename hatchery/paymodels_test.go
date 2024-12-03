@@ -488,3 +488,35 @@ func Test_PayModelFromConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestGetDefaultPayModel(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	defaultPayModelForTest := &PayModel{
+		Name:  "Trial Workspace",
+		Local: true,
+	}
+
+	configWithPayModel := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			DefaultPayModel: *defaultPayModelForTest,
+		},
+	}
+
+	/* Setup */
+	Config = configWithPayModel
+
+	/* Act */
+	got, err := getDefaultPayModel()
+
+	/* Assert */
+	if err != nil {
+		t.Errorf("Unexpected error. Should be nil but got %v", err)
+	}
+	if !reflect.DeepEqual(got, defaultPayModelForTest) {
+		t.Errorf("Unexpected output: \nWant:\n\t %+v,\n Got:\n\t %+v",
+			defaultPayModelForTest,
+			got)
+	}
+
+}
