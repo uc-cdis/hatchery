@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -406,6 +407,84 @@ func Test_GetPayModelTableCredsWithArn(t *testing.T) {
 		if got.Credentials == nil {
 			t.Errorf("\nassertion error while testing `GetPayModelTableCredsWithArn` when %s : \ngot.Credentials should not be nil.",
 				testcase.name)
+		}
+	}
+}
+
+func Test_PayModelFromConfig(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	configWithoutPayModels := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "random_non_empty_string",
+		},
+	}
+
+	testId := "payModelTest"
+	defaultPayModelForTest := &PayModel{
+		Name:  "Trial Workspace",
+		User:  testId,
+		Local: true,
+	}
+	MockPayModelMap := make(map[string]PayModel)
+	MockPayModelMap[testId] = *defaultPayModelForTest
+	configWithPayModel := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "random_non_empty_string",
+		},
+		PayModelMap: MockPayModelMap,
+	}
+
+	testCases := []struct {
+		name                 string
+		userName             string
+		want                 *PayModel
+		expectedErrorMessage string
+		mockConfig           *FullHatcheryConfig
+	}{
+		{
+			name:                 "NoPayModelsInConfig",
+			userName:             testId,
+			want:                 nil,
+			expectedErrorMessage: "no paymodels found",
+			mockConfig:           configWithoutPayModels,
+		},
+		{
+			name:                 "UserHasPayModel",
+			userName:             testId,
+			want:                 defaultPayModelForTest,
+			expectedErrorMessage: "",
+			mockConfig:           configWithPayModel,
+		},
+	}
+
+	for _, testcase := range testCases {
+		t.Logf("Testing payModelFromConfig when %s", testcase.name)
+
+		/* Setup */
+		Config = testcase.mockConfig
+
+		/* Act */
+		got, err := payModelFromConfig(testcase.userName)
+
+		/* Assert */
+		var expectedError error
+		if testcase.expectedErrorMessage != "" {
+			expectedError = errors.New(testcase.expectedErrorMessage)
+		} else {
+			expectedError = nil
+		}
+
+		if (nil == expectedError) && (err != nil) {
+			t.Errorf("\nError should be nil: \nGot:\n\t %+v", err)
+		} else if err != nil && expectedError != nil && err.Error() != expectedError.Error() {
+			t.Errorf("\nUnexpected error: \nWant:\n\t %+v,\nGot:\n\t %+v",
+				testcase.expectedErrorMessage, err)
+		}
+
+		if !reflect.DeepEqual(got, testcase.want) {
+			t.Errorf("\nassertion error while testing `payModelsFromConfig` when %s : \nWant:\n\t %+v,\nGot:\n\t %+v",
+				testcase.name, testcase.want, got)
 		}
 	}
 }
