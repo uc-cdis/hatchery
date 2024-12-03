@@ -9,6 +9,38 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 )
 
+func TestGetDefaultPayModel(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	defaultPayModelForTest := &PayModel{
+		Name:  "Trial Workspace",
+		Local: true,
+	}
+
+	configWithPayModel := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			DefaultPayModel: *defaultPayModelForTest,
+		},
+	}
+
+	/* Setup */
+	Config = configWithPayModel
+
+	/* Act */
+	got, err := getDefaultPayModel()
+
+	/* Assert */
+	if err != nil {
+		t.Errorf("Unexpected error. Should be nil but got %v", err)
+	}
+	if !reflect.DeepEqual(got, defaultPayModelForTest) {
+		t.Errorf("Unexpected output: \nWant:\n\t %+v,\n Got:\n\t %+v",
+			defaultPayModelForTest,
+			got)
+	}
+
+}
+
 func Test_GetCurrentPayModel(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
@@ -487,36 +519,4 @@ func Test_PayModelFromConfig(t *testing.T) {
 				testcase.name, testcase.want, got)
 		}
 	}
-}
-
-func TestGetDefaultPayModel(t *testing.T) {
-	defer SetupAndTeardownTest()()
-
-	defaultPayModelForTest := &PayModel{
-		Name:  "Trial Workspace",
-		Local: true,
-	}
-
-	configWithPayModel := &FullHatcheryConfig{
-		Config: HatcheryConfig{
-			DefaultPayModel: *defaultPayModelForTest,
-		},
-	}
-
-	/* Setup */
-	Config = configWithPayModel
-
-	/* Act */
-	got, err := getDefaultPayModel()
-
-	/* Assert */
-	if err != nil {
-		t.Errorf("Unexpected error. Should be nil but got %v", err)
-	}
-	if !reflect.DeepEqual(got, defaultPayModelForTest) {
-		t.Errorf("Unexpected output: \nWant:\n\t %+v,\n Got:\n\t %+v",
-			defaultPayModelForTest,
-			got)
-	}
-
 }
