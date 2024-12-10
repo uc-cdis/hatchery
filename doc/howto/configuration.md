@@ -18,6 +18,7 @@ An example manifest entry may look like
       "console-address": ""
     },
     "pay-models-dynamodb-table": "dynamodb-table-name",
+    "pay-models-dynamodb-arn": "arn:aws:iam::12345:role/other-role"
     "default-pay-model": {
       "workspace_type": "Trial Workspace",
       "local": true
@@ -118,6 +119,7 @@ An example manifest entry may look like
 * `skip-node-selector` if set to `true`, will not set a node selector for the pods, which will be scheduled on any node. Useful for single-node clusters.
 * `prisma`: TODO document
 * `pay-models-dynamodb-table` is the name of the DynamoDB table where Hatchery can get users' pay model information
+* `pay-models-dynamodb-arn` specify a cross-account role if the DynamoDB table is stored in another AWS account
 * `default-pay-model` is the pay model to fall back to when a user does not have a pay model set up in the `pay-models-dynamodb-table` table
 * `license-user-maps-dynamodb-table` is the optional table name if using dynamodb for managing user sessions of gen3-licensed workspaces.
 * `license-user-maps-global-seconday-index` the global secondary index for active users in the license-user-maps table.
