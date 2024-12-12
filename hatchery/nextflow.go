@@ -1134,8 +1134,7 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2, 
 					Values: []*string{aws.String(*zone.ZoneName)},
 				},
 				{
-					Name: aws.String("instance-type"),
-					// TODO: Should this be configurable?
+					Name:   aws.String("instance-type"),
 					Values: []*string{aws.String(instanceType)},
 				},
 			},
