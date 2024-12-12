@@ -400,14 +400,14 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	//hatchConfig.Logger.Printf("sidecar configured")
 
 	var lifeCycle = k8sv1.Lifecycle{}
-	if hatchApp.LifecyclePreStop != nil && len(hatchApp.LifecyclePreStop) > 0 {
+	if len(hatchApp.LifecyclePreStop) > 0 {
 		lifeCycle.PreStop = &k8sv1.LifecycleHandler{
 			Exec: &k8sv1.ExecAction{
 				Command: hatchApp.LifecyclePreStop,
 			},
 		}
 	}
-	if hatchApp.LifecyclePostStart != nil && len(hatchApp.LifecyclePostStart) > 0 {
+	if len(hatchApp.LifecyclePostStart) > 0 {
 		lifeCycle.PostStart = &k8sv1.LifecycleHandler{
 			Exec: &k8sv1.ExecAction{
 				Command: hatchApp.LifecyclePostStart,
