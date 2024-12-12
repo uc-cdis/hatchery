@@ -492,7 +492,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	dbconfig := initializeDbConfig()
 	activeGen3LicenseUsers, userlicerr := getLicenseUserMapsForUser(dbconfig, userName)
 	if userlicerr != nil {
-		Config.Logger.Printf(userlicerr.Error())
+		Config.Logger.Print(userlicerr.Error())
 	}
 	Config.Logger.Printf("Debug: Active gen3 license user maps %v", activeGen3LicenseUsers)
 	if len(activeGen3LicenseUsers) == 0 {
