@@ -36,12 +36,12 @@ func main() {
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 	cleanPath, err := verifyPath(configPath)
 	if err != nil {
-		logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
+		logger.Printf(fmt.Sprintf("Failed to load config - got %s", err.Error()))
 		return
 	}
 	config, err := hatchery.LoadConfig(cleanPath, logger)
 	if err != nil {
-		config.Logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
+		config.Logger.Printf(fmt.Sprintf("Failed to load config - got %s", err.Error()))
 		return
 	}
 	hatchery.Config = config
