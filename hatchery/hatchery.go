@@ -415,7 +415,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		dbconfig := initializeDbConfig()
 		activeGen3LicenseUsers, err := getActiveGen3LicenseUserMaps(dbconfig, Config.ContainersMap[hash])
 		if err != nil {
-			Config.Logger.Printf(err.Error())
+			Config.Logger.Printf("error when getting active Gen3-licensed users: %s", err.Error())
 		}
 		// Check for config max
 		nextLicenseId := getNextLicenseId(activeGen3LicenseUsers, Config.ContainersMap[hash].License.MaxLicenseIds)
@@ -425,7 +425,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		}
 		newItem, err := createGen3LicenseUserMap(dbconfig, userName, nextLicenseId, Config.ContainersMap[hash])
 		if err != nil {
-			Config.Logger.Printf(err.Error())
+			Config.Logger.Printf("error when adding active Gen3-licensed user: %s", err.Error())
 		}
 		Config.Logger.Printf("Created new license-user-map item: %v", newItem)
 
@@ -433,7 +433,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Printf("error when getting paymodels for user: %s", err.Error())
 	}
 	if allpaymodels == nil { // Commons with no concept of paymodels
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
