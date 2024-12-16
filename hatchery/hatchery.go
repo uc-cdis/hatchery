@@ -492,7 +492,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	dbconfig := initializeDbConfig()
 	activeGen3LicenseUsers, userlicerr := getLicenseUserMapsForUser(dbconfig, userName)
 	if userlicerr != nil {
-		Config.Logger.Printf(userlicerr.Error())
+		Config.Logger.Printf("Cannot check gen3 license items for user: %s", userlicerr.Error())
 	}
 	Config.Logger.Printf("Debug: Active gen3 license user maps %v", activeGen3LicenseUsers)
 	if len(activeGen3LicenseUsers) == 0 {
@@ -503,7 +503,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 				Config.Logger.Printf("Debug: updating gen3 license user map as inactive for itemId %s", v.ItemId)
 				_, err := setGen3LicenseUserInactive(dbconfig, v.ItemId)
 				if err != nil {
-					Config.Logger.Printf(err.Error())
+					Config.Logger.Printf("cannot set gen3 license for user: %s", err.Error())
 				}
 			}
 		}
@@ -519,7 +519,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Printf("Cannot get current paymodel for user: %s", err.Error())
 	}
 	if payModel != nil && payModel.Ecs {
 		_, err = terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
