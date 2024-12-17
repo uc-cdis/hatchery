@@ -20,12 +20,10 @@ var getPayModelTableCreds = func(sess *session.Session) aws.Config {
 
 	// Assume a new role if we have a pay model arn
 	if Config.Config.PayModelsDynamodbArn != "" {
-		fmt.Println("Got the ARN for assume role")
 		awsConfig = aws.Config{
 			Credentials: stscreds.NewCredentials(sess, Config.Config.PayModelsDynamodbArn),
 		}
 	} else {
-		fmt.Println("Regular creds")
 		awsConfig = aws.Config{}
 	}
 	return awsConfig
