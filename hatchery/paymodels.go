@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
@@ -13,6 +14,21 @@ import (
 
 var ErrNopaymodels = errors.New("no paymodels found")
 
+var getPayModelTableCreds = func(sess *session.Session) aws.Config {
+	// credentials for pay model dynamodb table
+	var awsConfig aws.Config
+
+	// Assume a new role if we have a pay model arn
+	if Config.Config.PayModelsDynamodbArn != "" {
+		awsConfig = aws.Config{
+			Credentials: stscreds.NewCredentials(sess, Config.Config.PayModelsDynamodbArn),
+		}
+	} else {
+		awsConfig = aws.Config{}
+	}
+	return awsConfig
+}
+
 var payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
 	// query pay model data for this user from DynamoDB
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
@@ -20,7 +36,8 @@ var payModelsFromDatabase = func(userName string, current bool) (payModels *[]Pa
 			Region: aws.String("us-east-1"),
 		},
 	}))
-	dynamodbSvc := dynamodb.New(sess)
+	payModelTableConfig := getPayModelTableCreds(sess)
+	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
 
 	filtActive := expression.Name("request_status").Equal(expression.Value("active"))
 	filtAboveLimit := expression.Name("request_status").Equal(expression.Value("above limit"))
@@ -173,7 +190,8 @@ var setCurrentPaymodel = func(userName string, workspaceid string) (paymodel *Pa
 			Region: aws.String("us-east-1"),
 		},
 	}))
-	dynamodbSvc := dynamodb.New(sess)
+	payModelTableConfig := getPayModelTableCreds(sess)
+	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
 	pm_db, err := payModelsFromDatabase(userName, false)
 	if err != nil {
 		return nil, err
@@ -211,7 +229,8 @@ var resetCurrentPaymodel = func(userName string) error {
 			Region: aws.String("us-east-1"),
 		},
 	}))
-	dynamodbSvc := dynamodb.New(sess)
+	payModelTableConfig := getPayModelTableCreds(sess)
+	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
 
 	return resetCurrentPaymodelInDB(userName, dynamodbSvc)
 }
