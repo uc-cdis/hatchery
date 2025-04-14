@@ -1414,7 +1414,7 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 	--volume ${SQUID_LOGS_DIR}:${SQUID_LOGS_DIR} \
 	--volume ${SQUID_CACHE_DIR}:${SQUID_CACHE_DIR} \
 	--volume ${SQUID_CONFIG_DIR}:${SQUID_CONFIG_DIR}:ro \
-	quay.io/cdis/squid-al:master
+	quay.io/cdis/squid:master
 
 
 ) > /var/log/bootstrapping_script.log`
