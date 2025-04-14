@@ -585,14 +585,13 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 			Config.Logger.Printf("Debug: Launch template '%s' does not exist, creating it", launchTemplateName)
 			launchTemplate, err := ec2Svc.CreateLaunchTemplate(&ec2.CreateLaunchTemplateInput{
 				LaunchTemplateName: aws.String(launchTemplateName),
-				LaunchTemplateData: &ec2.RequestLaunchTemplateData{ // if changed, need to update launch template and compute env
+				LaunchTemplateData: &ec2.RequestLaunchTemplateData{
 					UserData: aws.String(userData),
 					BlockDeviceMappings: []*ec2.LaunchTemplateBlockDeviceMappingRequest{
 						{
-							DeviceName: aws.String("/dev/xvda"), // Root volume device name (may vary by AMI)
+							DeviceName: aws.String("/dev/xvda"),
 							Ebs: &ec2.LaunchTemplateEbsBlockDeviceRequest{
-								// TODO: Make this configurable?
-								VolumeSize:          aws.Int64(50), // 50GB root volume
+								VolumeSize:          aws.Int64(int64(Config.Config.NextflowGlobalConfig.BatchNodeDiskSize)),
 								VolumeType:          aws.String("gp3"),
 								DeleteOnTermination: aws.Bool(true),
 							},
