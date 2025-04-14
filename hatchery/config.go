@@ -256,7 +256,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.Config.PrismaConfig.ConsoleVersion = "v32.02"
 	}
 
-	// Default to 20 GB disk
+	// Default to 50 GB disk
 	if data.Config.NextflowGlobalConfig.BatchNodeDiskSize == 0 {
 		data.Config.NextflowGlobalConfig.BatchNodeDiskSize = 50
 	}
