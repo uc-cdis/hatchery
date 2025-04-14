@@ -16,6 +16,7 @@ type NextflowGlobalConfig struct {
 	S3ObjectsExpirationDays   int    `json:"s3-objects-expiration-days"`
 	SampleConfigPublicImage   string `json:"sample-config-public-image"`
 	ImageBuilderReaderRoleArn string `json:"imagebuilder-reader-role-arn"`
+	BatchNodeDiskSize         int    `json:"batch-node-disk-size"`
 }
 
 // Configuration specific to Nextflow containers
@@ -253,6 +254,11 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	// Set default prisma console version
 	if data.Config.PrismaConfig.ConsoleVersion == "" {
 		data.Config.PrismaConfig.ConsoleVersion = "v32.02"
+	}
+
+	// Default to 20 GB disk
+	if data.Config.NextflowGlobalConfig.BatchNodeDiskSize == 0 {
+		data.Config.NextflowGlobalConfig.BatchNodeDiskSize = 50
 	}
 
 	return data, nil

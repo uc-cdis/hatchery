@@ -37,7 +37,8 @@ An example manifest entry may look like
     "nextflow-global": {
       "s3-objects-expiration-days": 30,
       "sample-config-public-image": "",
-      "imagebuilder-reader-role-arn": ""
+      "imagebuilder-reader-role-arn": "",
+      "batch-node-disk-size": 50,
     },
     "containers": [
       {
@@ -135,6 +136,7 @@ An example manifest entry may look like
     * `s3-objects-expiration-days` (int, default 30): objects created in S3 by Nextflow are deleted after the specified number of days.
     * `sample-config-public-image`: a publicly-accessible image that any user can pull to test Nextflow workflows. Will be mentioned in the auto-generated sample configuration and documentation when a user launches a Nextflow workspace.
     * `imagebuilder-reader-role-arn`: see the [nextflow-global.imagebuilder-reader-role-arn section](/doc/explanation/nextflow.md#nextflow-globalimagebuilder-reader-role-arn) of the Nextflow workspaces documentation.
+    * `batch-node-disk-size` (int, default 50): Size of the volume (in GB) attached to nodes spun up by AWS batch compute environment
 * `containers` is the list of workspaces available to be run by this instance of Hatchery. Each container must be a single image and expose a web server.
     * `target-port` specifies the port that the container is exposing the webserver on.
     * `cpu-limit` the CPU limit for the container matching Kubernetes resource spec.

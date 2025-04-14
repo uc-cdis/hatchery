@@ -641,7 +641,7 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 							{
 								DeviceName: aws.String("/dev/xvda"), // Root volume device name (may vary by AMI)
 								Ebs: &ec2.LaunchTemplateEbsBlockDeviceRequest{
-									VolumeSize:          aws.Int64(50), // 50GB root volume
+									VolumeSize:          aws.Int64(int64(Config.Config.NextflowGlobalConfig.BatchNodeDiskSize)),
 									VolumeType:          aws.String("gp3"),
 									DeleteOnTermination: aws.Bool(true),
 								},
