@@ -518,6 +518,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	accessToken := getBearerToken(r)
 	userName := getCurrentUserName(r)
 	if userName == "" {
@@ -558,7 +559,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Print(err.Error())
 	}
 	if payModel != nil && payModel.Ecs {
 		_, err = terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)
