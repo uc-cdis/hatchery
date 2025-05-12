@@ -545,13 +545,13 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 
 	tolerations := []k8sv1.Toleration{}
 	nodeSelector := map[string]string{}
-
-	if !Config.Config.Developement {
+	if !Config.Config.SkipNodeSelector {
 		nodeSelector = map[string]string{
 			"role": role,
 		}
 		tolerations = []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: role, Effect: "NoSchedule", TolerationSeconds: nil}}
 	}
+
 	pod = &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        podName,

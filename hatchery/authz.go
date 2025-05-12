@@ -212,7 +212,7 @@ var isUserAuthorizedForPayModels = func(userName string, allowedPayModels []stri
 	}
 	currentPayModel, err := getCurrentPayModel(userName)
 	if err != nil {
-		Config.Logger.Printf("Failed to get current pay model for user '%s', unable to check if user is authorized to launch container. Error: %v", userName, err)
+		Config.Logger.Printf("Failed to get current pay model for user '%s', unable to check if user is authorized to launch container. Error: %s", userName, err.Error())
 		return false, nil
 	}
 

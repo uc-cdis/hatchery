@@ -454,7 +454,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		dbconfig := initializeDbConfig()
 		activeGen3LicenseUsers, err := getActiveGen3LicenseUserMaps(dbconfig, Config.ContainersMap[hash])
 		if err != nil {
-			Config.Logger.Print(err.Error())
+			Config.Logger.Printf("error when getting active Gen3-licensed users: %s", err.Error())
 		}
 		// Check for config max
 		nextLicenseId := getNextLicenseId(activeGen3LicenseUsers, Config.ContainersMap[hash].License.MaxLicenseIds)
@@ -464,7 +464,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		}
 		newItem, err := createGen3LicenseUserMap(dbconfig, userName, nextLicenseId, Config.ContainersMap[hash])
 		if err != nil {
-			Config.Logger.Print(err.Error())
+			Config.Logger.Printf("error when adding active Gen3-licensed user: %s", err.Error())
 		}
 		Config.Logger.Printf("Created new license-user-map item: %v", newItem)
 
@@ -472,7 +472,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
-		Config.Logger.Print(err.Error())
+		Config.Logger.Printf("error when getting paymodels for user: %s", err.Error())
 	}
 	if allpaymodels == nil { // Commons with no concept of paymodels
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
@@ -532,7 +532,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	dbconfig := initializeDbConfig()
 	activeGen3LicenseUsers, userlicerr := getLicenseUserMapsForUser(dbconfig, userName)
 	if userlicerr != nil {
-		Config.Logger.Print(userlicerr.Error())
+		Config.Logger.Printf("Cannot check gen3 license items for user: %s", userlicerr.Error())
 	}
 	Config.Logger.Printf("Debug: Active gen3 license user maps %v", activeGen3LicenseUsers)
 	if len(activeGen3LicenseUsers) == 0 {
@@ -543,7 +543,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 				Config.Logger.Printf("Debug: updating gen3 license user map as inactive for itemId %s", v.ItemId)
 				_, err := setGen3LicenseUserInactive(dbconfig, v.ItemId)
 				if err != nil {
-					Config.Logger.Print(err.Error())
+					Config.Logger.Printf("cannot set gen3 license for user: %s", err.Error())
 				}
 			}
 		}
@@ -559,7 +559,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
-		Config.Logger.Print(err.Error())
+		Config.Logger.Printf("Cannot get current paymodel for user: %s", err.Error())
 	}
 	if payModel != nil && payModel.Ecs {
 		_, err = terminateEcsWorkspace(r.Context(), userName, accessToken, payModel.AWSAccountId)

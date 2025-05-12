@@ -30,7 +30,7 @@ func acceptTransitGatewayShare(pm *PayModel, sess *session.Session, ramArn *stri
 	})
 	if err != nil {
 		// Log error
-		Config.Logger.Print(err.Error())
+		Config.Logger.Printf("cannot get resource share: %s", err.Error())
 		return err
 	}
 	if len(exResourceShares.ResourceShares) == 0 {
@@ -39,7 +39,7 @@ func acceptTransitGatewayShare(pm *PayModel, sess *session.Session, ramArn *stri
 		err := svc.acceptTGWShare(ramArn)
 		if err != nil {
 			// Log error
-			Config.Logger.Print(err.Error())
+			Config.Logger.Printf("Cannot accept transit gateway share: %s", err.Error())
 			return err
 		}
 	} else {
@@ -64,7 +64,7 @@ func (creds *CREDS) acceptTGWShare(ramArn *string) error {
 	resourceShareInvitation, err := svc.GetResourceShareInvitations(ramInvitationInput)
 	if err != nil {
 		// Log error
-		Config.Logger.Print(err.Error())
+		Config.Logger.Printf("Cannot get resources share invitations: %s", err.Error())
 		return err
 	}
 
