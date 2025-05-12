@@ -730,6 +730,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 		waitToTerminate     bool
 		throwError          bool
 		calledFunctionName  string
+		noPayModelTable     bool
 	}{
 		{
 			name:       "MethodIsNotPost",
@@ -757,6 +758,18 @@ func Test_TerminateEndpoint(t *testing.T) {
 			},
 			mockCurrentPayModel: nil,
 			calledFunctionName:  "deleteK8sPod",
+		},
+		{
+			name:       "NoPayModelDBTableExists",
+			want:       "Terminated workspace",
+			wantStatus: http.StatusOK,
+			mockRequest: &RequestBody{
+				Method:   "POST",
+				username: "testUser",
+			},
+			mockCurrentPayModel: nil,
+			calledFunctionName:  "deleteK8sPod",
+			noPayModelTable:     true,
 		},
 		{
 			name:       "NonEcsPayModelExists",
@@ -837,6 +850,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 	original_getLicenseUserMapsForUser := getLicenseUserMapsForUser
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_resetCurrentPaymodel := resetCurrentPaymodel
+	original_payModelTable := Config.Config.PayModelsDynamodbTable
 	defer func() {
 		// restore original functions
 		deleteK8sPod = original_deleteK8sPod
@@ -845,6 +859,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 		getLicenseUserMapsForUser = original_getLicenseUserMapsForUser
 		getWorkspaceStatus = original_getWorkspaceStatus
 		resetCurrentPaymodel = original_resetCurrentPaymodel
+		Config.Config.PayModelsDynamodbTable = original_payModelTable
 	}()
 
 	for _, testcase := range testCases {
@@ -867,6 +882,9 @@ func Test_TerminateEndpoint(t *testing.T) {
 			if testcase.throwError {
 				return errors.New("error deleting k8s pod")
 			}
+			if testcase.noPayModelTable {
+				waitGroup.Done()
+			}
 			return nil
 		}
 		terminateEcsWorkspace = func(ctx context.Context, userName, accessToken, awsAcctID string) (string, error) {
@@ -874,6 +892,9 @@ func Test_TerminateEndpoint(t *testing.T) {
 			FuncCounter["terminateEcsWorkspace"] += 1
 			if testcase.throwError {
 				return "", errors.New("error terminating ecs workspace")
+			}
+			if testcase.noPayModelTable {
+				waitGroup.Done()
 			}
 			return "", nil
 		}
@@ -896,6 +917,12 @@ func Test_TerminateEndpoint(t *testing.T) {
 		resetCurrentPaymodel = func(string) error {
 			waitGroup.Done()
 			return nil
+		}
+
+		if testcase.noPayModelTable {
+			Config.Config.PayModelsDynamodbTable = ""
+		} else {
+			Config.Config.PayModelsDynamodbTable = "paymodelTableName"
 		}
 
 		getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) ([]Gen3LicenseUserMap, error) {
@@ -948,11 +975,19 @@ func Test_TerminateEndpoint(t *testing.T) {
 				t.Errorf("Expected to call workspaceStatus more than once , but is called %d time(s)",
 					workspaceStatusCallCounter)
 			}
+			if testcase.noPayModelTable {
+				if !testcase.waitToTerminate && workspaceStatusCallCounter != 0 {
+					t.Errorf("Expected to call workspaceStatus exactly 0 times , but is called %d time(s)",
+						workspaceStatusCallCounter)
+				}
+			} else {
+				if !testcase.waitToTerminate && workspaceStatusCallCounter != 1 {
+					t.Errorf("Expected to call workspaceStatus exactly once , but is called %d time(s)",
+						workspaceStatusCallCounter)
+				}
 
-			if !testcase.waitToTerminate && workspaceStatusCallCounter != 1 {
-				t.Errorf("Expected to call workspaceStatus exactly once , but is called %d time(s)",
-					workspaceStatusCallCounter)
 			}
+
 		}
 	}
 }
