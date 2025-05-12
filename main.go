@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -36,12 +35,12 @@ func main() {
 	logger := log.New(os.Stdout, "", log.LstdFlags)
 	cleanPath, err := verifyPath(configPath)
 	if err != nil {
-		logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
+		logger.Printf("Failed to load config - got %v", err)
 		return
 	}
 	config, err := hatchery.LoadConfig(cleanPath, logger)
 	if err != nil {
-		config.Logger.Printf(fmt.Sprintf("Failed to load config - got %v", err))
+		config.Logger.Printf("Failed to load config - got %v", err)
 		return
 	}
 	hatchery.Config = config

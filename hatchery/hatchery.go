@@ -454,7 +454,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		dbconfig := initializeDbConfig()
 		activeGen3LicenseUsers, err := getActiveGen3LicenseUserMaps(dbconfig, Config.ContainersMap[hash])
 		if err != nil {
-			Config.Logger.Printf(err.Error())
+			Config.Logger.Print(err.Error())
 		}
 		// Check for config max
 		nextLicenseId := getNextLicenseId(activeGen3LicenseUsers, Config.ContainersMap[hash].License.MaxLicenseIds)
@@ -464,7 +464,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		}
 		newItem, err := createGen3LicenseUserMap(dbconfig, userName, nextLicenseId, Config.ContainersMap[hash])
 		if err != nil {
-			Config.Logger.Printf(err.Error())
+			Config.Logger.Print(err.Error())
 		}
 		Config.Logger.Printf("Created new license-user-map item: %v", newItem)
 
@@ -472,7 +472,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 
 	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
-		Config.Logger.Printf(err.Error())
+		Config.Logger.Print(err.Error())
 	}
 	if allpaymodels == nil { // Commons with no concept of paymodels
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
@@ -532,7 +532,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 	dbconfig := initializeDbConfig()
 	activeGen3LicenseUsers, userlicerr := getLicenseUserMapsForUser(dbconfig, userName)
 	if userlicerr != nil {
-		Config.Logger.Printf(userlicerr.Error())
+		Config.Logger.Print(userlicerr.Error())
 	}
 	Config.Logger.Printf("Debug: Active gen3 license user maps %v", activeGen3LicenseUsers)
 	if len(activeGen3LicenseUsers) == 0 {
@@ -543,7 +543,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 				Config.Logger.Printf("Debug: updating gen3 license user map as inactive for itemId %s", v.ItemId)
 				_, err := setGen3LicenseUserInactive(dbconfig, v.ItemId)
 				if err != nil {
-					Config.Logger.Printf(err.Error())
+					Config.Logger.Print(err.Error())
 				}
 			}
 		}
@@ -551,10 +551,10 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 
 	// delete nextflow resources. There is no way to know if the actual workspace being
 	// terminated is a nextflow workspace or not, so always attempt to delete
-	Config.Logger.Printf("Info: Deleting Nextflow resources in AWS...")
+	Config.Logger.Print("Info: Deleting Nextflow resources in AWS...")
 	err := cleanUpNextflowResources(userName, nil, nil, nil, nil)
 	if err != nil {
-		Config.Logger.Printf("Unable to delete AWS resources for Nextflow... continuing anyway")
+		Config.Logger.Print("Unable to delete AWS resources for Nextflow... continuing anyway")
 	}
 
 	payModel, err := getCurrentPayModel(userName)
@@ -568,7 +568,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 			return
 		} else {
 			Config.Logger.Printf("Succesfully terminated all resources related to ECS workspace for user %s", userName)
-			fmt.Fprintf(w, "Terminated ECS workspace")
+			fmt.Fprint(w, "Terminated ECS workspace")
 		}
 	} else {
 		err := deleteK8sPod(r.Context(), userName, accessToken, payModel)
@@ -577,7 +577,7 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		Config.Logger.Printf("Terminated workspace for user %s", userName)
-		fmt.Fprintf(w, "Terminated workspace")
+		fmt.Fprint(w, "Terminated workspace")
 	}
 
 	// check if dynamoDB is enabled
