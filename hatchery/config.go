@@ -134,6 +134,8 @@ type HatcheryConfig struct {
 	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
 	PrismaConfig           PrismaConfig         `json:"prisma"`
 	Karpenter              bool                 `json:"karpenter"`
+	DefaultHardLimit       float32              `json:"default-hard-limit"`
+	DefaultSoftLimit       float32              `json:"default-soft-limit"`
 	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
 	Developement           bool                 `json:"developement"`
 }

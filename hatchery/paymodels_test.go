@@ -179,6 +179,233 @@ func Test_GetCurrentPayModel(t *testing.T) {
 		}
 	}
 }
+
+func Test_GetCurrentPayModelWithLimits(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	configWithLimits := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "random_non_empty_string",
+			Karpenter:              true,
+			DefaultHardLimit:       float32(12),
+			DefaultSoftLimit:       float32(7),
+		},
+	}
+
+	configWithNoLimits := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "random_non_empty_string",
+			Karpenter:              true,
+		},
+	}
+
+	configNoKarpenter := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable: "random_non_empty_string",
+			Karpenter:              false,
+		},
+	}
+
+	defaultPayModelForTest := &PayModel{
+		Name:  "Trial Workspace",
+		Local: true,
+	}
+
+	testCases := []struct {
+		name                      string
+		want                      *PayModel
+		mockConfig                *FullHatcheryConfig
+		mockDefaultPaymodel       *PayModel
+		mockCurrentPayModelFromDB []PayModel
+		mockPayModelsFromDB       []PayModel
+	}{
+		{
+			name: "CurrentPayModelDBHasLimits",
+			want: &PayModel{
+				Id:              "#1",
+				Name:            "Trial Workspace",
+				Local:           true,
+				CurrentPayModel: true,
+				Status:          "active",
+				HardLimit:       10,
+				SoftLimit:       5,
+			},
+			mockConfig: configWithLimits,
+			mockCurrentPayModelFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Trial Workspace",
+					Local:           true,
+					CurrentPayModel: true,
+					Status:          "active",
+					HardLimit:       10,
+					SoftLimit:       5,
+				},
+			},
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Direct Pay",
+					Local:           true,
+					CurrentPayModel: true,
+					Status:          "active",
+					HardLimit:       10,
+					SoftLimit:       5,
+				},
+				{
+					Id:              "#2",
+					Name:            "Direct Pay",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+			mockDefaultPaymodel: nil,
+		},
+		{
+			name: "CurrentPayModelConfigLimits",
+			want: &PayModel{
+				Id:              "#1",
+				Name:            "Trial Workspace",
+				Local:           true,
+				CurrentPayModel: true,
+				Status:          "active",
+				HardLimit:       12,
+				SoftLimit:       7,
+			},
+			mockConfig: configWithLimits,
+			mockCurrentPayModelFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Trial Workspace",
+					Local:           true,
+					CurrentPayModel: true,
+					Status:          "active",
+				},
+			},
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Trial Workspace",
+					Local:           true,
+					CurrentPayModel: true,
+					Status:          "active",
+				},
+				{
+					Id:              "#2",
+					Name:            "Trial Workspace",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+			mockDefaultPaymodel: nil,
+		},
+		{
+			name: "CurrentPayModelNoKarpenter",
+			want: &PayModel{
+				Id:              "#1",
+				Name:            "Trial Workspace",
+				Local:           true,
+				CurrentPayModel: true,
+				Status:          "active",
+			},
+			mockConfig: configNoKarpenter,
+			mockCurrentPayModelFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Trial Workspace",
+					Local:           true,
+					CurrentPayModel: true,
+					Status:          "active",
+				},
+			},
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Trial Workspace",
+					Local:           true,
+					CurrentPayModel: true,
+					Status:          "active",
+				},
+				{
+					Id:              "#2",
+					Name:            "Trial Workspace",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+			mockDefaultPaymodel: nil,
+		},
+		{
+			name: "NeitherCurrentPayModelNorConfigHaveLimits",
+			want: &PayModel{
+				Id:              "#1",
+				Name:            "Trial Workspace",
+				Local:           true,
+				CurrentPayModel: true,
+				Status:          "active",
+			},
+			mockConfig: configWithNoLimits,
+			mockCurrentPayModelFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Trial Workspace",
+					Local:           true,
+					CurrentPayModel: true,
+					Status:          "active",
+				},
+			},
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Trial Workspace",
+					Local:           true,
+					CurrentPayModel: true,
+					Status:          "active",
+				},
+				{
+					Id:              "#2",
+					Name:            "Trial Workspace",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+			mockDefaultPaymodel: defaultPayModelForTest,
+		},
+	}
+
+	for _, testcase := range testCases {
+		t.Logf("Testing GetCurrentPaymodelWithLimits when %s", testcase.name)
+
+		/* Setup */
+		Config = testcase.mockConfig
+		getDefaultPayModel = func() (*PayModel, error) {
+			return testcase.mockDefaultPaymodel, nil
+		}
+		payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
+			if current {
+				return &testcase.mockCurrentPayModelFromDB, nil
+			}
+			return &testcase.mockPayModelsFromDB, nil
+		}
+
+		/* Act */
+		got, err := getCurrentPayModel("testUser")
+		if nil != err {
+			t.Errorf("failed to load current pay model, got: %v", err)
+			return
+		}
+
+		/* Assert */
+		if testcase.want == nil {
+			if got != nil {
+				t.Errorf("\nassertion error while testing `GetPayModelsForUser` when %s : \nWant: %+v\nGot:%+v", testcase.name, testcase.want, got)
+			}
+		} else if !reflect.DeepEqual(got, testcase.want) {
+			t.Errorf("\nassertion error while testing `GetCurrentPayModel` when %s : \nWant:%+v\nGot:%+v", testcase.name, testcase.want, got)
+		}
+	}
+}
+
 func Test_GetPayModelsForUser(t *testing.T) {
 	defer SetupAndTeardownTest()()
 

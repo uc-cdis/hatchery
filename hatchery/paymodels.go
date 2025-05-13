@@ -146,8 +146,12 @@ var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 			return nil, err
 		}
 		payModel.TotalUsage = float32(costUsage.TotalCost)
-		payModel.HardLimit = float32(10) // TODO: get this from config
-		payModel.SoftLimit = float32(5)  // TODO: get this from config
+		if payModel.HardLimit == 0 && Config.Config.DefaultHardLimit != 0 {
+			payModel.HardLimit = Config.Config.DefaultHardLimit
+		}
+		if payModel.SoftLimit == 0 && Config.Config.DefaultSoftLimit != 0 {
+			payModel.SoftLimit = Config.Config.DefaultSoftLimit
+		}
 	}
 
 	return &payModel, nil
