@@ -902,7 +902,9 @@ var createExternalK8sPod = func(ctx context.Context, hash string, userName strin
 
 	Config.Logger.Printf("Launched service %s for user %s forwarding port %d\n", serviceName, userName, hatchApp.TargetPort)
 
-	nodes, _ := podClient.Nodes().List(context.TODO(), metav1.ListOptions{})
+	nodes, _ := podClient.Nodes().List(context.TODO(), metav1.ListOptions{
+		LabelSelector: "role=jupyter",
+	})
 	NodeIP := nodes.Items[0].Status.Addresses[0].Address
 
 	err = createLocalService(ctx, userName, hash, NodeIP, payModel)
