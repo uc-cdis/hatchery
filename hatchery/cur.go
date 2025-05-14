@@ -15,7 +15,7 @@ type costUsage struct {
 	TotalCost float64 `json:"total-cost"`
 }
 
-func getCostUsageReport(username string, workflowname string) (*costUsage, error) {
+var getCostUsageReport = func(username string, workflowname string) (*costUsage, error) {
 	// query cost usage report
 	// Create a Cost Explorer service client
 	sess := session.Must(session.NewSessionWithOptions(session.Options{

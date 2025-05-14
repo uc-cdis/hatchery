@@ -373,6 +373,17 @@ func Test_GetCurrentPayModelWithLimits(t *testing.T) {
 		},
 	}
 
+	// Backing up original functions before mocking
+	original_getDefaultPayModel := getDefaultPayModel
+	original_payModelsFromDatabase := payModelsFromDatabase
+	original_getCostUsageReport := getCostUsageReport
+	defer func() {
+		// restore original functions
+		getDefaultPayModel = original_getDefaultPayModel
+		payModelsFromDatabase = original_payModelsFromDatabase
+		getCostUsageReport = original_getCostUsageReport
+	}()
+
 	for _, testcase := range testCases {
 		t.Logf("Testing GetCurrentPaymodelWithLimits when %s", testcase.name)
 
@@ -386,6 +397,9 @@ func Test_GetCurrentPayModelWithLimits(t *testing.T) {
 				return &testcase.mockCurrentPayModelFromDB, nil
 			}
 			return &testcase.mockPayModelsFromDB, nil
+		}
+		getCostUsageReport = func(username string, workflowname string) (*costUsage, error) {
+			return &costUsage{Username: username, TotalCost: 0.00}, nil
 		}
 
 		/* Act */
