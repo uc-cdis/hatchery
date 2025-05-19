@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"github.com/aws/aws-sdk-go/service/costexplorer/costexploreriface"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	k8sv1 "k8s.io/api/core/v1"
 
@@ -108,6 +109,10 @@ type PayModel struct {
 type AllPayModels struct {
 	CurrentPayModel *PayModel  `json:"current_pay_model"`
 	PayModels       []PayModel `json:"all_pay_models"`
+}
+
+type CostExplorerClient struct {
+	CostExporer costexploreriface.CostExplorerAPI
 }
 
 type DbConfig struct {

@@ -140,7 +140,8 @@ var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 	if payModel.Local && Config.Config.Karpenter && strings.Contains(strings.ToLower(payModel.Name), "trial") {
 
 		// get cost usage report
-		costUsage, err := getCostUsageReport(userName, "")
+		costexplorerclient := initializeCostExplorerClient()
+		costUsage, err := getCostUsageReport(costexplorerclient, userName, "")
 		if err != nil {
 			Config.Logger.Printf("Got error getting cost usage report: %s", err)
 			return nil, err

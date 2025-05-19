@@ -1164,3 +1164,113 @@ aws {
 		return
 	}
 }
+
+func Test_CostEndpoint(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	type RequestBody struct {
+		Method       string
+		username     string
+		workflowname string
+	}
+
+	testCases := []struct {
+		name                string
+		want                string
+		wantStatus          int
+		mockRequest         *RequestBody
+		mockCostUsageReport *costUsage
+		mockCurrentPayModel *PayModel
+		waitToTerminate     bool
+		throwError          bool
+		calledFunctionName  string
+		noPayModelTable     bool
+	}{
+		{
+			name:       "UserHasTotalCost",
+			want:       `{"username":"testUser","total-cost":2.5}`,
+			wantStatus: http.StatusOK,
+			mockRequest: &RequestBody{
+				Method:       "GET",
+				username:     "testUser",
+				workflowname: "Direct+Pay",
+			},
+			mockCostUsageReport: &costUsage{
+				Username:  "testUser",
+				TotalCost: 2.5,
+			},
+		},
+		{
+			name:       "MissingUsername",
+			want:       `{"username":"","total-cost":0}`,
+			wantStatus: http.StatusOK,
+			mockRequest: &RequestBody{
+				Method: "GET",
+			},
+			mockCostUsageReport: &costUsage{
+				Username:  "",
+				TotalCost: 0,
+			},
+		},
+		{
+			name:       "MissingWorkflowname",
+			want:       `{"username":"testUser","total-cost":2.5}`,
+			wantStatus: http.StatusOK,
+			mockRequest: &RequestBody{
+				Method:   "GET",
+				username: "testUser",
+			},
+			mockCostUsageReport: &costUsage{
+				Username:  "testUser",
+				TotalCost: 2.5,
+			},
+		},
+	}
+
+	// Backing up original functions before mocking
+	original_getCostUsageReport := getCostUsageReport
+	defer func() {
+		// restore original functions
+		getCostUsageReport = original_getCostUsageReport
+	}()
+
+	for _, testcase := range testCases {
+		t.Logf("Testing Terminate Endpoint when %s", testcase.name)
+
+		/* Setup */
+		getCostUsageReport = func(costexplorerclient *CostExplorerClient, username string, workflowname string) (*costUsage, error) {
+			fmt.Println("COST mock function called")
+			return testcase.mockCostUsageReport, nil
+		}
+
+		url := "/cost"
+		if testcase.mockRequest.workflowname != "" {
+			url = url + "?workflowname=" + testcase.mockRequest.workflowname
+		}
+		fmt.Printf("TEST: url %s\n", url)
+		req, err := http.NewRequest(testcase.mockRequest.Method, url, nil)
+		if testcase.mockRequest.username != "" {
+			req.Header.Set("REMOTE_USER", testcase.mockRequest.username)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+
+		/* Act */
+		handler := http.HandlerFunc(cost)
+		handler.ServeHTTP(w, req)
+
+		/* Assert */
+		if testcase.wantStatus != w.Code {
+			t.Errorf("handler returned wrong status code:\ngot: '%v'\nwant: '%v'",
+				w.Code, testcase.wantStatus)
+		}
+
+		if testcase.want != strings.TrimSpace(w.Body.String()) {
+			t.Errorf("handler returned wrong response:\ngot: '%v'\nwant: '%v'",
+				w.Body.String(), testcase.want)
+		}
+	}
+
+}

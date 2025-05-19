@@ -398,7 +398,7 @@ func Test_GetCurrentPayModelWithLimits(t *testing.T) {
 			}
 			return &testcase.mockPayModelsFromDB, nil
 		}
-		getCostUsageReport = func(username string, workflowname string) (*costUsage, error) {
+		getCostUsageReport = func(costexplorerclient *CostExplorerClient, username string, workflowname string) (*costUsage, error) {
 			return &costUsage{Username: username, TotalCost: 0.00}, nil
 		}
 

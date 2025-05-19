@@ -63,7 +63,8 @@ func cost(w http.ResponseWriter, r *http.Request) {
 	// check if workflowname is empty
 
 	// get cost usage report
-	costUsageReport, err := getCostUsageReport(userName, workflowname)
+	costexplorerclient := initializeCostExplorerClient()
+	costUsageReport, err := getCostUsageReport(costexplorerclient, userName, workflowname)
 	if err != nil {
 		Config.Logger.Print(err)
 		// Send 500 error

@@ -15,13 +15,21 @@ type costUsage struct {
 	TotalCost float64 `json:"total-cost"`
 }
 
-var getCostUsageReport = func(username string, workflowname string) (*costUsage, error) {
-	// query cost usage report
-	// Create a Cost Explorer service client
+// This function will get called in the module that calls `getCostUsageRepot`
+var initializeCostExplorerClient = func() *CostExplorerClient {
+	// Create an interface to CostExplorer service client
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	}))
-	svc := costexplorer.New(sess)
+	return &CostExplorerClient{
+		CostExporer: costexplorer.New(sess),
+	}
+}
+
+var getCostUsageReport = func(costexplorerclient *CostExplorerClient, username string, workflowname string) (*costUsage, error) {
+	// query cost usage report
+	// the CostExplorer service client is passed in as a parameter
+
 	// Build the request with date range and filter
 	// Return costs by tags
 	req := &costexplorer.GetCostAndUsageInput{
@@ -57,7 +65,7 @@ var getCostUsageReport = func(username string, workflowname string) (*costUsage,
 	}
 
 	// Call Cost Explorer API
-	resp, err := svc.GetCostAndUsage(req)
+	resp, err := costexplorerclient.CostExporer.GetCostAndUsage(req)
 	if err != nil {
 		fmt.Println("Got error calling GetCostAndUsage:", err)
 		return nil, err
