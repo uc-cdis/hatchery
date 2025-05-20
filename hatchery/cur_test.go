@@ -62,7 +62,14 @@ func Test_GetCostUsageReport(t *testing.T) {
 		},
 	}
 
-	// mock the cost explorer interface
+	// Backing up original functions before mocking
+	original_getCostUsageReport := getCostUsageReport
+	defer func() {
+		// restore original functions
+		getCostUsageReport = original_getCostUsageReport
+	}()
+
+	// mock the cost explorer interface and cost report
 	costexplorerclient := initializeCostExplorerClient()
 
 	for _, testcase := range testCases {
