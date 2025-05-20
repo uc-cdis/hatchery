@@ -1,4 +1,4 @@
-FROM quay.io/cdis/golang:1.21-bullseye AS build-deps
+FROM quay.io/cdis/golang:1.23-bookworm AS build-deps
 
 ENV CGO_ENABLED=0
 ENV GOOS=linux
@@ -19,7 +19,11 @@ RUN GITCOMMIT=$(git rev-parse HEAD) \
     -ldflags="-X 'github.com/uc-cdis/hatchery/hatchery/version.GitCommit=${GITCOMMIT}' -X 'github.com/uc-cdis/hatchery/hatchery/version.GitVersion=${GITVERSION}'" \
     -o /hatchery
 
+RUN echo "nobody:x:65534:65534:Nobody:/:" > /etc_passwd
+
 FROM scratch
+COPY --from=build-deps /etc_passwd /etc/passwd
 COPY --from=build-deps /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=build-deps /hatchery /hatchery
+USER nobody
 CMD ["/hatchery"]

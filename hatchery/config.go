@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"github.com/aws/aws-sdk-go/service/costexplorer/costexploreriface"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	k8sv1 "k8s.io/api/core/v1"
 
@@ -110,6 +111,10 @@ type AllPayModels struct {
 	PayModels       []PayModel `json:"all_pay_models"`
 }
 
+type CostExplorerClient struct {
+	CostExporer costexploreriface.CostExplorerAPI
+}
+
 type DbConfig struct {
 	DynamoDb dynamodbiface.DynamoDBAPI
 }
@@ -119,9 +124,11 @@ type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
 	DefaultPayModel PayModel `json:"default-pay-model"`
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
+	SkipNodeSelector       bool                 `json:"skip-node-selector"`
 	UseInteralServicesURL  bool                 `json:"use-internal-services-url"`
 	PayModels              []PayModel           `json:"pay-models"`
 	PayModelsDynamodbTable string               `json:"pay-models-dynamodb-table"`
+	PayModelsDynamodbArn   string               `json:"pay-models-dynamodb-arn"`
 	LicenseUserMapsTable   string               `json:"license-user-maps-dynamodb-table"`
 	LicenseUserMapsGSI     string               `json:"license-user-maps-global-secondary-index"`
 	License                LicenseInfo          `json:"license"`
@@ -132,6 +139,8 @@ type HatcheryConfig struct {
 	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
 	PrismaConfig           PrismaConfig         `json:"prisma"`
 	Karpenter              bool                 `json:"karpenter"`
+	DefaultHardLimit       float32              `json:"default-hard-limit"`
+	DefaultSoftLimit       float32              `json:"default-soft-limit"`
 	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
 	Developement           bool                 `json:"developement"`
 }
@@ -217,7 +226,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.Logger.Printf("Warning: no 'license-user-maps-dynamodb-table' in configuration: will be unable to store license-user-map data in DynamoDB")
 	} else if data.Config.LicenseUserMapsGSI == "" {
 		err = fmt.Errorf("'license-user-maps-dynamodb-table' is present but missing 'license-user-maps-global-secondary-index'")
-		data.Logger.Printf("Error in config: %v", err)
+		data.Logger.Printf("Error in configuration: %v", err)
 		return nil, err
 	}
 
@@ -225,7 +234,7 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 		data.Logger.Printf("Checking license config info for container %s", container.Name)
 		if container.License.Enabled {
 			if data.Config.LicenseUserMapsTable == "" {
-				err = fmt.Errorf("no 'license-user-maps-dynamodb-table' in configuration but license is configured for container %s", container.Name)
+				err = fmt.Errorf("no 'license-user-maps-dynamodb-table' in configuration but license is configured for container '%s'", container.Name)
 				data.Logger.Printf("Error in configuration: %v", err)
 				return nil, err
 			}
@@ -240,6 +249,9 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 
 	if data.Config.PayModelsDynamodbTable == "" {
 		data.Logger.Printf("Warning: no 'pay-models-dynamodb-table' in configuration: will be unable to query pay model data in DynamoDB")
+	}
+	if data.Config.PayModelsDynamodbArn == "" {
+		data.Logger.Printf("Warning: no 'pay-models-dynamodb-arn' in configuration: we will set up DynamoDB client with regular creds")
 	}
 
 	for _, payModel := range data.Config.PayModels {
