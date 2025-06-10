@@ -730,6 +730,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 		waitToTerminate     bool
 		throwError          bool
 		calledFunctionName  string
+		noPayModelTable     bool
 	}{
 		{
 			name:       "MethodIsNotPost",
@@ -757,6 +758,18 @@ func Test_TerminateEndpoint(t *testing.T) {
 			},
 			mockCurrentPayModel: nil,
 			calledFunctionName:  "deleteK8sPod",
+		},
+		{
+			name:       "NoPayModelDBTableExists",
+			want:       "Terminated workspace",
+			wantStatus: http.StatusOK,
+			mockRequest: &RequestBody{
+				Method:   "POST",
+				username: "testUser",
+			},
+			mockCurrentPayModel: nil,
+			calledFunctionName:  "deleteK8sPod",
+			noPayModelTable:     true,
 		},
 		{
 			name:       "NonEcsPayModelExists",
@@ -837,6 +850,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 	original_getLicenseUserMapsForUser := getLicenseUserMapsForUser
 	original_getWorkspaceStatus := getWorkspaceStatus
 	original_resetCurrentPaymodel := resetCurrentPaymodel
+	original_payModelTable := Config.Config.PayModelsDynamodbTable
 	defer func() {
 		// restore original functions
 		deleteK8sPod = original_deleteK8sPod
@@ -845,6 +859,7 @@ func Test_TerminateEndpoint(t *testing.T) {
 		getLicenseUserMapsForUser = original_getLicenseUserMapsForUser
 		getWorkspaceStatus = original_getWorkspaceStatus
 		resetCurrentPaymodel = original_resetCurrentPaymodel
+		Config.Config.PayModelsDynamodbTable = original_payModelTable
 	}()
 
 	for _, testcase := range testCases {
@@ -867,6 +882,9 @@ func Test_TerminateEndpoint(t *testing.T) {
 			if testcase.throwError {
 				return errors.New("error deleting k8s pod")
 			}
+			if testcase.noPayModelTable {
+				waitGroup.Done()
+			}
 			return nil
 		}
 		terminateEcsWorkspace = func(ctx context.Context, userName, accessToken, awsAcctID string) (string, error) {
@@ -874,6 +892,9 @@ func Test_TerminateEndpoint(t *testing.T) {
 			FuncCounter["terminateEcsWorkspace"] += 1
 			if testcase.throwError {
 				return "", errors.New("error terminating ecs workspace")
+			}
+			if testcase.noPayModelTable {
+				waitGroup.Done()
 			}
 			return "", nil
 		}
@@ -896,6 +917,12 @@ func Test_TerminateEndpoint(t *testing.T) {
 		resetCurrentPaymodel = func(string) error {
 			waitGroup.Done()
 			return nil
+		}
+
+		if testcase.noPayModelTable {
+			Config.Config.PayModelsDynamodbTable = ""
+		} else {
+			Config.Config.PayModelsDynamodbTable = "paymodelTableName"
 		}
 
 		getLicenseUserMapsForUser = func(dbconfig *DbConfig, userId string) ([]Gen3LicenseUserMap, error) {
@@ -948,11 +975,19 @@ func Test_TerminateEndpoint(t *testing.T) {
 				t.Errorf("Expected to call workspaceStatus more than once , but is called %d time(s)",
 					workspaceStatusCallCounter)
 			}
+			if testcase.noPayModelTable {
+				if !testcase.waitToTerminate && workspaceStatusCallCounter != 0 {
+					t.Errorf("Expected to call workspaceStatus exactly 0 times , but is called %d time(s)",
+						workspaceStatusCallCounter)
+				}
+			} else {
+				if !testcase.waitToTerminate && workspaceStatusCallCounter != 1 {
+					t.Errorf("Expected to call workspaceStatus exactly once , but is called %d time(s)",
+						workspaceStatusCallCounter)
+				}
 
-			if !testcase.waitToTerminate && workspaceStatusCallCounter != 1 {
-				t.Errorf("Expected to call workspaceStatus exactly once , but is called %d time(s)",
-					workspaceStatusCallCounter)
 			}
+
 		}
 	}
 }
@@ -1128,4 +1163,114 @@ aws {
 		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, fileContents, w.Body)
 		return
 	}
+}
+
+func Test_CostEndpoint(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	type RequestBody struct {
+		Method       string
+		username     string
+		workflowname string
+	}
+
+	testCases := []struct {
+		name                string
+		want                string
+		wantStatus          int
+		mockRequest         *RequestBody
+		mockCostUsageReport *costUsage
+		mockCurrentPayModel *PayModel
+		waitToTerminate     bool
+		throwError          bool
+		calledFunctionName  string
+		noPayModelTable     bool
+	}{
+		{
+			name:       "UserHasTotalCost",
+			want:       `{"username":"testUser","total-cost":2.5}`,
+			wantStatus: http.StatusOK,
+			mockRequest: &RequestBody{
+				Method:       "GET",
+				username:     "testUser",
+				workflowname: "Direct+Pay",
+			},
+			mockCostUsageReport: &costUsage{
+				Username:  "testUser",
+				TotalCost: 2.5,
+			},
+		},
+		{
+			name:       "MissingUsername",
+			want:       `{"username":"","total-cost":0}`,
+			wantStatus: http.StatusOK,
+			mockRequest: &RequestBody{
+				Method: "GET",
+			},
+			mockCostUsageReport: &costUsage{
+				Username:  "",
+				TotalCost: 0,
+			},
+		},
+		{
+			name:       "MissingWorkflowname",
+			want:       `{"username":"testUser","total-cost":2.5}`,
+			wantStatus: http.StatusOK,
+			mockRequest: &RequestBody{
+				Method:   "GET",
+				username: "testUser",
+			},
+			mockCostUsageReport: &costUsage{
+				Username:  "testUser",
+				TotalCost: 2.5,
+			},
+		},
+	}
+
+	// Backing up original functions before mocking
+	original_getCostUsageReport := getCostUsageReport
+	defer func() {
+		// restore original functions
+		getCostUsageReport = original_getCostUsageReport
+	}()
+
+	for _, testcase := range testCases {
+		t.Logf("Testing Terminate Endpoint when %s", testcase.name)
+
+		/* Setup */
+		getCostUsageReport = func(costexplorerclient *CostExplorerClient, username string, workflowname string) (*costUsage, error) {
+			fmt.Println("COST mock function called")
+			return testcase.mockCostUsageReport, nil
+		}
+
+		url := "/cost"
+		if testcase.mockRequest.workflowname != "" {
+			url = url + "?workflowname=" + testcase.mockRequest.workflowname
+		}
+		fmt.Printf("TEST: url %s\n", url)
+		req, err := http.NewRequest(testcase.mockRequest.Method, url, nil)
+		if testcase.mockRequest.username != "" {
+			req.Header.Set("REMOTE_USER", testcase.mockRequest.username)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+
+		/* Act */
+		handler := http.HandlerFunc(cost)
+		handler.ServeHTTP(w, req)
+
+		/* Assert */
+		if testcase.wantStatus != w.Code {
+			t.Errorf("handler returned wrong status code:\ngot: '%v'\nwant: '%v'",
+				w.Code, testcase.wantStatus)
+		}
+
+		if testcase.want != strings.TrimSpace(w.Body.String()) {
+			t.Errorf("handler returned wrong response:\ngot: '%v'\nwant: '%v'",
+				w.Body.String(), testcase.want)
+		}
+	}
+
 }
