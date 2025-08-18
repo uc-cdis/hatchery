@@ -2,6 +2,7 @@ package hatchery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strconv"
@@ -380,6 +381,43 @@ var getKubeClientSet = func() (clientset kubernetes.Interface, err error) {
 
 	return clientset, nil
 
+}
+
+// TODO: descide if this stays here or gets moved to gen3licenseusermaps
+var getLicenseString = func(Config *FullHatcheryConfig, hash string) (string, error) {
+	// get the file_path and fileId from config
+	file_path := Config.ContainersMap[hash].License.FilePath
+	filePathConfigs, err := getLicenceFilePathConfigs()
+	if err != nil {
+		Config.Logger.Printf("unable to get filepaths from config: %v", err)
+		return "", err
+	}
+	g3autoName, g3autoKey, ok := getG3autoInfoForFilepath(file_path, filePathConfigs)
+	if !ok {
+		Config.Logger.Printf("could not get g3auto name and key for file-path '%s'", file_path)
+		return "", err
+	}
+	// get license data from kubernetes secret
+	clientset, err := getKubeClientSet()
+	if err != nil {
+		Config.Logger.Printf("unable to get kube client set: %v", err)
+		return "", err
+	}
+	licenseValue, err := getLicenseFromKubernetes(clientset, g3autoName, g3autoKey)
+	if err != nil {
+		Config.Logger.Printf("unable to get license from kubernetes: %v", err)
+		return "", err
+	}
+	licenseData := map[string]string{
+		Config.ContainersMap[hash].License.G3autoKey: licenseValue,
+	}
+	licenseString, err := json.Marshal(licenseData)
+	if err != nil {
+		Config.Logger.Printf("unable to marshall license: %v", err)
+		return "", err
+	}
+
+	return string(licenseString), nil
 }
 
 var getLicenseFromKubernetes = func(clientset kubernetes.Interface, g3autoName string, g3autoKey string) (licenseString string, err error) {

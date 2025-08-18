@@ -429,8 +429,24 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		}
 		Config.Logger.Printf("Created new license-user-map item: %v", newItem)
 
+		licenseString, err := getLicenseString(Config, hash)
+		if err != nil {
+			Config.Logger.Printf("unable to get license: %v", err)
+		}
+		secretName := Config.ContainersMap[hash].License.G3autoName
+		// convert to format suitable for environment var
+		secretName = strings.ReplaceAll(secretName, "-", "_")
+		secretName = strings.ToUpper(secretName)
+		envVars = append(
+			envVars,
+			k8sv1.EnvVar{
+				Name: secretName,
+				// TODO: add a secret-key in the value string to mimic the g3auto secret
+				Value: string(licenseString),
+			},
+		)
 	}
-
+	// Config.Logger.Printf("EnvVar: %v", envVars)
 	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
 		Config.Logger.Printf("error when getting paymodels for user: %s", err.Error())
@@ -673,8 +689,11 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		WorkspaceFlavor: "nextflow",
 	})
 	// Look for any `license` configs in containers
+	// TODO: decide if we want to remove this block now that we do not read stata here.
 	for _, v := range Config.ContainersMap {
-		if v.License.Enabled {
+		configFilePath := strings.ToLower(v.License.FilePath)
+		if v.License.Enabled && !strings.Contains(configFilePath, "stata") {
+			Config.Logger.Printf("Adding license")
 			fileList = append(fileList, file{
 				FilePath:        v.License.FilePath,
 				WorkspaceFlavor: v.License.WorkspaceFlavor,
@@ -704,6 +723,9 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}
 		return out, nil
+	} else if fileId == "stata.lic" {
+		Config.Logger.Printf("file_path = 'stata.lic' not available")
+		return "file_path = 'stata.lic' not available", nil
 	} else if filePathInLicenseConfigs(fileId, filePathConfigs) {
 		// get g3auto kube secret
 		g3autoName, g3autoKey, ok := getG3autoInfoForFilepath(fileId, filePathConfigs)
