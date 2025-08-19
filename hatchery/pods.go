@@ -827,15 +827,15 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 		return err
 	}
 	// ensure S3 PV/PVC (dynamic per user) and wire into pod
-	if Config.Config.S3.BucketName != "" && Config.Config.S3.Region != "" {
+	if Config.Config.S3Config.BucketName != "" && Config.Config.S3Config.Region != "" {
 		Config.Logger.Print("Mounting S3 bucket as well..")
 		s3PVCName, err := ensureS3PVandPVC(
 			ctx,
 			podClient,
 			Config.Config.UserNamespace,
 			userName,
-			Config.Config.S3.BucketName,
-			Config.Config.S3.Region,
+			Config.Config.S3Config.BucketName,
+			Config.Config.S3Config.Region,
 		)
 		if err != nil {
 			Config.Logger.Printf("Failed ensuring S3 PV/PVC for user %s: %v", userName, err)

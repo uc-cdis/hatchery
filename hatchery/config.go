@@ -141,7 +141,7 @@ type HatcheryConfig struct {
 	Sidecar                SidecarContainer     `json:"sidecar"`
 	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
 	PrismaConfig           PrismaConfig         `json:"prisma"`
-	S3                     S3Config             `json:s3-config`
+	S3Config               S3Config             `json:s3-config`
 	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
 }
 
