@@ -31,6 +31,14 @@ type NextflowConfig struct {
 	InstanceMaxVCpus       int32    `json:"instance-max-vcpus"`
 }
 
+// Configuration for S3 bucket mounting into workspace pods
+type S3Config struct {
+	BucketName string `json:"bucketName"` // e.g. "workspace-software-s3-qa-gen3"
+	Region     string `json:"region"`     // e.g. "us-east-1"
+	// Optional; if empty we’ll default to "<userName>/".
+	PrefixBase string `json:"prefixBase"` // e.g. "" (we’ll compute from userName)
+}
+
 // LicenseInfo contains configuration for Gen3 supplied licenses.
 type LicenseInfo struct {
 	Enabled         bool   `json:"enabled"`
@@ -133,6 +141,7 @@ type HatcheryConfig struct {
 	Sidecar                SidecarContainer     `json:"sidecar"`
 	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
 	PrismaConfig           PrismaConfig         `json:"prisma"`
+	S3                     S3Config             `json:s3-config`
 	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
 }
 
