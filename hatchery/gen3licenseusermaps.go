@@ -312,7 +312,7 @@ var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3Li
 }
 
 // Get the file-path related configurations
-func getLicenceFilePathConfigs() ([]LicenseInfo, error) {
+func getLicenseFilePathConfigs() ([]LicenseInfo, error) {
 	var config LicenseInfo
 	var filePathConfigs []LicenseInfo
 
@@ -383,11 +383,10 @@ var getKubeClientSet = func() (clientset kubernetes.Interface, err error) {
 
 }
 
-// TODO: descide if this stays here or gets moved to gen3licenseusermaps
 var getLicenseString = func(Config *FullHatcheryConfig, hash string) (string, error) {
 	// get the file_path and fileId from config
 	file_path := Config.ContainersMap[hash].License.FilePath
-	filePathConfigs, err := getLicenceFilePathConfigs()
+	filePathConfigs, err := getLicenseFilePathConfigs()
 	if err != nil {
 		Config.Logger.Printf("unable to get filepaths from config: %v", err)
 		return "", err

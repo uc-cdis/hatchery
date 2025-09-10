@@ -711,7 +711,7 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func getMountFileContents(fileId string, userName string) (string, error) {
-	filePathConfigs, err := getLicenceFilePathConfigs()
+	filePathConfigs, err := getLicenseFilePathConfigs()
 	if err != nil {
 		Config.Logger.Printf("unable to get filepaths from config: %v", err)
 		return "", err
