@@ -689,18 +689,6 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		FilePath:        "sample-nextflow-config.txt",
 		WorkspaceFlavor: "nextflow",
 	})
-	// Look for any `license` configs in containers
-	// TODO: decide if we want to remove this block now that we do not read stata here.
-	for _, v := range Config.ContainersMap {
-		configFilePath := strings.ToLower(v.License.FilePath)
-		if v.License.Enabled && !strings.Contains(configFilePath, "stata") {
-			Config.Logger.Printf("Adding license")
-			fileList = append(fileList, file{
-				FilePath:        v.License.FilePath,
-				WorkspaceFlavor: v.License.WorkspaceFlavor,
-			})
-		}
-	}
 
 	out, err := json.Marshal(fileList)
 	if err != nil {
@@ -731,23 +719,8 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 		return out, nil
 		// Skip any license file-paths
 	} else if slices.Contains(licenseFilePaths, fileId) {
-		Config.Logger.Printf("The file_path not available")
-		return "The file_path not available", nil
-	} else if filePathInLicenseConfigs(fileId, filePathConfigs) {
-		// get g3auto kube secret
-		g3autoName, g3autoKey, ok := getG3autoInfoForFilepath(fileId, filePathConfigs)
-		if !ok {
-			return "", fmt.Errorf("could not get g3auto name and key for file-path '%s'", fileId)
-		}
-		clientset, err := getKubeClientSet()
-		if err != nil {
-			Config.Logger.Printf("unable to get kube client set: %v", err)
-		}
-		out, err := getLicenseFromKubernetes(clientset, g3autoName, g3autoKey)
-		if err != nil {
-			Config.Logger.Printf("unable to get license from kubernetes: %v", err)
-		}
-		return out, nil
+		Config.Logger.Printf("The file_path is not available")
+		return "The file_path is not available", nil
 	} else {
 		return "", fmt.Errorf("unknown id '%s'", fileId)
 	}
