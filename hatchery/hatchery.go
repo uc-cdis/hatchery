@@ -7,6 +7,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -716,6 +717,11 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 		Config.Logger.Printf("unable to get filepaths from config: %v", err)
 		return "", err
 	}
+	var licenseFilePaths []string
+	for _, v := range filePathConfigs {
+		licenseFilePaths = append(licenseFilePaths, v.FilePath)
+	}
+	Config.Logger.Printf("Configured License File Paths %v", licenseFilePaths)
 
 	if fileId == "sample-nextflow-config.txt" {
 		out, err := generateNextflowConfig(Config.Config.NextflowGlobalConfig, userName)
@@ -723,9 +729,10 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}
 		return out, nil
-	} else if fileId == "stata.lic" {
-		Config.Logger.Printf("file_path = 'stata.lic' not available")
-		return "file_path = 'stata.lic' not available", nil
+		// Skip any license file-paths
+	} else if slices.Contains(licenseFilePaths, fileId) {
+		Config.Logger.Printf("The file_path not available")
+		return "The file_path not available", nil
 	} else if filePathInLicenseConfigs(fileId, filePathConfigs) {
 		// get g3auto kube secret
 		g3autoName, g3autoKey, ok := getG3autoInfoForFilepath(fileId, filePathConfigs)
