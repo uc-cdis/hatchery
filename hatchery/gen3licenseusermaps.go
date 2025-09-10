@@ -332,15 +332,6 @@ func getLicenseFilePathConfigs() ([]LicenseInfo, error) {
 	return filePathConfigs, nil
 }
 
-func filePathInLicenseConfigs(filePath string, configs []LicenseInfo) bool {
-	for _, v := range configs {
-		if filePath == v.FilePath {
-			return true
-		}
-	}
-	return false
-}
-
 func getG3autoInfoForFilepath(filePath string, configs []LicenseInfo) (string, string, bool) {
 	for _, v := range configs {
 		if filePath == v.FilePath {
