@@ -566,3 +566,64 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 		}
 	}
 }
+
+func Test_getG3autoInfoForFilepath(t *testing.T) {
+
+	testCases := []struct {
+		name        string
+		filePath    string
+		wantName    string
+		wantKey     string
+		wantBool    bool
+		configs     []LicenseInfo
+		expectError bool
+	}{
+		{
+			name:     "file path present",
+			filePath: "test-file-path",
+			wantName: "test-g3auto-name",
+			wantKey:  "test-g3auto-key",
+			wantBool: true,
+			configs: []LicenseInfo{{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test-g3auto-key",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			}},
+		},
+		{
+			name:     "file path missing",
+			filePath: "other-file-path",
+			wantName: "",
+			wantKey:  "",
+			wantBool: false,
+			configs: []LicenseInfo{{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test-g3auto-key",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			}},
+		},
+	}
+
+	for _, testcase := range testCases {
+		t.Logf("Testing getG3autoInfoForFilepath when %s", testcase.name)
+
+		gotName, gotKey, gotBool := getG3autoInfoForFilepath(testcase.filePath, testcase.configs)
+		if gotName != testcase.wantName {
+			t.Errorf("\nName error while testing `getG3autoInfoForFilepath`: \nWant:%+v\nGot:%+v", testcase.wantName, gotName)
+		}
+		if gotKey != testcase.wantKey {
+			t.Errorf("\nKey error while testing `getG3autoInfoForFilepath`: \nWant:%+v\nGot:%+v", testcase.wantKey, gotKey)
+		}
+		if gotBool != testcase.wantBool {
+			t.Errorf("\nBool error while testing `getG3autoInfoForFilepath`: \nWant:%+v\nGot:%+v", testcase.wantBool, gotBool)
+		}
+	}
+}
