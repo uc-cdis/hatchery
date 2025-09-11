@@ -332,7 +332,7 @@ func getLicenseFilePathConfigs() ([]LicenseInfo, error) {
 	return filePathConfigs, nil
 }
 
-func getG3autoInfoForFilepath(filePath string, configs []LicenseInfo) (string, string, bool) {
+var getG3autoInfoForFilepath = func(filePath string, configs []LicenseInfo) (string, string, bool) {
 	for _, v := range configs {
 		if filePath == v.FilePath {
 			return v.G3autoName, v.G3autoKey, true
@@ -376,7 +376,13 @@ var getKubeClientSet = func() (clientset kubernetes.Interface, err error) {
 
 var getLicenseString = func(Config *FullHatcheryConfig, hash string) (string, error) {
 	// get the file_path and fileId from config
-	file_path := Config.ContainersMap[hash].License.FilePath
+	containersMap, ok := Config.ContainersMap[hash]
+	if !ok {
+		Config.Logger.Printf("unable to find hash in Config: %v", hash)
+		return "", errors.New("unable to find hash in Config:" + hash)
+	}
+	file_path := containersMap.License.FilePath
+
 	filePathConfigs, err := getLicenseFilePathConfigs()
 	if err != nil {
 		Config.Logger.Printf("unable to get filepaths from config: %v", err)
