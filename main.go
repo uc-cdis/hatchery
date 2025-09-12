@@ -17,6 +17,9 @@ func verifyPath(path string) (string, error) {
 	if err != nil {
 		return c, errors.New("Unsafe or invalid path specified")
 	}
+	if strings.ToLower(filepath.Ext(c)) != ".json" {
+		return c, errors.New("config file must be json")
+	}
 	return r, nil
 }
 
