@@ -11,16 +11,24 @@ import (
 	"github.com/uc-cdis/hatchery/hatchery"
 )
 
-func verifyPath(path string) (string, error) {
-	c := filepath.Clean(path)
-	r, err := filepath.EvalSymlinks(c)
+func verifyPath(userPath string, baseDir string) (string, error) {
+	fullPath := filepath.Join(baseDir, userPath)
+	canonicalPath := filepath.Clean(fullPath)
+
+	resolved, err := filepath.EvalSymlinks(canonicalPath)
 	if err != nil {
-		return c, errors.New("Unsafe or invalid path specified")
+		return canonicalPath, errors.New("unsafe or invalid path specified")
 	}
-	if strings.ToLower(filepath.Ext(c)) != ".json" {
-		return c, errors.New("config file must be json")
+
+	if !strings.HasPrefix(canonicalPath, filepath.Clean(baseDir)+string(os.PathSeparator)) {
+		return canonicalPath, errors.New("access denied: cannot read config files outside of the base directory")
 	}
-	return r, nil
+
+	if strings.ToLower(filepath.Ext(canonicalPath)) != ".json" {
+		return canonicalPath, errors.New("config file must be json")
+	}
+
+	return resolved, nil
 }
 
 func main() {
@@ -36,14 +44,23 @@ func main() {
 		return
 	}
 	logger := log.New(os.Stdout, "", log.LstdFlags)
-	cleanPath, err := verifyPath(configPath)
+	baseDir, err := os.Getwd()
 	if err != nil {
-		logger.Printf("Failed to load config - got %s", err.Error())
+		logger.Printf("Error in getting baseDir of executable - %s", err.Error())
+		return
+	}
+	cleanPath, err := verifyPath(configPath, baseDir)
+	if err != nil {
+		logger.Printf("Failed to verify config - got %s", err.Error())
 		return
 	}
 	config, err := hatchery.LoadConfig(cleanPath, logger)
 	if err != nil {
-		config.Logger.Printf("Failed to load config - got %s", err.Error())
+		message := err.Error()
+		if os.IsPermission(err) {
+			message = "permission issue"
+		}
+		config.Logger.Printf("Failed to load config - got %s", message)
 		return
 	}
 	hatchery.Config = config
