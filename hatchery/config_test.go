@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -38,6 +40,111 @@ func TestLoadConfig(t *testing.T) {
 		t.Errorf("unexpected more-info app name - expected DockstoreTest, got: %v", config.Config.Containers[numContainers-1].Name)
 	}
 	config.Logger.Printf("config_test marshalled config: %v", string(jsBytes))
+}
+
+func Test_VerifyPath(t *testing.T) {
+
+	cwd, _ := os.Getwd()
+	baseDir := filepath.Dir(cwd)
+
+	tmpDir := t.TempDir()
+	tmpPath := filepath.Join(tmpDir, "testConfig.json")
+	if err := os.WriteFile(tmpPath, []byte{}, 0644); err != nil {
+		t.Errorf("Error in writing tmpPath %v", err.Error())
+	}
+
+	testCases := []struct {
+		name             string
+		configPath       string
+		wantError        bool
+		wantErrorMessage string
+	}{
+		{
+			name:             "validConfigPath",
+			configPath:       "testData/testConfig.json",
+			wantError:        false,
+			wantErrorMessage: "",
+		},
+		{
+			name:             "missingConfig",
+			configPath:       "testData/missing.json",
+			wantError:        true,
+			wantErrorMessage: "unsafe or invalid path specified",
+		},
+		{
+			name:             "outsideOfBaseDir",
+			configPath:       tmpPath,
+			wantError:        true,
+			wantErrorMessage: "unsafe or invalid path specified",
+		},
+		{
+			name:             "unallowedExtension",
+			configPath:       "testData/testConfig.txt",
+			wantError:        true,
+			wantErrorMessage: "config file must be json",
+		},
+	}
+
+	for _, testcase := range testCases {
+		t.Logf("Testing VerifyPath when %s", testcase.name)
+
+		/* Set up */
+		want := filepath.Join(baseDir, testcase.configPath)
+
+		/* Act */
+		got, err := VerifyPath(testcase.configPath, baseDir)
+
+		/* Assert */
+		if got != want {
+			t.Errorf("assertion error in 'VerifyPath', : \nWant:%+v\nGot:%+v", want, got)
+		}
+		if testcase.wantError {
+			if err == nil {
+				t.Errorf("\nassertion error: Expected error but got nil")
+			}
+			if !strings.Contains(err.Error(), testcase.wantErrorMessage) {
+				t.Errorf("\nassertion error: Message does not contain %v", testcase.wantErrorMessage)
+			}
+		} else {
+			if err != nil {
+				t.Errorf("Got unexpected error %v", err.Error())
+			}
+
+		}
+	}
+
+}
+
+func Test_VerifyPathOutsideBaseDir(t *testing.T) {
+
+	cwd, _ := os.Getwd()
+	baseDir := filepath.Dir(cwd)
+
+	parentPath := "../../testConfig.json"
+	want := filepath.Join(baseDir, parentPath)
+	wantErrorMessage := "access denied: cannot read config files outside of the base directory"
+
+	oldEvalSymlinks := evalSymLinks
+	defer func() { evalSymLinks = oldEvalSymlinks }()
+	// mock the filepath.EvalSymLinks as passing without error
+	evalSymLinks = func(path string) (string, error) {
+		return path, nil
+	}
+
+	/* Act */
+	got, err := VerifyPath(parentPath, baseDir)
+
+	/* Assert */
+	if got != want {
+		t.Errorf("assertion error in 'VerifyPath', : \nWant:%+v\nGot:%+v", want, got)
+	}
+	if err == nil {
+		t.Errorf("\nassertion error: Expected error but got nil")
+	}
+	if !strings.Contains(err.Error(), wantErrorMessage) {
+		t.Errorf("\nassertion error: Message does not contain %v", wantErrorMessage)
+	}
+
 }
 
 func TestMissingConfigFile(t *testing.T) {
