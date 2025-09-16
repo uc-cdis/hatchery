@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	configPath := "/hatchery.json"
+	configPath := "/var/hatchery.json"
 	if len(os.Args) > 2 && strings.HasSuffix(os.Args[1], "-config") {
 		configPath = os.Args[2]
 	} else if len(os.Args) > 1 {
@@ -22,11 +22,7 @@ func main() {
 		return
 	}
 	logger := log.New(os.Stdout, "", log.LstdFlags)
-	baseDir, err := os.Getwd()
-	if err != nil {
-		logger.Printf("Error in getting baseDir of executable - %s", err.Error())
-		return
-	}
+	baseDir := "/var"
 	cleanPath, err := hatchery.VerifyPath(configPath, baseDir)
 	if err != nil {
 		logger.Printf("Failed to verify config - got %s", err.Error())

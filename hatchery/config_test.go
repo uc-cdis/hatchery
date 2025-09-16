@@ -45,41 +45,53 @@ func TestLoadConfig(t *testing.T) {
 func Test_VerifyPath(t *testing.T) {
 
 	cwd, _ := os.Getwd()
-	baseDir := filepath.Dir(cwd)
-
-	tmpDir := t.TempDir()
-	tmpPath := filepath.Join(tmpDir, "testConfig.json")
-	if err := os.WriteFile(tmpPath, []byte{}, 0644); err != nil {
-		t.Errorf("Error in writing tmpPath %v", err.Error())
-	}
+	defaultBaseDir := filepath.Dir(cwd)
 
 	testCases := []struct {
 		name             string
 		configPath       string
+		baseDir          string
+		want             string
 		wantError        bool
 		wantErrorMessage string
 	}{
 		{
 			name:             "validConfigPath",
 			configPath:       "testData/testConfig.json",
+			baseDir:          defaultBaseDir,
+			want:             filepath.Join(defaultBaseDir, "testData/testConfig.json"),
+			wantError:        false,
+			wantErrorMessage: "",
+		},
+		{
+			name:             "overlapInPath",
+			configPath:       filepath.Join(defaultBaseDir, "testData/testConfig.json"),
+			baseDir:          filepath.Join(defaultBaseDir, "testData/"),
+			want:             filepath.Join(defaultBaseDir, "testData/testConfig.json"),
 			wantError:        false,
 			wantErrorMessage: "",
 		},
 		{
 			name:             "missingConfig",
 			configPath:       "testData/missing.json",
+			baseDir:          defaultBaseDir,
+			want:             filepath.Join(defaultBaseDir, "testData/missing.json"),
 			wantError:        true,
 			wantErrorMessage: "unsafe or invalid path specified",
 		},
 		{
 			name:             "outsideOfBaseDir",
-			configPath:       tmpPath,
+			configPath:       "../testConfig.json",
+			baseDir:          "/var",
+			want:             "/testConfig.json",
 			wantError:        true,
 			wantErrorMessage: "unsafe or invalid path specified",
 		},
 		{
 			name:             "unallowedExtension",
 			configPath:       "testData/testConfig.txt",
+			baseDir:          defaultBaseDir,
+			want:             filepath.Join(defaultBaseDir, "testData/testConfig.txt"),
 			wantError:        true,
 			wantErrorMessage: "config file must be json",
 		},
@@ -88,21 +100,17 @@ func Test_VerifyPath(t *testing.T) {
 	for _, testcase := range testCases {
 		t.Logf("Testing VerifyPath when %s", testcase.name)
 
-		/* Set up */
-		want := filepath.Join(baseDir, testcase.configPath)
-
 		/* Act */
-		got, err := VerifyPath(testcase.configPath, baseDir)
+		got, err := VerifyPath(testcase.configPath, testcase.baseDir)
 
 		/* Assert */
-		if got != want {
-			t.Errorf("assertion error in 'VerifyPath', : \nWant:%+v\nGot:%+v", want, got)
+		if got != testcase.want {
+			t.Errorf("assertion error in 'VerifyPath', : \nWant:%+v\nGot:%+v", testcase.want, got)
 		}
 		if testcase.wantError {
 			if err == nil {
-				t.Errorf("\nassertion error: Expected error but got nil")
-			}
-			if !strings.Contains(err.Error(), testcase.wantErrorMessage) {
+				t.Error("\nassertion error: Expected error but got nil")
+			} else if !strings.Contains(err.Error(), testcase.wantErrorMessage) {
 				t.Errorf("\nassertion error: Message does not contain %v", testcase.wantErrorMessage)
 			}
 		} else {
