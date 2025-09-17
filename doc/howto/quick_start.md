@@ -10,6 +10,13 @@
 }
 ```
 
+The configuration file needs to be copied into `/var/hatchery/hatchery.json`, say with
+
+```bash
+sudo mkdir /var/hatchery
+sudo cp hatchery.json /var/hatchery/hatchery.json
+```
+
 - Install [nodemon](https://nodemon.io/)
 
 - Run Hatchery:
