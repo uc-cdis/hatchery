@@ -82,7 +82,7 @@ func getPodClient(ctx context.Context, userName string, payModelPtr *PayModel) (
 
 func getLocalPodClient() corev1.CoreV1Interface {
 	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
+	config, err := GetConfig()
 	if err != nil {
 		Config.Logger.Printf("Error creating in-cluster config: %v", err)
 		return nil
