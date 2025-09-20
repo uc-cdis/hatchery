@@ -10,18 +10,13 @@
 }
 ```
 
-The configuration file needs to be copied into `/var/hatchery/hatchery.json`, say with
-
-```bash
-sudo mkdir /var/hatchery
-sudo cp hatchery.json /var/hatchery/hatchery.json
-```
-
 - Install [nodemon](https://nodemon.io/)
 
 - Run Hatchery:
 
-`export GEN3_ENDPOINT=qa-heal.planx-pla.net; export GEN3_VPCID=qaplanetv1; nodemon --exec go run main.go -config ./hatchery.json --signal SIGTERM`
+Include the `-dev` argument for running locally:
+
+`export GEN3_ENDPOINT=qa-heal.planx-pla.net; export GEN3_VPCID=qaplanetv1; nodemon --exec go run main.go -config ./hatchery.json -dev --signal SIGTERM`
 
 The API is exposed at http://0.0.0.0:8000.
 

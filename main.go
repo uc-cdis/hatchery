@@ -11,9 +11,22 @@ import (
 
 func main() {
 	configPath := "/var/hatchery/hatchery.json"
-	if len(os.Args) > 2 && strings.HasSuffix(os.Args[1], "-config") {
-		configPath = os.Args[2]
-	} else if len(os.Args) > 1 {
+	devMode := false
+
+	cleanedArgs := []string{}
+	for _, arg := range os.Args {
+		if arg == "-dev" {
+			devMode = true
+			configPath = "./hatchery.json"
+		} else {
+			cleanedArgs = append(cleanedArgs, arg)
+		}
+	}
+	os.Args = cleanedArgs
+
+	if len(cleanedArgs) > 2 && strings.HasSuffix(cleanedArgs[1], "-config") {
+		configPath = cleanedArgs[2]
+	} else if len(cleanedArgs) > 1 {
 		os.Stderr.WriteString(
 			`Use: hatchery -config path/to/hatchery.json
 		- also harvests dockstore/bla.yml app definitions where dockstore/
@@ -21,8 +34,21 @@ func main() {
 `)
 		return
 	}
+
 	logger := log.New(os.Stdout, "", log.LstdFlags)
-	baseDir := "/var/hatchery"
+
+	var baseDir string
+	var err error
+	if devMode {
+		baseDir, err = os.Getwd()
+		if err != nil {
+			logger.Print("Error in getting baseDir of executable\n")
+			return
+		}
+	} else {
+		baseDir = "/var/hatchery"
+	}
+
 	cleanPath, err := hatchery.VerifyPath(configPath, baseDir)
 	if err != nil {
 		logger.Printf("Failed to verify config - got %s", err.Error())
