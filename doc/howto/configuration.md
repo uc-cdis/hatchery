@@ -175,3 +175,10 @@ An example manifest entry may look like
       * `file-path` container file-path where license should be copied.
       * `workspace-flavor` description of type of gen3-licensed container.
 * `more-configs`: see https://github.com/uc-cdis/hatchery/blob/master/doc/explanation/dockstore.md
+
+
+## Deployment
+
+For production deployments the configuration json should be located at `/var/hatchery/hatchery.json`.
+
+For local development the configuration json should be located in the hatchery source code project directory. The executable, `main.go`, would be invoked with the `-dev` argument, as described in the [quick_start.md](quick_start.md) document.
