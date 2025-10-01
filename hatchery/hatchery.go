@@ -7,6 +7,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"text/template"
@@ -429,8 +430,24 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		}
 		Config.Logger.Printf("Created new license-user-map item: %v", newItem)
 
+		licenseString, err := getLicenseString(Config, hash)
+		if err != nil {
+			Config.Logger.Printf("unable to get license: %v", err)
+		}
+		secretName := Config.ContainersMap[hash].License.G3autoName
+		// convert to format suitable for environment var
+		secretName = strings.ReplaceAll(secretName, "-", "_")
+		secretName = strings.ToUpper(secretName)
+		envVars = append(
+			envVars,
+			k8sv1.EnvVar{
+				Name: secretName,
+				// TODO: add a secret-key in the value string to mimic the g3auto secret
+				Value: string(licenseString),
+			},
+		)
 	}
-
+	// Config.Logger.Printf("EnvVar: %v", envVars)
 	allpaymodels, err := getPayModelsForUser(userName)
 	if err != nil {
 		Config.Logger.Printf("error when getting paymodels for user: %s", err.Error())
@@ -672,15 +689,6 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		FilePath:        "sample-nextflow-config.txt",
 		WorkspaceFlavor: "nextflow",
 	})
-	// Look for any `license` configs in containers
-	for _, v := range Config.ContainersMap {
-		if v.License.Enabled {
-			fileList = append(fileList, file{
-				FilePath:        v.License.FilePath,
-				WorkspaceFlavor: v.License.WorkspaceFlavor,
-			})
-		}
-	}
 
 	out, err := json.Marshal(fileList)
 	if err != nil {
@@ -692,11 +700,16 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 }
 
 func getMountFileContents(fileId string, userName string) (string, error) {
-	filePathConfigs, err := getLicenceFilePathConfigs()
+	filePathConfigs, err := getLicenseFilePathConfigs()
 	if err != nil {
 		Config.Logger.Printf("unable to get filepaths from config: %v", err)
 		return "", err
 	}
+	var licenseFilePaths []string
+	for _, v := range filePathConfigs {
+		licenseFilePaths = append(licenseFilePaths, v.FilePath)
+	}
+	Config.Logger.Printf("Configured License File Paths %v", licenseFilePaths)
 
 	if fileId == "sample-nextflow-config.txt" {
 		out, err := generateNextflowConfig(Config.Config.NextflowGlobalConfig, userName)
@@ -704,21 +717,10 @@ func getMountFileContents(fileId string, userName string) (string, error) {
 			Config.Logger.Printf("unable to generate Nextflow config: %v", err)
 		}
 		return out, nil
-	} else if filePathInLicenseConfigs(fileId, filePathConfigs) {
-		// get g3auto kube secret
-		g3autoName, g3autoKey, ok := getG3autoInfoForFilepath(fileId, filePathConfigs)
-		if !ok {
-			return "", fmt.Errorf("could not get g3auto name and key for file-path '%s'", fileId)
-		}
-		clientset, err := getKubeClientSet()
-		if err != nil {
-			Config.Logger.Printf("unable to get kube client set: %v", err)
-		}
-		out, err := getLicenseFromKubernetes(clientset, g3autoName, g3autoKey)
-		if err != nil {
-			Config.Logger.Printf("unable to get license from kubernetes: %v", err)
-		}
-		return out, nil
+		// Skip any license file-paths
+	} else if slices.Contains(licenseFilePaths, fileId) {
+		Config.Logger.Printf("The file_path is not available")
+		return "The file_path is not available", nil
 	} else {
 		return "", fmt.Errorf("unknown id '%s'", fileId)
 	}
