@@ -103,6 +103,7 @@ type PayModel struct {
 	SoftLimit       float32 `json:"soft-limit"`
 	TotalUsage      float32 `json:"total-usage"`
 	CurrentPayModel bool    `json:"current_pay_model"`
+	Cost            float64 `json:"cost"`
 }
 
 type AllPayModels struct {

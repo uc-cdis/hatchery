@@ -564,12 +564,17 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
 	} else {
 		payModel := allpaymodels.CurrentPayModel
+		payModelId := ""
+		if payModel != nil && &payModel.Id != nil {
+			payModelId = payModel.Id
+		}
+
 		if payModel == nil {
 			Config.Logger.Printf("Current Paymodel is not set. Launch forbidden for user %s", userName)
 			http.Error(w, "Current Paymodel is not set. Launch forbidden", http.StatusInternalServerError)
 			return
 		} else if payModel.Local {
-			err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars)
+			err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars, payModelId)
 		} else if payModel.Ecs {
 
 			if payModel.Status != "active" {
@@ -588,7 +593,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "Launch accepted")
 			return
 		} else {
-			err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel, envVars)
+			err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel, envVars, payModelId)
 		}
 	}
 	if err != nil {
