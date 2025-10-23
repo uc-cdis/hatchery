@@ -119,7 +119,7 @@ func NewPodTracker(namespace string) (*PodTracker, error) {
 
 // Start begins all tracking goroutines
 func (pt *PodTracker) Start(ctx context.Context) {
-	Config.Logger.Printf("Starting pod tracker for namespace: %s", pt.namespace)
+	log.Printf("Starting pod tracker for namespace: %s", pt.namespace)
 
 	// Start all watchers concurrently
 	go pt.startPodWatcher(ctx)
