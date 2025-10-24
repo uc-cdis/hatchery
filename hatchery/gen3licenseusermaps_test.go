@@ -1,7 +1,9 @@
 package hatchery
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -10,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
@@ -563,6 +566,187 @@ func Test_ValidateContainerLicenseInfo(t *testing.T) {
 		}
 		if testcase.expectError == false && err != nil {
 			t.Errorf("\nWanted nil but got error: %s", err)
+		}
+	}
+}
+
+func Test_GetG3autoInfoForFilepath(t *testing.T) {
+
+	testCases := []struct {
+		name        string
+		filePath    string
+		wantName    string
+		wantKey     string
+		wantBool    bool
+		configs     []LicenseInfo
+		expectError bool
+	}{
+		{
+			name:     "file path present",
+			filePath: "test-file-path",
+			wantName: "test-g3auto-name",
+			wantKey:  "test-g3auto-key",
+			wantBool: true,
+			configs: []LicenseInfo{{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test-g3auto-key",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			}},
+		},
+		{
+			name:     "file path missing",
+			filePath: "other-file-path",
+			wantName: "",
+			wantKey:  "",
+			wantBool: false,
+			configs: []LicenseInfo{{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test-g3auto-key",
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			}},
+		},
+	}
+
+	for _, testcase := range testCases {
+		t.Logf("Testing getG3autoInfoForFilepath when %s", testcase.name)
+
+		gotName, gotKey, gotBool := getG3autoInfoForFilepath(testcase.filePath, testcase.configs)
+		if gotName != testcase.wantName {
+			t.Errorf("\nName error while testing `getG3autoInfoForFilepath`: \nWant:%+v\nGot:%+v", testcase.wantName, gotName)
+		}
+		if gotKey != testcase.wantKey {
+			t.Errorf("\nKey error while testing `getG3autoInfoForFilepath`: \nWant:%+v\nGot:%+v", testcase.wantKey, gotKey)
+		}
+		if gotBool != testcase.wantBool {
+			t.Errorf("\nBool error while testing `getG3autoInfoForFilepath`: \nWant:%+v\nGot:%+v", testcase.wantBool, gotBool)
+		}
+	}
+}
+
+func Test_GetLicenseString(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	test_hash := "random_id"
+	g3autoName := "test-g3auto-name"
+	g3autoKey := "g3auto-key"
+	kubeNamespace := "default"
+	testSecret := "my_super_secret_123"
+	validLicenseData := map[string]string{g3autoKey: testSecret}
+	b, _ := json.Marshal(validLicenseData)
+	validLicenseString := string(b)
+	kubeSecrets := []runtime.Object{
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      g3autoName,
+				Namespace: kubeNamespace,
+			},
+			Data: map[string][]byte{
+				g3autoKey: []byte(testSecret),
+			},
+		},
+	}
+
+	validContainersMap := map[string]Container{
+		test_hash: {
+			Name: "Hatchery test container",
+			License: LicenseInfo{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      g3autoName,
+				G3autoKey:       g3autoKey,
+				FilePath:        "test-file-path",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+	}
+	emptyContainersMap := map[string]Container{}
+	missingFilePath := map[string]Container{
+		test_hash: {
+			Name: "Hatchery test container",
+			License: LicenseInfo{
+				Enabled:         true,
+				LicenseType:     "test-license-type",
+				MaxLicenseIds:   3,
+				G3autoName:      "test-g3auto-name",
+				G3autoKey:       "test-g3auto-key",
+				WorkspaceFlavor: "test-workspace-flavor",
+			},
+		},
+	}
+
+	testCases := []struct {
+		name              string
+		want              string
+		wantError         bool
+		wantErrorMessage  string
+		mockContainersMap map[string]Container
+	}{
+		{
+			name:              "secretPresent",
+			want:              validLicenseString,
+			wantError:         false,
+			mockContainersMap: validContainersMap,
+		},
+		{
+			name:              "empty config",
+			want:              "",
+			wantError:         true,
+			wantErrorMessage:  "unable to find hash in Config",
+			mockContainersMap: emptyContainersMap,
+		},
+		{
+			name:              "no file path in container",
+			want:              "",
+			wantError:         true,
+			wantErrorMessage:  "container LicenseInfo is misconfigured",
+			mockContainersMap: missingFilePath,
+		},
+	}
+
+	// Backing up original functions before patching
+	original_getKubeClientSet := getKubeClientSet
+	original_getLicenseFromKubernetes := getLicenseFromKubernetes
+	defer func() {
+		// restore original functions
+		getKubeClientSet = original_getKubeClientSet
+		getLicenseFromKubernetes = original_getLicenseFromKubernetes
+	}()
+
+	for _, testcase := range testCases {
+		t.Logf("Testing getLicenseString when %s", testcase.name)
+		Config.ContainersMap = testcase.mockContainersMap
+
+		fakeClientset := fake.NewSimpleClientset(kubeSecrets...)
+		getKubeClientSet = func() (clientset kubernetes.Interface, err error) {
+			return fakeClientset, nil
+		}
+		getLicenseFromKubernetes = func(clientset kubernetes.Interface, g3autoName string, g3autoKey string) (licenseString string, err error) {
+			return testSecret, nil
+		}
+
+		got, err := getLicenseString(Config, test_hash)
+
+		/* Assert */
+		if got != testcase.want {
+			t.Errorf("\nassertion error while testing `getLicenseString`: \nWant:%+v\nGot:%+v", testcase.want, got)
+		}
+		// add check for expected errors
+		if testcase.wantError {
+			if err == nil {
+				t.Errorf("\nassertion error: Expected error but got nil")
+			}
+			if !strings.Contains(err.Error(), testcase.wantErrorMessage) {
+				t.Errorf("\nassertion error: Message does not contain %v", testcase.wantErrorMessage)
+			}
 		}
 	}
 }

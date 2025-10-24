@@ -2,30 +2,32 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/uc-cdis/hatchery/hatchery"
 )
 
-func verifyPath(path string) (string, error) {
-	c := filepath.Clean(path)
-	r, err := filepath.EvalSymlinks(c)
-	if err != nil {
-		return c, errors.New("Unsafe or invalid path specified")
-	}
-	return r, nil
-}
-
 func main() {
-	configPath := "/hatchery.json"
-	if len(os.Args) > 2 && strings.HasSuffix(os.Args[1], "-config") {
-		configPath = os.Args[2]
-	} else if len(os.Args) > 1 {
+	configPath := "/var/hatchery/hatchery.json"
+	devMode := false
+
+	cleanedArgs := []string{}
+	for _, arg := range os.Args {
+		if arg == "-dev" {
+			devMode = true
+			configPath = "./hatchery.json"
+		} else {
+			cleanedArgs = append(cleanedArgs, arg)
+		}
+	}
+	os.Args = cleanedArgs
+
+	if len(cleanedArgs) > 2 && strings.HasSuffix(cleanedArgs[1], "-config") {
+		configPath = cleanedArgs[2]
+	} else if len(cleanedArgs) > 1 {
 		os.Stderr.WriteString(
 			`Use: hatchery -config path/to/hatchery.json
 		- also harvests dockstore/bla.yml app definitions where dockstore/
@@ -33,15 +35,33 @@ func main() {
 `)
 		return
 	}
+
 	logger := log.New(os.Stdout, "", log.LstdFlags)
-	cleanPath, err := verifyPath(configPath)
+
+	var baseDir string
+	var err error
+	if devMode {
+		baseDir, err = os.Getwd()
+		if err != nil {
+			logger.Print("Error in getting baseDir of executable\n")
+			return
+		}
+	} else {
+		baseDir = "/var/hatchery"
+	}
+
+	cleanPath, err := hatchery.VerifyPath(configPath, baseDir)
 	if err != nil {
-		logger.Printf("Failed to load config - got %s", err.Error())
+		logger.Printf("Failed to verify config - got %s", err.Error())
 		return
 	}
 	config, err := hatchery.LoadConfig(cleanPath, logger)
 	if err != nil {
-		config.Logger.Printf("Failed to load config - got %s", err.Error())
+		message := err.Error()
+		if os.IsPermission(err) {
+			message = "permission issue"
+		}
+		config.Logger.Printf("Failed to load config - got %s", message)
 		return
 	}
 
