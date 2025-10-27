@@ -1103,8 +1103,7 @@ aws {
 		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
 		return
 	}
-	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\",\"workspace_flavor\":\"nextflow\"}," +
-		"{\"file_path\":\"license-path.txt\",\"workspace_flavor\":\"licensed-flavor\"}]"
+	expectedOutput := "[{\"file_path\":\"sample-nextflow-config.txt\",\"workspace_flavor\":\"nextflow\"}]"
 	if w.Body.String() != expectedOutput {
 		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, expectedOutput, w.Body)
 		return
@@ -1112,6 +1111,26 @@ aws {
 
 	// get file contents
 	url = "/mount-files?file_path=sample-nextflow-config.txt"
+	req, err = http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Errorf("Error creating request: %v", err.Error())
+		return
+	}
+	req.Header.Set("REMOTE_USER", "testUser")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Errorf("Error when hitting /mount-files endpoint: got status code %v", w.Code)
+		return
+	}
+	if w.Body.String() != fileContents {
+		t.Errorf("The '%s' endpoint should have returned the expected output '%s', but it returned: '%v'", url, fileContents, w.Body)
+		return
+	}
+
+	// get license file contents
+	fileContents = "The file_path is not available"
+	url = "/mount-files?file_path=license-path.txt"
 	req, err = http.NewRequest("GET", url, nil)
 	if err != nil {
 		t.Errorf("Error creating request: %v", err.Error())

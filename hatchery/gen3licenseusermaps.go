@@ -2,6 +2,7 @@ package hatchery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strconv"
@@ -311,7 +312,7 @@ var setGen3LicenseUserInactive = func(dbconfig *DbConfig, itemId string) (Gen3Li
 }
 
 // Get the file-path related configurations
-func getLicenceFilePathConfigs() ([]LicenseInfo, error) {
+func getLicenseFilePathConfigs() ([]LicenseInfo, error) {
 	var config LicenseInfo
 	var filePathConfigs []LicenseInfo
 
@@ -331,16 +332,7 @@ func getLicenceFilePathConfigs() ([]LicenseInfo, error) {
 	return filePathConfigs, nil
 }
 
-func filePathInLicenseConfigs(filePath string, configs []LicenseInfo) bool {
-	for _, v := range configs {
-		if filePath == v.FilePath {
-			return true
-		}
-	}
-	return false
-}
-
-func getG3autoInfoForFilepath(filePath string, configs []LicenseInfo) (string, string, bool) {
+var getG3autoInfoForFilepath = func(filePath string, configs []LicenseInfo) (string, string, bool) {
 	for _, v := range configs {
 		if filePath == v.FilePath {
 			return v.G3autoName, v.G3autoKey, true
@@ -380,6 +372,48 @@ var getKubeClientSet = func() (clientset kubernetes.Interface, err error) {
 
 	return clientset, nil
 
+}
+
+var getLicenseString = func(Config *FullHatcheryConfig, hash string) (string, error) {
+	// get the file_path and fileId from config
+	containersMap, ok := Config.ContainersMap[hash]
+	if !ok {
+		Config.Logger.Printf("unable to find hash in Config: %v", hash)
+		return "", errors.New("unable to find hash in Config:" + hash)
+	}
+	file_path := containersMap.License.FilePath
+
+	filePathConfigs, err := getLicenseFilePathConfigs()
+	if err != nil {
+		Config.Logger.Printf("unable to get filepaths from config: %v", err)
+		return "", err
+	}
+	g3autoName, g3autoKey, ok := getG3autoInfoForFilepath(file_path, filePathConfigs)
+	if !ok {
+		Config.Logger.Printf("could not get g3auto name and key for file-path '%s'", file_path)
+		return "", err
+	}
+	// get license data from kubernetes secret
+	clientset, err := getKubeClientSet()
+	if err != nil {
+		Config.Logger.Printf("unable to get kube client set: %v", err)
+		return "", err
+	}
+	licenseValue, err := getLicenseFromKubernetes(clientset, g3autoName, g3autoKey)
+	if err != nil {
+		Config.Logger.Printf("unable to get license from kubernetes: %v", err)
+		return "", err
+	}
+	licenseData := map[string]string{
+		Config.ContainersMap[hash].License.G3autoKey: licenseValue,
+	}
+	licenseString, err := json.Marshal(licenseData)
+	if err != nil {
+		Config.Logger.Printf("unable to marshall license: %v", err)
+		return "", err
+	}
+
+	return string(licenseString), nil
 }
 
 var getLicenseFromKubernetes = func(clientset kubernetes.Interface, g3autoName string, g3autoKey string) (licenseString string, err error) {

@@ -1,6 +1,10 @@
 package hatchery
 
 import (
+	"errors"
+	"path/filepath"
+	"strings"
+
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	k8sv1 "k8s.io/api/core/v1"
 
@@ -158,6 +162,32 @@ type FullHatcheryConfig struct {
 	ContainersMap map[string]Container
 	PayModelMap   map[string]PayModel
 	Logger        *log.Logger
+}
+
+var evalSymLinks = filepath.EvalSymlinks
+
+// Verify path to config file
+func VerifyPath(userPath string, baseDir string) (string, error) {
+	// check if userPath includes baseDir
+	relPath, err := filepath.Rel(baseDir, userPath)
+	if err == nil && relPath != "" {
+		userPath = relPath
+	}
+
+	fullPath := filepath.Join(baseDir, userPath)
+	canonicalPath := filepath.Clean(fullPath)
+	resolved, err := evalSymLinks(canonicalPath)
+	if err != nil {
+		// mask system errors
+		return canonicalPath, errors.New("unsafe or invalid path specified")
+	}
+	if !strings.HasPrefix(canonicalPath, filepath.Clean(baseDir)+string(os.PathSeparator)) {
+		return canonicalPath, errors.New("access denied: cannot read config files outside of the base directory")
+	}
+	if strings.ToLower(filepath.Ext(canonicalPath)) != ".json" {
+		return canonicalPath, errors.New("config file must be json")
+	}
+	return resolved, nil
 }
 
 // LoadConfig from a json file
