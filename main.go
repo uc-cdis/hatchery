@@ -65,18 +65,20 @@ func main() {
 		return
 	}
 
-	tracker, err := hatchery.NewPodTracker(config.Config.UserNamespace)
-	if err != nil {
-		log.Fatal(err)
+	if config.Config.PayModelsDynamodbTable != "" {
+		tracker, err := hatchery.NewPodTracker(config.Config.UserNamespace)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Start tracking times of pods
+		go tracker.Start(ctx)
+
+		log.Printf("Pricings: %+v", config.Config.Pricing)
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Start tracking times of pods
-	go tracker.Start(ctx)
-
-	log.Printf("Pricings: %+v", config.Config.Pricing)
 
 	hatchery.Config = config
 
