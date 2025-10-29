@@ -308,8 +308,6 @@ func (pt *PodTracker) handlePodDeleted(pod *v1.Pod, source string) {
 	userName := pt.extractUserNameFromPod(pod)
 	podPaymodelID := pt.extractPaymodelIDFromPod(pod)
 
-	Config.Logger.Printf("🫛 POD PAYMODEL TYPE %v", podPaymodelID)
-
 	// Use DeletionTimestamp if available, fallback to now
 	var terminationTime time.Time
 	if pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() {
@@ -446,6 +444,7 @@ func (pt *PodTracker) ensureUserInPayModelTable(pod *v1.Pod) {
 					userName, defaultPayModel.Id)
 			}
 		}
+		Config.Logger.Printf("From database: %v", currentPayModelFromDb)
 		Config.Logger.Printf("Workspace ID from pod matched with data base for user %v", userName)
 		return
 	}
@@ -480,7 +479,7 @@ func (pt *PodTracker) createDefaultTrialPayPayModel(userName string, podPaymodel
 	defaultPayModel.Status = "active"
 	defaultPayModel.Local = true
 	defaultPayModel.Ecs = false
-	defaultPayModel.Cost = 0.0
+	defaultPayModel.TotalUsage = 0.0
 
 	item, err := dynamodbattribute.MarshalMap(defaultPayModel)
 	if err != nil {
@@ -536,7 +535,7 @@ func UpdatePayModelCost(userName string, podPaymodelID string, additionalCost fl
 			},
 		},
 		ExpressionAttributeNames: map[string]*string{
-			"#C": aws.String("cost"),
+			"#C": aws.String("total-usage"),
 		},
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
 			":inc": {
@@ -562,9 +561,9 @@ func UpdatePayModelCost(userName string, podPaymodelID string, additionalCost fl
 		return fmt.Errorf("failed to update pay model cost: %v", err)
 	}
 
-	if result.Attributes["cost"] != nil {
+	if result.Attributes["total-usage"] != nil {
 		Config.Logger.Printf("Updated cost for user %s, workspace %s: $%s (added: $%.4f)",
-			userName, podPaymodelID, *result.Attributes["cost"].N, additionalCost)
+			userName, podPaymodelID, *result.Attributes["total-usage"].N, additionalCost)
 	}
 
 	return nil
