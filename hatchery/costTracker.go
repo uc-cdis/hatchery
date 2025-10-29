@@ -444,7 +444,6 @@ func (pt *PodTracker) ensureUserInPayModelTable(pod *v1.Pod) {
 					userName, defaultPayModel.Id)
 			}
 		}
-		Config.Logger.Printf("From database: %v", currentPayModelFromDb)
 		Config.Logger.Printf("Workspace ID from pod matched with data base for user %v", userName)
 		return
 	}
