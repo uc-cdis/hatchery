@@ -472,7 +472,6 @@ func (pt *PodTracker) createDefaultTrialPayPayModel(userName string, podPaymodel
 
 	defaultPayModel := Config.Config.DefaultPayModel
 	defaultPayModel.Id = payModelID
-	defaultPayModel.Name = "Trial Workspace"
 	defaultPayModel.User = userName
 	defaultPayModel.CurrentPayModel = true
 	defaultPayModel.Status = "active"
