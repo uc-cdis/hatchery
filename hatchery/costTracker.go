@@ -52,8 +52,7 @@ type PodTracker struct {
 	mu            sync.RWMutex
 
 	// Resume state
-	lastPodRV   string // Last resource version for pod watching
-	lastEventRV string // Last resource version for event watching
+	lastPodRV string // Last resource version for pod watching
 
 	// Control channels
 	stopCh chan struct{}
