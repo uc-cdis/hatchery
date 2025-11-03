@@ -23,6 +23,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/eks"
 
+	"github.com/google/uuid"
+
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
 )
 
@@ -82,7 +84,7 @@ func getPodClient(ctx context.Context, userName string, payModelPtr *PayModel) (
 
 func getLocalPodClient() corev1.CoreV1Interface {
 	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
+	config, err := GetConfig()
 	if err != nil {
 		Config.Logger.Printf("Error creating in-cluster config: %v", err)
 		return nil
@@ -350,12 +352,19 @@ func userToResourceName(userName string, resourceType string) string {
 // buildPod returns a pod ready to pass to the k8s API given
 // a hatchery Container instance, and the name of the user
 // launching the app
-func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName string, extraVars []k8sv1.EnvVar) (pod *k8sv1.Pod, err error) {
+func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName string, extraVars []k8sv1.EnvVar, payModelId ...string) (pod *k8sv1.Pod, err error) {
+	// Create one if not provided
+	payModelIdValue := uuid.New().String()
+	if len(payModelId) > 0 && payModelId[0] != "" {
+		payModelIdValue = payModelId[0]
+	}
+
 	podName := userToResourceName(userName, "pod")
 	labels := make(map[string]string)
 	labels["app"] = podName
 	annotations := make(map[string]string)
 	annotations["gen3username"] = userName
+	annotations["bmh_workspace_id"] = payModelIdValue
 	var sideCarRunAsUser int64
 	var sideCarRunAsGroup int64
 	var hostToContainer = k8sv1.MountPropagationHostToContainer
@@ -625,7 +634,13 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	return pod, nil
 }
 
-var createLocalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, envVars []k8sv1.EnvVar) error {
+var createLocalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, envVars []k8sv1.EnvVar, payModelId ...string) error {
+	// Set default if not provided
+	payModelIdValue := ""
+	if len(payModelId) > 0 && payModelId[0] != "" {
+		payModelIdValue = payModelId[0]
+	}
+
 	hatchApp := Config.ContainersMap[hash]
 	Config.Logger.Printf("Creating a Local K8s Pod")
 
@@ -648,7 +663,7 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 		Value: apiKey.KeyID,
 	})
 
-	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
+	pod, err := buildPod(Config, &hatchApp, userName, extraVars, payModelIdValue)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
 		return err
@@ -751,7 +766,11 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 	return nil
 }
 
-var createExternalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, payModel PayModel, envVars []k8sv1.EnvVar) error {
+var createExternalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, payModel PayModel, envVars []k8sv1.EnvVar, payModelId ...string) error {
+	payModelIdValue := uuid.New().String()
+	if len(payModelId) > 0 && payModelId[0] != "" {
+		payModelIdValue = payModelId[0]
+	}
 	hatchApp := Config.ContainersMap[hash]
 	Config.Logger.Printf("Creating a External K8s Pod")
 	podClient, err := NewEKSClientset(ctx, userName, payModel)
@@ -804,7 +823,7 @@ var createExternalK8sPod = func(ctx context.Context, hash string, userName strin
 		Value: accessToken,
 	})
 
-	pod, err := buildPod(Config, &hatchApp, userName, extraVars)
+	pod, err := buildPod(Config, &hatchApp, userName, extraVars, payModelIdValue)
 	if err != nil {
 		Config.Logger.Printf("Failed to configure pod for launch for user %v, Error: %v", userName, err)
 		return err

@@ -118,6 +118,11 @@ type DbConfig struct {
 	DynamoDb dynamodbiface.DynamoDBAPI
 }
 
+type Pricing struct {
+	Cpu    float64 `json:"cpu"`
+	Memory float64 `json:"memory"`
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
@@ -138,6 +143,7 @@ type HatcheryConfig struct {
 	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
 	PrismaConfig           PrismaConfig         `json:"prisma"`
 	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
+	Pricing                Pricing              `json:"pricing"`
 }
 
 // Config to allow for Prisma Agents

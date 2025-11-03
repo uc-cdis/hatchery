@@ -556,7 +556,7 @@ func Test_LaunchEndpoint(t *testing.T) {
 			"createExternalK8sPod":      0,
 		}
 
-		createLocalK8sPod = func(ctx context.Context, hash, userName, accessToken string, envVars []k8sv1.EnvVar) error {
+		createLocalK8sPod = func(ctx context.Context, hash, userName, accessToken string, envVars []k8sv1.EnvVar, payModelId ...string) error {
 			FuncCounter["createLocalK8sPod"] += 1
 			if testcase.throwError {
 				return errors.New("error creating local k8s pod")
@@ -567,7 +567,7 @@ func Test_LaunchEndpoint(t *testing.T) {
 			FuncCounter["launchEcsWorkspaceWrapper"] += 1
 			waitGroup.Done() // Assertions are blocked until this line is completed
 		}
-		createExternalK8sPod = func(ctx context.Context, hash, userName, accessToken string, payModel PayModel, envVars []k8sv1.EnvVar) error {
+		createExternalK8sPod = func(ctx context.Context, hash, userName, accessToken string, payModel PayModel, envVars []k8sv1.EnvVar, payModelId ...string) error {
 			FuncCounter["createExternalK8sPod"] += 1
 			if testcase.throwError {
 				return errors.New("error creating external k8s pod")
@@ -663,7 +663,7 @@ func TestLaunchEndpointAuthorization(t *testing.T) {
 	}
 	// mock the pod launch
 	originalCreateLocalK8sPod := createLocalK8sPod
-	createLocalK8sPod = func(ctx context.Context, hash, userName, accessToken string, envVars []k8sv1.EnvVar) error {
+	createLocalK8sPod = func(ctx context.Context, hash, userName, accessToken string, envVars []k8sv1.EnvVar, payModelId ...string) error {
 		return nil
 	}
 	defer func() {
