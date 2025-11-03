@@ -174,7 +174,10 @@ func allCosts(w http.ResponseWriter, r *http.Request) {
 		Pods:      podCosts,
 	}
 
-	json.NewEncoder(w).Encode(summary)
+	err = json.NewEncoder(w).Encode(summary)
+	if err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 func timeTracker(w http.ResponseWriter, r *http.Request) {
@@ -582,7 +585,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 	} else {
 		payModel := allpaymodels.CurrentPayModel
 		payModelId := ""
-		if payModel != nil && &payModel.Id != nil {
+		if payModel != nil && payModel.Id != "" {
 			payModelId = payModel.Id
 		}
 
