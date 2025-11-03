@@ -686,6 +686,24 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 		Config.Logger.Printf("Terminated workspace for user %s", userName)
 		fmt.Fprintf(w, "Terminated workspace")
 	}
+
+	go func() {
+		// Periodically poll for status, until it is set as "Not Found"
+		for {
+			status, err := getWorkspaceStatus(r.Context(), userName, accessToken)
+			if err != nil {
+				Config.Logger.Printf("error fetching workspace status for user %s\n err: %s", userName, err)
+			}
+			if status.Status == "Not Found" {
+				break
+			}
+			time.Sleep(5 * time.Second)
+		}
+		err = resetCurrentPaymodel(userName)
+		if err != nil {
+			Config.Logger.Printf("unable to reset current paymodel for current user %s\nerr: %s", userName, err)
+		}
+	}()
 }
 
 func getBearerToken(r *http.Request) string {
