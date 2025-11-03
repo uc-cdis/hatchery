@@ -75,13 +75,6 @@ func createTestPod(name, namespace, username, workspaceID string) *v1.Pod {
 	}
 }
 
-func createTestPodWithDeletion(name, namespace, username, workspaceID string) *v1.Pod {
-	pod := createTestPod(name, namespace, username, workspaceID)
-	deletionTime := metav1.NewTime(time.Now())
-	pod.DeletionTimestamp = &deletionTime
-	return pod
-}
-
 func TestPodTracker_GetPodKey(t *testing.T) {
 	tracker := &PodTracker{}
 
