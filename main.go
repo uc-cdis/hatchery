@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -63,6 +64,22 @@ func main() {
 		config.Logger.Printf("Failed to load config - got %s", message)
 		return
 	}
+
+	if config.Config.PayModelsDynamodbTable != "" {
+		tracker, err := hatchery.NewPodTracker(config.Config.UserNamespace)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Start tracking times of pods
+		go tracker.Start(ctx)
+
+		log.Printf("Pricings: %+v", config.Config.Pricing)
+	}
+
 	hatchery.Config = config
 
 	config.Logger.Printf("Setting up routes")
