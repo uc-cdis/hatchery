@@ -497,7 +497,7 @@ func addS3VolumeToPod(pod *k8sv1.Pod, pvcName string) {
 		})
 	}
 
-	// 2) Add VolumeMount (/mnt/s3) to every container (or just the main one)
+	// 2) Add VolumeMount (/apps) to every container (or just the main one)
 	for ci := range pod.Spec.Containers {
 		c := &pod.Spec.Containers[ci]
 		alreadyMounted := false
@@ -510,7 +510,8 @@ func addS3VolumeToPod(pod *k8sv1.Pod, pvcName string) {
 		if !alreadyMounted {
 			c.VolumeMounts = append(c.VolumeMounts, k8sv1.VolumeMount{
 				Name:      "s3-volume",
-				MountPath: "/mnt/s3",
+				// TODO: Read this path from config
+				MountPath: "/apps",
 			})
 		}
 	}
