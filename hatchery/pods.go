@@ -526,9 +526,8 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		}
 
 		tolerations = []k8sv1.Toleration{
-			{
-				Operator: k8sv1.TolerationOpExists,
-			},
+			{Key: "role", Operator: "Equal", Value: "gpu", Effect: "NoSchedule"},
+			{Key: "nvidia.com/gpu", Operator: "Exists", Effect: "NoSchedule"},
 		}
 	}
 
