@@ -432,7 +432,7 @@ func ensureS3PVandPVC(
 				MountOptions: []string{
 					"allow-delete",
 					fmt.Sprintf("region %s", region),
-					fmt.Sprintf("prefix %s", prefix),
+					// fmt.Sprintf("prefix %s", prefix),
 				},
 				PersistentVolumeSource: k8sv1.PersistentVolumeSource{
 					CSI: &k8sv1.CSIPersistentVolumeSource{
