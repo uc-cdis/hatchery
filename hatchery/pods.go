@@ -410,7 +410,7 @@ func ensureS3PVandPVC(
 	// Commented out for now as we don't need a prefix, this bucket will be mounted at / for all users, but read only.
 	// This will be used for the "software-repository" feature
 	// prefix := s3PrefixForUser(userName)
-	prefix := "/"
+	// prefix := "/"
 
 	// ----- Ensure PV exists (cluster-scoped) -----
 	// Try GET; if not found, create.
