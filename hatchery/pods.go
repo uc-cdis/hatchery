@@ -432,6 +432,7 @@ func ensureS3PVandPVC(
 				MountOptions: []string{
 					"allow-delete",
 					fmt.Sprintf("region %s", region),
+					"file-mode 0555",
 					// fmt.Sprintf("prefix %s", prefix),
 				},
 				PersistentVolumeSource: k8sv1.PersistentVolumeSource{
@@ -512,7 +513,7 @@ func addS3VolumeToPod(pod *k8sv1.Pod, pvcName string) {
 		}
 		if !alreadyMounted {
 			c.VolumeMounts = append(c.VolumeMounts, k8sv1.VolumeMount{
-				Name:      "s3-volume",
+				Name: "s3-volume",
 				// TODO: Read this path from config
 				MountPath: "/apps",
 			})
