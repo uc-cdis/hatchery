@@ -432,8 +432,9 @@ func ensureS3PVandPVC(
 				MountOptions: []string{
 					"allow-delete",
 					"allow-other",
+					"file-mode=0555",
+					"dir-mode=0555",
 					fmt.Sprintf("region %s", region),
-					"file-mode 0555",
 					// fmt.Sprintf("prefix %s", prefix),
 				},
 				PersistentVolumeSource: k8sv1.PersistentVolumeSource{
