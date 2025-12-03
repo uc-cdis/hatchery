@@ -431,6 +431,7 @@ func ensureS3PVandPVC(
 				},
 				MountOptions: []string{
 					"allow-delete",
+					"allow-other",
 					fmt.Sprintf("region %s", region),
 					"file-mode 0555",
 					// fmt.Sprintf("prefix %s", prefix),
