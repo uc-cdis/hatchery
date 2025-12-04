@@ -444,6 +444,8 @@ func ensureS3PVandPVC(
 						VolumeHandle: volumeHandle, // must be unique
 						VolumeAttributes: map[string]string{
 							"bucketName": bucket,
+							"fileMode":   "0555",
+							"dirMode":    "0555",
 						},
 					},
 				},
