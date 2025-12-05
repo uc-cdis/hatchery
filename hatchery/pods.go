@@ -431,8 +431,6 @@ func ensureS3PVandPVC(
 				},
 				MountOptions: []string{
 					"allow-delete",
-					"allow-other",
-					"gid=100",
 					"file-mode=555",
 					"dir-mode=555",
 					"debug",
