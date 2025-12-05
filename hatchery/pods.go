@@ -435,6 +435,8 @@ func ensureS3PVandPVC(
 					"gid=100",
 					"file-mode=555",
 					"dir-mode=555",
+					"debug",
+					"debug-crt",
 					fmt.Sprintf("region %s", region),
 					// fmt.Sprintf("prefix %s", prefix),
 				},
