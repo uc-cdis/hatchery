@@ -431,10 +431,10 @@ func ensureS3PVandPVC(
 				},
 				MountOptions: []string{
 					"allow-delete",
+					"allow-other",
+					"gid=100",
 					"file-mode=555",
 					"dir-mode=555",
-					"debug",
-					"debug-crt",
 					fmt.Sprintf("region %s", region),
 					// fmt.Sprintf("prefix %s", prefix),
 				},
@@ -444,8 +444,6 @@ func ensureS3PVandPVC(
 						VolumeHandle: volumeHandle, // must be unique
 						VolumeAttributes: map[string]string{
 							"bucketName": bucket,
-							"fileMode":   "0555",
-							"dirMode":    "0555",
 						},
 					},
 				},
