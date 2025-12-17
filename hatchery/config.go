@@ -49,6 +49,7 @@ type LicenseInfo struct {
 // Container Struct to hold the configuration for Pod Container
 type Container struct {
 	Name               string            `json:"name"`
+	GPU                bool              `json:"gpu"`
 	CPULimit           string            `json:"cpu-limit"`
 	MemoryLimit        string            `json:"memory-limit"`
 	Image              string            `json:"image"`

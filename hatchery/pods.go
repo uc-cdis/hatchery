@@ -508,11 +508,27 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 
 	tolerations := []k8sv1.Toleration{}
 	nodeSelector := map[string]string{}
+
 	if !Config.Config.SkipNodeSelector {
+		// default (jupyter) placement
 		nodeSelector = map[string]string{
 			"role": "jupyter",
 		}
-		tolerations = []k8sv1.Toleration{{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule", TolerationSeconds: nil}}
+		tolerations = []k8sv1.Toleration{
+			{Key: "role", Operator: "Equal", Value: "jupyter", Effect: "NoSchedule"},
+		}
+	}
+
+	// If GPU requested, override with GPU settings
+	if hatchApp.GPU {
+		nodeSelector = map[string]string{
+			"role": "gpu",
+		}
+
+		tolerations = []k8sv1.Toleration{
+			{Key: "role", Operator: "Equal", Value: "gpu", Effect: "NoSchedule"},
+			{Key: "nvidia.com/gpu", Operator: "Exists", Effect: "NoSchedule"},
+		}
 	}
 
 	pod = &k8sv1.Pod{
@@ -596,6 +612,22 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			})
 		}
 
+		// Build resource lists
+		resourceLimits := k8sv1.ResourceList{
+			k8sv1.ResourceCPU:    resource.MustParse(hatchApp.CPULimit),
+			k8sv1.ResourceMemory: resource.MustParse(hatchApp.MemoryLimit),
+		}
+		resourceRequests := k8sv1.ResourceList{
+			k8sv1.ResourceCPU:    resource.MustParse(hatchApp.CPULimit),
+			k8sv1.ResourceMemory: resource.MustParse(hatchApp.MemoryLimit),
+		}
+
+		// Add GPU resources if requested
+		if hatchApp.GPU {
+			resourceLimits["nvidia.com/gpu"] = resource.MustParse("1")
+			resourceRequests["nvidia.com/gpu"] = resource.MustParse("1")
+		}
+
 		pod.Spec.Containers = append(pod.Spec.Containers, k8sv1.Container{
 			Name:  "hatchery-container",
 			Image: hatchApp.Image,
@@ -608,14 +640,8 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			Args:            hatchApp.Args,
 			VolumeMounts:    volumeMounts,
 			Resources: k8sv1.ResourceRequirements{
-				Limits: k8sv1.ResourceList{
-					k8sv1.ResourceCPU:    resource.MustParse(hatchApp.CPULimit),
-					k8sv1.ResourceMemory: resource.MustParse(hatchApp.MemoryLimit),
-				},
-				Requests: k8sv1.ResourceList{
-					k8sv1.ResourceCPU:    resource.MustParse(hatchApp.CPULimit),
-					k8sv1.ResourceMemory: resource.MustParse(hatchApp.MemoryLimit),
-				},
+				Limits:   resourceLimits,
+				Requests: resourceRequests,
 			},
 			Lifecycle: &lifeCycle,
 			ReadinessProbe: &k8sv1.Probe{
