@@ -585,8 +585,18 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 			Config.Logger.Printf("Debug: Launch template '%s' does not exist, creating it", launchTemplateName)
 			launchTemplate, err := ec2Svc.CreateLaunchTemplate(&ec2.CreateLaunchTemplateInput{
 				LaunchTemplateName: aws.String(launchTemplateName),
-				LaunchTemplateData: &ec2.RequestLaunchTemplateData{ // if changed, need to update launch template and compute env
+				LaunchTemplateData: &ec2.RequestLaunchTemplateData{
 					UserData: aws.String(userData),
+					BlockDeviceMappings: []*ec2.LaunchTemplateBlockDeviceMappingRequest{
+						{
+							DeviceName: aws.String("/dev/xvda"),
+							Ebs: &ec2.LaunchTemplateEbsBlockDeviceRequest{
+								VolumeSize:          aws.Int64(int64(Config.Config.NextflowGlobalConfig.BatchNodeDiskSize)),
+								VolumeType:          aws.String("gp3"),
+								DeleteOnTermination: aws.Bool(true),
+							},
+						},
+					},
 				},
 			})
 			if err != nil {
@@ -602,8 +612,63 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 	}
 
 	if len(launchTemplate.LaunchTemplates) == 1 {
-		// TODO: Make sure user data in the existing launch template matches the user data
-		// we want (MIDRC-749)
+		// Check if the launch template has block device mappings
+		ltVersionStr := fmt.Sprintf("%d", *launchTemplate.LaunchTemplates[0].LatestVersionNumber)
+		ltData, err := ec2Svc.DescribeLaunchTemplateVersions(&ec2.DescribeLaunchTemplateVersionsInput{
+			LaunchTemplateName: aws.String(launchTemplateName),
+			Versions:           []*string{aws.String(ltVersionStr)},
+		})
+		if err != nil {
+			Config.Logger.Printf("Error describing launch template version: %v", err)
+			return nil, err
+		}
+
+		// Check if block device mappings are missing or empty
+		if len(ltData.LaunchTemplateVersions) > 0 {
+			ltVersion := ltData.LaunchTemplateVersions[0]
+			if ltVersion.LaunchTemplateData.BlockDeviceMappings == nil || len(ltVersion.LaunchTemplateData.BlockDeviceMappings) == 0 {
+				Config.Logger.Printf("Debug: Launch template '%s' is missing block device mappings, updating", launchTemplateName)
+
+				// Create a new version with block device mappings
+				_, err := ec2Svc.CreateLaunchTemplateVersion(&ec2.CreateLaunchTemplateVersionInput{
+					LaunchTemplateName: aws.String(launchTemplateName),
+					SourceVersion:      aws.String(ltVersionStr),
+					VersionDescription: aws.String("Added block device mappings"),
+					LaunchTemplateData: &ec2.RequestLaunchTemplateData{
+						UserData: ltVersion.LaunchTemplateData.UserData, // Preserve existing user data
+						BlockDeviceMappings: []*ec2.LaunchTemplateBlockDeviceMappingRequest{
+							{
+								DeviceName: aws.String("/dev/xvda"), // Root volume device name (may vary by AMI)
+								Ebs: &ec2.LaunchTemplateEbsBlockDeviceRequest{
+									VolumeSize:          aws.Int64(int64(Config.Config.NextflowGlobalConfig.BatchNodeDiskSize)),
+									VolumeType:          aws.String("gp3"),
+									DeleteOnTermination: aws.Bool(true),
+								},
+							},
+						},
+					},
+				})
+				if err != nil {
+					Config.Logger.Printf("Error updating launch template with block device mappings: %v", err)
+					return nil, err
+				}
+
+				// Set the new version as default
+				_, err = ec2Svc.ModifyLaunchTemplate(&ec2.ModifyLaunchTemplateInput{
+					LaunchTemplateName: aws.String(launchTemplateName),
+					DefaultVersion:     aws.String("$Latest"),
+				})
+				if err != nil {
+					Config.Logger.Printf("Error setting new version as default: %v", err)
+					return nil, err
+				}
+
+				Config.Logger.Printf("Debug: Updated launch template '%s' with block device mappings", launchTemplateName)
+			} else {
+				Config.Logger.Printf("Debug: Launch template '%s' already has block device mappings", launchTemplateName)
+			}
+		}
+
 		Config.Logger.Printf("Debug: Launch template '%s' already exists", launchTemplateName)
 		return launchTemplate.LaunchTemplates[0].LaunchTemplateName, nil
 	}
