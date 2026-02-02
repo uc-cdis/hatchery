@@ -368,7 +368,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	var sideCarRunAsUser int64
 	var sideCarRunAsGroup int64
 	var hostToContainer = k8sv1.MountPropagationHostToContainer
-	var bidirectional = k8sv1.MountPropagationBidirectional
+	// var bidirectional = k8sv1.MountPropagationBidirectional
 	var envVars []k8sv1.EnvVar
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
