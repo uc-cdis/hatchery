@@ -547,7 +547,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 					Name:  "fuse-container",
 					Image: hatchConfig.Config.Sidecar.Image,
 					SecurityContext: &k8sv1.SecurityContext{
-						Privileged: &trueVal,
+						Privileged: &falseVal,
 						RunAsUser:  &sideCarRunAsUser,
 						RunAsGroup: &sideCarRunAsGroup,
 					},
