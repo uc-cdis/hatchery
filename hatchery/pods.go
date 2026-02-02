@@ -491,7 +491,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		{
 			MountPath:        "/data",
 			Name:             "shared-data",
-			MountPropagation: &bidirectional,
+			// MountPropagation: &hostToContainer,
 		},
 		{
 			MountPath: "/.gen3",
