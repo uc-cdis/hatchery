@@ -597,8 +597,11 @@ func (pt *PodTracker) updatePayModelCost(eventKey string, userName string, podPa
 	}
 
 	if peAttr, ok := result.Attributes["processed_events"]; ok {
-		if len(peAttr.SS) > 1000 { // threshold
-			pt.cleanupProcessedEvents(userName, podPaymodelID)
+		if len(peAttr.SS) > 1000 { // threshold of number of PE attributes
+			err = pt.cleanupProcessedEvents(userName, podPaymodelID)
+			if err != nil {
+				Config.Logger.Printf("Cost tracking PE attributes cleanup failed")
+			}
 		}
 	}
 
