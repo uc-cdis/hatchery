@@ -361,9 +361,10 @@ func (pt *PodTracker) handlePodDeleted(pod *v1.Pod, source string) {
 		delete(pt.podLifecycles, key)
 	}
 	Config.Logger.Printf("🧑‍💻 User and workpaceid info %v, %s", userName, podPaymodelID)
+	eventKey := fmt.Sprintf("%s/%s", pod.UID, pod.ResourceVersion)
 	// Update pay model cost if we have user info
 	if userName != "" && podPaymodelID != "" {
-		if err := UpdatePayModelCost(userName, podPaymodelID, cost.TotalCost); err != nil {
+		if err := UpdatePayModelCost(eventKey, userName, podPaymodelID, cost.TotalCost); err != nil {
 			Config.Logger.Printf("⚠️  Failed to update cost for user %s: %v", userName, err)
 		}
 	}
@@ -506,7 +507,7 @@ func (pt *PodTracker) createDefaultTrialPayPayModel(userName string, podPaymodel
 }
 
 // UpdatePayModelCost adds cost to a user's pay model in DynamoDB
-func UpdatePayModelCost(userName string, podPaymodelID string, additionalCost float64) error {
+func UpdatePayModelCost(eventKey string, userName string, podPaymodelID string, additionalCost float64) error {
 	if Config.Config.PayModelsDynamodbTable == "" {
 		return fmt.Errorf("no pay models DynamoDB table configured")
 	}
@@ -531,19 +532,19 @@ func UpdatePayModelCost(userName string, podPaymodelID string, additionalCost fl
 				S: aws.String(podPaymodelID),
 			},
 		},
+		UpdateExpression:    aws.String("SET #C = if_not_exists(#C, :zero) + :inc ADD #PE :evt"),
+		ConditionExpression: aws.String("NOT contains(#PE, :evtVal)"),
 		ExpressionAttributeNames: map[string]*string{
-			"#C": aws.String("total-usage"),
+			"#C":  aws.String("total-usage"),
+			"#PE": aws.String("processed_events"),
 		},
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":inc": {
-				N: aws.String(fmt.Sprintf("%.4f", additionalCost)),
-			},
-			":zero": {
-				N: aws.String("0"),
-			},
+			":inc":    {N: aws.String(fmt.Sprintf("%.4f", additionalCost))},
+			":zero":   {N: aws.String("0")},
+			":evt":    {SS: []*string{aws.String(eventKey)}},
+			":evtVal": {S: aws.String(eventKey)},
 		},
-		UpdateExpression: aws.String("SET #C = if_not_exists(#C, :zero) + :inc"),
-		ReturnValues:     aws.String("UPDATED_NEW"),
+		ReturnValues: aws.String("UPDATED_NEW"),
 	}
 
 	Config.Logger.Printf("Attempting to update item in table")
@@ -553,6 +554,10 @@ func UpdatePayModelCost(userName string, podPaymodelID string, additionalCost fl
 			strings.Contains(err.Error(), "is not authorized") {
 			Config.Logger.Printf("WARNING: No DynamoDB update permissions. Cost tracking disabled for user %s", userName)
 			Config.Logger.Printf("📝 Updated cost tracking: %v", input)
+			return nil
+		}
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
+			Config.Logger.Printf("Cost tracking update failed on idempotent condition check, DynamoDB has already been updated by another replica")
 			return nil
 		}
 		return fmt.Errorf("failed to update pay model cost: %v", err)
