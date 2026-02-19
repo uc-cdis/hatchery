@@ -396,8 +396,9 @@ func (pt *PodTracker) cleanupProcessedEvents(userName, podPaymodelID string) err
 	if err != nil {
 		return fmt.Errorf("failed to create AWS session: %v", err)
 	}
+	payModelTableConfig := getPayModelTableCreds(sess)
 
-	dynamodbSvc := dynamodb.New(sess)
+	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
 
 	_, err = dynamodbSvc.UpdateItem(&dynamodb.UpdateItemInput{
 		TableName: aws.String(Config.Config.PayModelsDynamodbTable),
@@ -496,7 +497,9 @@ func (pt *PodTracker) createDefaultTrialPayPayModel(userName string, podPaymodel
 		return nil, fmt.Errorf("failed to create AWS session: %v", err)
 	}
 
-	dynamodbSvc := dynamodb.New(sess)
+	payModelTableConfig := getPayModelTableCreds(sess)
+
+	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
 
 	defaultPayModel := Config.Config.DefaultPayModel
 	defaultPayModel.Id = payModelID
@@ -548,7 +551,9 @@ func (pt *PodTracker) updatePayModelCost(eventKey string, userName string, podPa
 		return fmt.Errorf("failed to create AWS session: %v", err)
 	}
 
-	dynamodbSvc := dynamodb.New(sess)
+	payModelTableConfig := getPayModelTableCreds(sess)
+
+	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
 	// get the current cost
 	input := &dynamodb.UpdateItemInput{
 		TableName: aws.String(Config.Config.PayModelsDynamodbTable),
