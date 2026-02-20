@@ -31,6 +31,7 @@ type containerOption struct {
 	CPULimit      string `json:"cpu-limit"`
 	MemoryLimit   string `json:"memory-limit"`
 	ID            string `json:"id"`
+	GPU           bool   `json:"gpu"`
 	IdleTimeLimit int    `json:"idle-time-limit"`
 }
 
@@ -363,6 +364,7 @@ func getOptionOutputForContainer(containerId string, containerSettings Container
 		Name:        containerSettings.Name,
 		CPULimit:    containerSettings.CPULimit,
 		MemoryLimit: containerSettings.MemoryLimit,
+		GPU:         containerSettings.GPU,
 		ID:          containerId,
 	}
 	c.IdleTimeLimit = -1

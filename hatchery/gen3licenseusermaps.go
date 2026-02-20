@@ -42,8 +42,9 @@ var initializeDbConfig = func() *DbConfig {
 			// Endpoint: aws.String("http://localhost:8000"),
 		},
 	}))
+	payModelTableConfig := getPayModelTableCreds(sess)
 	return &DbConfig{
-		DynamoDb: dynamodb.New(sess),
+		DynamoDb: dynamodb.New(sess, &payModelTableConfig),
 	}
 }
 

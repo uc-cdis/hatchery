@@ -361,9 +361,10 @@ func (pt *PodTracker) handlePodDeleted(pod *v1.Pod, source string) {
 		delete(pt.podLifecycles, key)
 	}
 	Config.Logger.Printf("🧑‍💻 User and workpaceid info %v, %s", userName, podPaymodelID)
+	eventKey := fmt.Sprintf("%s/%s", pod.UID, pod.ResourceVersion)
 	// Update pay model cost if we have user info
 	if userName != "" && podPaymodelID != "" {
-		if err := UpdatePayModelCost(userName, podPaymodelID, cost.TotalCost); err != nil {
+		if err := pt.updatePayModelCost(eventKey, userName, podPaymodelID, cost.TotalCost); err != nil {
 			Config.Logger.Printf("⚠️  Failed to update cost for user %s: %v", userName, err)
 		}
 	}
@@ -385,6 +386,35 @@ func (pt *PodTracker) handlePodModified(pod *v1.Pod, source string) {
 		pt.mu.Unlock()
 		Config.Logger.Printf("📍 Updated node for pod %s: %s", pod.Name, pod.Spec.NodeName)
 	}
+}
+
+func (pt *PodTracker) cleanupProcessedEvents(userName, podPaymodelID string) error {
+	sess, err := session.NewSession(&aws.Config{
+		Region:                        aws.String("us-east-1"),
+		CredentialsChainVerboseErrors: aws.Bool(true),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create AWS session: %v", err)
+	}
+	payModelTableConfig := getPayModelTableCreds(sess)
+
+	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
+
+	_, err = dynamodbSvc.UpdateItem(&dynamodb.UpdateItemInput{
+		TableName: aws.String(Config.Config.PayModelsDynamodbTable),
+		Key: map[string]*dynamodb.AttributeValue{
+			"user_id":          {S: aws.String(userName)},
+			"bmh_workspace_id": {S: aws.String(podPaymodelID)},
+		},
+		UpdateExpression: aws.String("REMOVE #PE"),
+		ExpressionAttributeNames: map[string]*string{
+			"#PE": aws.String("processed_events"),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("Failed to cleanup processed_events: %v", err)
+	}
+	return nil
 }
 
 // Get standardized pod key
@@ -467,7 +497,9 @@ func (pt *PodTracker) createDefaultTrialPayPayModel(userName string, podPaymodel
 		return nil, fmt.Errorf("failed to create AWS session: %v", err)
 	}
 
-	dynamodbSvc := dynamodb.New(sess)
+	payModelTableConfig := getPayModelTableCreds(sess)
+
+	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
 
 	defaultPayModel := Config.Config.DefaultPayModel
 	defaultPayModel.Id = payModelID
@@ -505,8 +537,8 @@ func (pt *PodTracker) createDefaultTrialPayPayModel(userName string, podPaymodel
 	return &defaultPayModel, nil
 }
 
-// UpdatePayModelCost adds cost to a user's pay model in DynamoDB
-func UpdatePayModelCost(userName string, podPaymodelID string, additionalCost float64) error {
+// updatePayModelCost adds cost to a user's pay model in DynamoDB
+func (pt *PodTracker) updatePayModelCost(eventKey string, userName string, podPaymodelID string, additionalCost float64) error {
 	if Config.Config.PayModelsDynamodbTable == "" {
 		return fmt.Errorf("no pay models DynamoDB table configured")
 	}
@@ -519,7 +551,9 @@ func UpdatePayModelCost(userName string, podPaymodelID string, additionalCost fl
 		return fmt.Errorf("failed to create AWS session: %v", err)
 	}
 
-	dynamodbSvc := dynamodb.New(sess)
+	payModelTableConfig := getPayModelTableCreds(sess)
+
+	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
 	// get the current cost
 	input := &dynamodb.UpdateItemInput{
 		TableName: aws.String(Config.Config.PayModelsDynamodbTable),
@@ -531,19 +565,19 @@ func UpdatePayModelCost(userName string, podPaymodelID string, additionalCost fl
 				S: aws.String(podPaymodelID),
 			},
 		},
+		UpdateExpression:    aws.String("SET #C = if_not_exists(#C, :zero) + :inc ADD #PE :evt"),
+		ConditionExpression: aws.String("NOT contains(#PE, :evtVal)"),
 		ExpressionAttributeNames: map[string]*string{
-			"#C": aws.String("total-usage"),
+			"#C":  aws.String("total-usage"),
+			"#PE": aws.String("processed_events"),
 		},
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":inc": {
-				N: aws.String(fmt.Sprintf("%.4f", additionalCost)),
-			},
-			":zero": {
-				N: aws.String("0"),
-			},
+			":inc":    {N: aws.String(fmt.Sprintf("%.4f", additionalCost))},
+			":zero":   {N: aws.String("0")},
+			":evt":    {SS: []*string{aws.String(eventKey)}},
+			":evtVal": {S: aws.String(eventKey)},
 		},
-		UpdateExpression: aws.String("SET #C = if_not_exists(#C, :zero) + :inc"),
-		ReturnValues:     aws.String("UPDATED_NEW"),
+		ReturnValues: aws.String("UPDATED_NEW"),
 	}
 
 	Config.Logger.Printf("Attempting to update item in table")
@@ -555,12 +589,25 @@ func UpdatePayModelCost(userName string, podPaymodelID string, additionalCost fl
 			Config.Logger.Printf("📝 Updated cost tracking: %v", input)
 			return nil
 		}
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
+			Config.Logger.Printf("Cost tracking update failed on idempotent condition check, DynamoDB has already been updated by another replica")
+			return nil
+		}
 		return fmt.Errorf("failed to update pay model cost: %v", err)
 	}
 
 	if result.Attributes["total-usage"] != nil {
 		Config.Logger.Printf("Updated cost for user %s, workspace %s: $%s (added: $%.4f)",
 			userName, podPaymodelID, *result.Attributes["total-usage"].N, additionalCost)
+	}
+
+	if peAttr, ok := result.Attributes["processed_events"]; ok {
+		if len(peAttr.SS) > 1000 { // threshold of number of PE attributes
+			err = pt.cleanupProcessedEvents(userName, podPaymodelID)
+			if err != nil {
+				Config.Logger.Printf("Cost tracking PE attributes cleanup failed")
+			}
+		}
 	}
 
 	return nil
