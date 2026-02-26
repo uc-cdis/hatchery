@@ -412,7 +412,7 @@ func (pt *PodTracker) cleanupProcessedEvents(userName, podPaymodelID string) err
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to cleanup processed_events: %v", err)
+		return fmt.Errorf("failed to cleanup processed_events: %v", err)
 	}
 	return nil
 }
@@ -615,7 +615,7 @@ func (pt *PodTracker) updatePayModelCost(eventKey string, userName string, podPa
 
 // extractUserNameFromPod extracts the username from pod labels or annotations
 func (pt *PodTracker) extractUserNameFromPod(pod *v1.Pod) string {
-	if username, exists := pod.ObjectMeta.Annotations["gen3username"]; exists {
+	if username, exists := pod.Annotations["gen3username"]; exists {
 		return username
 	} else {
 		fmt.Println("gen3username key not found. Could not extract username from Pod")
@@ -625,7 +625,7 @@ func (pt *PodTracker) extractUserNameFromPod(pod *v1.Pod) string {
 
 // extractPaymodelIDFromPod extracts the username from pod labels or annotations
 func (pt *PodTracker) extractPaymodelIDFromPod(pod *v1.Pod) string {
-	if podPaymodelID, exists := pod.ObjectMeta.Annotations["bmh_workspace_id"]; exists {
+	if podPaymodelID, exists := pod.Annotations["bmh_workspace_id"]; exists {
 		return podPaymodelID
 	} else {
 		fmt.Println("paymodel_type key not found. Could not extract username from Pod")

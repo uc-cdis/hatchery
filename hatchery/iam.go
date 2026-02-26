@@ -192,7 +192,7 @@ func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string
 					}
 				}
 				if policyArn == "" {
-					return "", fmt.Errorf("Unable to find ARN for existing policy '%s'", policyName)
+					return "", fmt.Errorf("unable to find ARN for existing policy '%s'", policyName)
 				}
 
 				// there can only be up to 5 versions, so delete old versions

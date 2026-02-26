@@ -69,13 +69,15 @@ func (authzConfig *AuthzConfig) UnmarshalJSON(data []byte) error {
 }
 
 func ValidateAuthzConfig(logger *log.Logger, authzConfig AuthzConfig) error {
-	if authzConfig.Version == 0 { // default int value "0" is interpreted as "no authz config"
+	switch authzConfig.Version {
+	case 0:
 		return nil
-	} else if authzConfig.Version == 0.1 {
+	case 0.1:
 		return validateAuthzConfigVersion_0_1(authzConfig.AuthzVersion_0_1)
-	} else {
-		return fmt.Errorf("Container authz config version '%v' is not valid", authzConfig.Version)
+	default:
+		return fmt.Errorf("container authz config version '%v' is not valid", authzConfig.Version)
 	}
+
 }
 
 func validateAuthzConfigVersion_0_1(authzConfig AuthzVersion_0_1) error {
@@ -264,7 +266,11 @@ var arboristAuthRequest = func(body string) (bool, error) {
 	if resp.StatusCode != 200 {
 		return false, fmt.Errorf("arborist returned non-200 code during authorization check: %v", resp.StatusCode)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			Config.Logger.Printf("Error closing response body: %v", err)
+		}
+	}()
 
 	authRequestResponse := new(AuthRequestResponse)
 	err = json.NewDecoder(resp.Body).Decode(authRequestResponse)

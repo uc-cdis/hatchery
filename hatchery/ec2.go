@@ -45,7 +45,7 @@ func (creds *CREDS) describeWorkspaceNetwork(userName string) (*NetworkInfo, err
 	}
 	// TODO: BETTER ERROR HANDLING HERE!!
 	if len(vpcs.Vpcs) == 0 {
-		return nil, fmt.Errorf("No existing vpcs found.")
+		return nil, fmt.Errorf("no existing vpcs found")
 	}
 
 	subnetInput := &ec2.DescribeSubnetsInput{
