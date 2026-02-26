@@ -135,19 +135,19 @@ func (model *ComposeFull) Sanitize() error {
 		for _, envEntry := range service.Environment {
 			kvSlice := strings.SplitN(envEntry, "=", 2)
 			if len(kvSlice) != 2 {
-				return fmt.Errorf("Could not parse environment entry: %v", envEntry)
+				return fmt.Errorf("could not parse environment entry: %v", envEntry)
 			}
 		}
 		for _, securityContextEntry := range service.SecurityContext {
 			kvSlice := strings.SplitN(securityContextEntry, "=", 2)
 			if len(kvSlice) != 2 {
-				return fmt.Errorf("Could not parse security_context entry: %v", securityContextEntry)
+				return fmt.Errorf("could not parse security_context entry: %v", securityContextEntry)
 			}
 		}
 		for _, portEntry := range service.Ports {
 			portSlice := strings.SplitN(portEntry, ":", 2)
 			if len(portSlice) != 2 {
-				return fmt.Errorf("Could not parse port entry: %v", portEntry)
+				return fmt.Errorf("could not parse port entry: %v", portEntry)
 			}
 		}
 		if model.RootService == "" {
@@ -230,7 +230,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 				} else if strings.HasPrefix(sourceDrive, sharedMemoryVolumePrefix) {
 					mountSharedMemory = true
 				} else {
-					return mountUserVolume, mountSharedMemory, fmt.Errorf("Unknown mount point: %v", source)
+					return mountUserVolume, mountSharedMemory, fmt.Errorf("unknown mount point: %v", source)
 				}
 			}
 			friend.VolumeMounts = friend.VolumeMounts[:volumeMountsIndex]
@@ -242,7 +242,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 		for idx, envEntry := range service.Environment {
 			kvSlice := strings.SplitN(envEntry, "=", 2)
 			if len(kvSlice) != 2 {
-				return mountUserVolume, mountSharedMemory, fmt.Errorf("Could not parse environment entry: %v", envEntry)
+				return mountUserVolume, mountSharedMemory, fmt.Errorf("could not parse environment entry: %v", envEntry)
 			}
 			friend.Env[idx].Name = kvSlice[0]
 			friend.Env[idx].Value = kvSlice[1]
@@ -254,7 +254,7 @@ func (service *ComposeService) ToK8sContainer(friend *k8sv1.Container) (mountUse
 		for _, securityContextEntry := range service.SecurityContext {
 			kvSlice := strings.SplitN(securityContextEntry, "=", 2)
 			if len(kvSlice) != 2 {
-				return mountUserVolume, mountSharedMemory, fmt.Errorf("Could not parse security_context entry: %v", securityContextEntry)
+				return mountUserVolume, mountSharedMemory, fmt.Errorf("could not parse security_context entry: %v", securityContextEntry)
 			}
 			if kvSlice[0] == "privileged" {
 				priv := false
@@ -313,7 +313,7 @@ func (model *ComposeFull) BuildHatchApp() (*Container, error) {
 	for _, portEntry := range service.Ports {
 		portSlice := strings.SplitN(portEntry, ":", 2)
 		if len(portSlice) != 2 {
-			return nil, fmt.Errorf("Could not parse port entry: %v", portEntry)
+			return nil, fmt.Errorf("could not parse port entry: %v", portEntry)
 		}
 		if portSlice[0] == magicPort {
 			portNum, err := strconv.Atoi(portSlice[1])

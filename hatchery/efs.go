@@ -25,7 +25,7 @@ func (creds *CREDS) getEFSFileSystem(userName string, svc *efs.EFS) (*efs.Descri
 	}
 	result, err := svc.DescribeFileSystems(input)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to describe EFS FS: %s", err)
+		return nil, fmt.Errorf("failed to describe EFS FS: %s", err)
 	}
 	// return empty struct if no filesystems are found
 	if len(result.FileSystems) == 0 {
@@ -51,7 +51,7 @@ func (creds *CREDS) createMountTarget(FileSystemId string, svc *efs.EFS, userNam
 
 	result, err := svc.CreateMountTarget(input)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create mount target: %s", err)
+		return nil, fmt.Errorf("failed to create mount target: %s", err)
 	}
 	return result, nil
 }
@@ -87,7 +87,7 @@ func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc 
 
 		result, err := svc.CreateAccessPoint(input)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to create accessPoint: %s", err)
+			return nil, fmt.Errorf("failed to create accessPoint: %s", err)
 		}
 		return result.AccessPointId, nil
 
@@ -129,7 +129,7 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 
 		result, err := svc.CreateFileSystem(input)
 		if err != nil {
-			return nil, fmt.Errorf("Error creating EFS filesystem: %s", err)
+			return nil, fmt.Errorf("error creating EFS filesystem: %s", err)
 		}
 
 		exisitingFS, _ = creds.getEFSFileSystem(userName, svc)
@@ -143,12 +143,12 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 		// Create mount target
 		mountTarget, err := creds.createMountTarget(*result.FileSystemId, svc, userName)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to create EFS MountTarget: %s", err)
+			return nil, fmt.Errorf("failed to create EFS MountTarget: %s", err)
 		}
 		Config.Logger.Printf("MountTarget created: %s", *mountTarget.MountTargetId)
 		accessPoint, err := creds.createAccessPoint(*result.FileSystemId, userName, svc)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to create EFS AccessPoint: %s", err)
+			return nil, fmt.Errorf("failed to create EFS AccessPoint: %s", err)
 		}
 		Config.Logger.Printf("AccessPoint created: %s", *accessPoint)
 
@@ -185,7 +185,7 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 		if len(exMountTarget.MountTargets) == 0 {
 			mountTarget, err := creds.createMountTarget(*exisitingFS.FileSystems[0].FileSystemId, svc, userName)
 			if err != nil {
-				return nil, fmt.Errorf("Failed to create EFS MountTarget: %s", err)
+				return nil, fmt.Errorf("failed to create EFS MountTarget: %s", err)
 			}
 			Config.Logger.Printf("MountTarget created: %s", *mountTarget.MountTargetId)
 		}

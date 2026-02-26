@@ -1,8 +1,13 @@
+ARG AZLINUX_BASE_VERSION=hardened
 FROM quay.io/cdis/golang:1.23-bookworm AS build-deps
 
 ENV CGO_ENABLED=0
 ENV GOOS=linux
 ENV GOARCH=amd64
+
+# Use Go toolchains (Go 1.21+ feature) to build with a newer Go toolchain
+# Pick the Go 1.2x.x that is needed for the build.
+ENV GOTOOLCHAIN=go1.26.0
 
 WORKDIR $GOPATH/src/github.com/uc-cdis/hatchery/
 
@@ -19,11 +24,10 @@ RUN GITCOMMIT=$(git rev-parse HEAD) \
     -ldflags="-X 'github.com/uc-cdis/hatchery/hatchery/version.GitCommit=${GITCOMMIT}' -X 'github.com/uc-cdis/hatchery/hatchery/version.GitVersion=${GITVERSION}'" \
     -o /hatchery
 
-RUN echo "nobody:x:65534:65534:Nobody:/:" > /etc_passwd
 
-FROM scratch
-COPY --from=build-deps /etc_passwd /etc/passwd
-COPY --from=build-deps /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+FROM quay.io/cdis/amazonlinux-base:${AZLINUX_BASE_VERSION}
+USER gen3
+
+ENV GOFIPS140=latest
 COPY --from=build-deps /hatchery /hatchery
-USER nobody
 CMD ["/hatchery"]

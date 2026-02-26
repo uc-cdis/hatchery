@@ -25,18 +25,19 @@ func main() {
 	}
 	os.Args = cleanedArgs
 
+	logger := log.New(os.Stdout, "", log.LstdFlags)
+
 	if len(cleanedArgs) > 2 && strings.HasSuffix(cleanedArgs[1], "-config") {
 		configPath = cleanedArgs[2]
 	} else if len(cleanedArgs) > 1 {
-		os.Stderr.WriteString(
+		if _, err := os.Stderr.WriteString(
 			`Use: hatchery -config path/to/hatchery.json
 		- also harvests dockstore/bla.yml app definitions where dockstore/
-		  is in the same folder as hatchery.json
-`)
+		is in the same folder as hatchery.json`); err != nil {
+			logger.Printf("Failed to write error message to stderr: %v", err)
+		}
 		return
 	}
-
-	logger := log.New(os.Stdout, "", log.LstdFlags)
 
 	var baseDir string
 	var err error

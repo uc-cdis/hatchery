@@ -19,7 +19,9 @@ func RegisterSystem() {
 }
 
 func systemStatus(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Healthy")
+	if _, err := fmt.Fprintf(w, "Healthy"); err != nil {
+		Config.Logger.Printf("Error writing system status response: %v", err)
+	}
 }
 
 func systemVersion(w http.ResponseWriter, r *http.Request) {
@@ -30,5 +32,7 @@ func systemVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprint(w, string(out))
+	if _, err = fmt.Fprint(w, string(out)); err != nil {
+		Config.Logger.Printf("Error writing status response: %v", err)
+	}
 }

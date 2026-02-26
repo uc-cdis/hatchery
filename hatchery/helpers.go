@@ -145,7 +145,7 @@ func getAmbassadorURL() string {
 
 func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIKeyStruct, err error) {
 	if accessToken == "" {
-		return nil, errors.New("No valid access token")
+		return nil, errors.New("no valid access token")
 	}
 
 	fenceAPIKeyURL := getFenceURL() + "credentials/api/"
@@ -159,7 +159,11 @@ func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIK
 	if resp != nil && resp.StatusCode != 200 {
 		return nil, errors.New("Error occurred when creating API key with error code " + strconv.Itoa(resp.StatusCode))
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			Config.Logger.Printf("Error closing response body: %v", err)
+		}
+	}()
 
 	fenceApiKeyResponse := new(APIKeyStruct)
 	err = json.NewDecoder(resp.Body).Decode(fenceApiKeyResponse)
@@ -171,7 +175,7 @@ func getAPIKeyWithContext(ctx context.Context, accessToken string) (apiKey *APIK
 
 func deleteAPIKeyWithContext(ctx context.Context, accessToken string, apiKeyID string) error {
 	if accessToken == "" {
-		return errors.New("No valid access token")
+		return errors.New("no valid access token")
 	}
 
 	fenceDeleteAPIKeyURL := getFenceURL() + "credentials/api/" + apiKeyID
@@ -187,7 +191,7 @@ func deleteAPIKeyWithContext(ctx context.Context, accessToken string, apiKeyID s
 
 func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (lastActivityTime int64, err error) {
 	if accessToken == "" {
-		return -1, errors.New("No valid access token")
+		return -1, errors.New("no valid access token")
 	}
 
 	workspaceKernelStatusURL := getAmbassadorURL() + "api/status"
@@ -198,7 +202,11 @@ func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (last
 	if resp != nil && resp.StatusCode != 200 {
 		return -1, errors.New("Error occurred when getting workspace kernel status with error code " + strconv.Itoa(resp.StatusCode))
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			Config.Logger.Printf("Error closing response body: %v", err)
+		}
+	}()
 
 	workspaceKernelStatusResponse := new(WorkspaceKernelStatusStruct)
 	err = json.NewDecoder(resp.Body).Decode(workspaceKernelStatusResponse)
