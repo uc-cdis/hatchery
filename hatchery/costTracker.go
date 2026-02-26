@@ -412,7 +412,7 @@ func (pt *PodTracker) cleanupProcessedEvents(userName, podPaymodelID string) err
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to cleanup processed_events: %v", err)
+		return fmt.Errorf("failed to cleanup processed_events: %v", err)
 	}
 	return nil
 }
