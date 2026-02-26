@@ -18,7 +18,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	k8sv1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -65,15 +64,21 @@ func home(w http.ResponseWriter, r *http.Request) {
 	htmlHeader := `<html>
 	<head>Gen3 Hatchery</head>
 	<body>`
-	fmt.Fprintln(w, htmlHeader)
+	if _, err := fmt.Fprintln(w, htmlHeader); err != nil {
+		Config.Logger.Printf("Error writing html header: %v", err)
+	}
 
 	for k, v := range Config.ContainersMap {
-		fmt.Fprintf(w, "<h1><a href=\"%s/launch?hash=%s\">Launch %s - %s CPU - %s Memory</a></h1>", Config.Config.SubDir, k, v.Name, v.CPULimit, v.MemoryLimit)
+		if _, err := fmt.Fprintf(w, "<h1><a href=\"%s/launch?hash=%s\">Launch %s - %s CPU - %s Memory</a></h1>", Config.Config.SubDir, k, v.Name, v.CPULimit, v.MemoryLimit); err != nil {
+			Config.Logger.Printf("Error writing launch link to response: %v", err)
+		}
 	}
 
 	htmlFooter := `</body>
 	</html>`
-	fmt.Fprintln(w, htmlFooter)
+	if _, err := fmt.Fprintln(w, htmlFooter); err != nil {
+		Config.Logger.Printf("Error writing html footer: %v", err)
+	}
 }
 
 type PodCostInfo struct {
@@ -124,7 +129,7 @@ func allCosts(w http.ResponseWriter, r *http.Request) {
 
 	for _, pod := range pods.Items {
 		// Skip if not running
-		if pod.Status.Phase != v1.PodRunning {
+		if pod.Status.Phase != k8sv1.PodRunning {
 			continue
 		}
 
@@ -248,7 +253,9 @@ func paymodels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fmt.Fprint(w, string(out))
+	if _, err = fmt.Fprint(w, string(out)); err != nil {
+		Config.Logger.Printf("Error writing paymodel response: %v", err)
+	}
 }
 
 func allpaymodels(w http.ResponseWriter, r *http.Request) {
@@ -272,7 +279,9 @@ func allpaymodels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fmt.Fprint(w, string(out))
+	if _, err = fmt.Fprint(w, string(out)); err != nil {
+		Config.Logger.Printf("Error writing allpaymodels response: %v", err)
+	}
 }
 
 func setpaymodel(w http.ResponseWriter, r *http.Request) {
@@ -309,7 +318,9 @@ func setpaymodel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fmt.Fprint(w, string(out))
+	if _, err = fmt.Fprint(w, string(out)); err != nil {
+		Config.Logger.Printf("Error writing paymodel response: %v", err)
+	}
 }
 
 func status(w http.ResponseWriter, r *http.Request) {
@@ -328,7 +339,9 @@ func status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprint(w, string(out))
+	if _, err = fmt.Fprint(w, string(out)); err != nil {
+		Config.Logger.Printf("Error writing status response: %v", err)
+	}
 }
 
 func resetPaymodels(w http.ResponseWriter, r *http.Request) {
@@ -356,7 +369,9 @@ func resetPaymodels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprint(w, "Current Paymodel has been reset")
+	if _, err = fmt.Fprint(w, "Current Paymodel has been reset"); err != nil {
+		Config.Logger.Printf("Error writing reset paymodel response: %v", err)
+	}
 }
 
 func getOptionOutputForContainer(containerId string, containerSettings Container) containerOption {
@@ -410,7 +425,9 @@ func options(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		fmt.Fprint(w, string(out))
+		if _, err = fmt.Fprint(w, string(out)); err != nil {
+			Config.Logger.Printf("Error writing status response: %v", err)
+		}
 		return
 	}
 
@@ -437,7 +454,9 @@ func options(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprint(w, string(out))
+	if _, err = fmt.Fprint(w, string(out)); err != nil {
+		Config.Logger.Printf("Error writing status response: %v", err)
+	}
 }
 
 func getWorkspaceFlavor(container Container) string {
@@ -612,7 +631,9 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			// TODO: Do more sanity checks before returning 200.
 			w.WriteHeader(http.StatusOK)
 			go launchEcsWorkspaceWrapper(userName, hash, accessToken, *payModel, envVarsEcs)
-			fmt.Fprintf(w, "Launch accepted")
+			if _, err = fmt.Fprintf(w, "Launch accepted"); err != nil {
+				Config.Logger.Printf("Error writing launch accepted message to response: %v", err)
+			}
 			return
 		} else {
 			err = createExternalK8sPod(r.Context(), hash, userName, accessToken, *payModel, envVars, payModelId)
@@ -623,7 +644,9 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fmt.Fprintf(w, "Success")
+	if _, err = fmt.Fprintf(w, "Success"); err != nil {
+		Config.Logger.Printf("Error writing success message to response: %v", err)
+	}
 }
 
 func terminate(w http.ResponseWriter, r *http.Request) {
@@ -680,7 +703,9 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 			return
 		} else {
 			Config.Logger.Printf("Succesfully terminated all resources related to ECS workspace for user %s", userName)
-			fmt.Fprintf(w, "Terminated ECS workspace")
+			if _, err = fmt.Fprintf(w, "Terminated ECS workspace"); err != nil {
+				Config.Logger.Printf("Error writing terminated ECS workspace response: %v", err)
+			}
 		}
 	} else {
 		err := deleteK8sPod(r.Context(), userName, accessToken, payModel)
@@ -689,7 +714,9 @@ func terminate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		Config.Logger.Printf("Terminated workspace for user %s", userName)
-		fmt.Fprintf(w, "Terminated workspace")
+		if _, err = fmt.Fprintf(w, "Terminated workspace"); err != nil {
+			Config.Logger.Printf("Error writing terminated workspace response: %v", err)
+		}
 	}
 
 	go func() {
@@ -830,7 +857,9 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprint(w, string(out))
+	if _, err = fmt.Fprint(w, string(out)); err != nil {
+		Config.Logger.Printf("Error writing status response: %v", err)
+	}
 }
 
 func getMountFileContents(fileId string, userName string) (string, error) {
