@@ -437,6 +437,8 @@ func ensureS3PVandPVC(
 					"dir-mode=555",
 					fmt.Sprintf("region %s", region),
 					// fmt.Sprintf("prefix %s", prefix),
+					// Caches directory listings and file stats for 1 hour (fixes the 77x walk/stat slowdown)
+					"metadata-ttl=3600",
 				},
 				PersistentVolumeSource: k8sv1.PersistentVolumeSource{
 					CSI: &k8sv1.CSIPersistentVolumeSource{
@@ -444,6 +446,9 @@ func ensureS3PVandPVC(
 						VolumeHandle: volumeHandle, // must be unique
 						VolumeAttributes: map[string]string{
 							"bucketName": bucket,
+							// Enables safe file caching using an ephemeral emptyDir on the K8s node
+							// and hard-caps the cache at 10 Gigabytes to prevent disk pressure
+							"cacheEmptyDirSizeLimit": "10Gi",
 						},
 					},
 				},
