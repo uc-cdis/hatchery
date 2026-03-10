@@ -398,87 +398,92 @@ func s3PrefixForUser(userName string) string {
 }
 
 func ensureS3PVandPVC(
-	ctx context.Context,
-	podClient corev1.CoreV1Interface,
-	namespace string,
-	userName string,
-	bucket string,
-	region string,
+    ctx context.Context,
+    podClient corev1.CoreV1Interface,
+    namespace string,
+    userName string,
+    bucket string,
+    region string,
 ) (pvcName string, err error) {
 
-	pvName, pvcName, volumeHandle := s3NamesForUser(userName)
-	// Commented out for now as we don't need a prefix, this bucket will be mounted at / for all users, but read only.
-	// This will be used for the "software-repository" feature
-	// prefix := s3PrefixForUser(userName)
-	// prefix := "/"
+    pvName, pvcName, volumeHandle := s3NamesForUser(userName)
+    // Commented out for now as we don't need a prefix, this bucket will be mounted at / for all users, but read only.
+    // This will be used for the "software-repository" feature
+    // prefix := s3PrefixForUser(userName)
+    // prefix := "/"
 
-	// ----- Ensure PV exists (cluster-scoped) -----
-	// Try GET; if not found, create.
-	if _, errGet := podClient.PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{}); errGet != nil {
-		pv := &k8sv1.PersistentVolume{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: pvName,
-			},
-			Spec: k8sv1.PersistentVolumeSpec{
-				Capacity: k8sv1.ResourceList{
-					k8sv1.ResourceStorage: resource.MustParse("1200Gi"), // ignored by S3 CSI, but required
-				},
-				AccessModes:      []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteMany},
-				StorageClassName: "", // static provisioning
-				ClaimRef: &k8sv1.ObjectReference{
-					Namespace: namespace,
-					Name:      pvcName,
-				},
-				MountOptions: []string{
-					"allow-delete",
-					"allow-other",
-					"gid=100",
-					"file-mode=555",
-					"dir-mode=555",
-					fmt.Sprintf("region %s", region),
-					// fmt.Sprintf("prefix %s", prefix),
-				},
-				PersistentVolumeSource: k8sv1.PersistentVolumeSource{
-					CSI: &k8sv1.CSIPersistentVolumeSource{
-						Driver:       "s3.csi.aws.com",
-						VolumeHandle: volumeHandle, // must be unique
-						VolumeAttributes: map[string]string{
-							"bucketName": bucket,
-						},
-					},
-				},
-			},
-		}
-		if _, errCreatePV := podClient.PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{}); errCreatePV != nil {
-			return "", fmt.Errorf("failed to create S3 PV %s: %w", pvName, errCreatePV)
-		}
-	}
+    // ----- Ensure PV exists (cluster-scoped) -----
+    // Try GET; if not found, create.
+    if _, errGet := podClient.PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{}); errGet != nil {
+        pv := &k8sv1.PersistentVolume{
+            ObjectMeta: metav1.ObjectMeta{
+                Name: pvName,
+            },
+            Spec: k8sv1.PersistentVolumeSpec{
+                Capacity: k8sv1.ResourceList{
+                    k8sv1.ResourceStorage: resource.MustParse("1200Gi"), // ignored by S3 CSI, but required
+                },
+                AccessModes:      []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteMany},
+                StorageClassName: "", // static provisioning
+                ClaimRef: &k8sv1.ObjectReference{
+                    Namespace: namespace,
+                    Name:      pvcName,
+                },
+                MountOptions: []string{
+                    "allow-delete",
+                    "allow-other",
+                    "gid=100",
+                    "file-mode=555",
+                    "dir-mode=555",
+                    fmt.Sprintf("region %s", region),
+                    // fmt.Sprintf("prefix %s", prefix),
+                    // Caches directory listings and file stats for 1 hour (fixes the 77x walk/stat slowdown)
+                    "metadata-ttl=3600",
+                },
+                PersistentVolumeSource: k8sv1.PersistentVolumeSource{
+                    CSI: &k8sv1.CSIPersistentVolumeSource{
+                        Driver:       "s3.csi.aws.com",
+                        VolumeHandle: volumeHandle, // must be unique
+                        VolumeAttributes: map[string]string{
+                            "bucketName": bucket,
+                            // Enables safe file caching using an ephemeral emptyDir on the K8s node
+                            // and hard-caps the cache at 10 Gigabytes to prevent disk pressure
+                            "cacheEmptyDirSizeLimit": "10Gi",
+                        },
+                    },
+                },
+            },
+        }
+        if _, errCreatePV := podClient.PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{}); errCreatePV != nil {
+            return "", fmt.Errorf("failed to create S3 PV %s: %w", pvName, errCreatePV)
+        }
+    }
 
-	// ----- Ensure PVC exists (namespaced) -----
-	if _, errGet := podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{}); errGet != nil {
-		empty := "" // PVC.StorageClassName is *string
-		pvc := &k8sv1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      pvcName,
-				Namespace: namespace,
-			},
-			Spec: k8sv1.PersistentVolumeClaimSpec{
-				AccessModes:      []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteMany},
-				StorageClassName: &empty,
-				Resources: k8sv1.VolumeResourceRequirements{
-					Requests: k8sv1.ResourceList{
-						k8sv1.ResourceStorage: resource.MustParse("1200Gi"),
-					},
-				},
-				VolumeName: pvName,
-			},
-		}
-		if _, errCreatePVC := podClient.PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{}); errCreatePVC != nil {
-			return "", fmt.Errorf("failed to create S3 PVC %s: %w", pvcName, errCreatePVC)
-		}
-	}
+    // ----- Ensure PVC exists (namespaced) -----
+    if _, errGet := podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{}); errGet != nil {
+        empty := "" // PVC.StorageClassName is *string
+        pvc := &k8sv1.PersistentVolumeClaim{
+            ObjectMeta: metav1.ObjectMeta{
+                Name:      pvcName,
+                Namespace: namespace,
+            },
+            Spec: k8sv1.PersistentVolumeClaimSpec{
+                AccessModes:      []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteMany},
+                StorageClassName: &empty,
+                Resources: k8sv1.VolumeResourceRequirements{
+                    Requests: k8sv1.ResourceList{
+                        k8sv1.ResourceStorage: resource.MustParse("1200Gi"),
+                    },
+                },
+                VolumeName: pvName,
+            },
+        }
+        if _, errCreatePVC := podClient.PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{}); errCreatePVC != nil {
+            return "", fmt.Errorf("failed to create S3 PVC %s: %w", pvcName, errCreatePVC)
+        }
+    }
 
-	return pvcName, nil
+    return pvcName, nil
 }
 
 // Adds the S3 volume + mount to the pod in-place.
