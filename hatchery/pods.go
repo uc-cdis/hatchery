@@ -386,9 +386,9 @@ func userToResourceName(userName string, resourceType string) string {
 	return fmt.Sprintf("%s-%s", resourceType, safeUserName)
 }
 
-func s3NamesForUser(userName string) (pvName, pvcName, volumeHandle string) {
+func s3NamesForUser(userName string, namespace string) (pvName, pvcName, volumeHandle string) {
 	base := userToResourceName(userName, "s3")       // e.g. john-doe-s3
-	return base + "-pv", base + "-pvc", "s3-" + base // unique handle
+	return base + "-" + namespace + "-pv", base + "-pvc", "s3-" + base // unique handle
 }
 
 func s3PrefixForUser(userName string) string {
@@ -406,7 +406,7 @@ func ensureS3PVandPVC(
 	region string,
 ) (pvcName string, err error) {
 
-	pvName, pvcName, volumeHandle := s3NamesForUser(userName)
+	pvName, pvcName, volumeHandle := s3NamesForUser(userName, namespace)
 	// Commented out for now as we don't need a prefix, this bucket will be mounted at / for all users, but read only.
 	// This will be used for the "software-repository" feature
 	// prefix := s3PrefixForUser(userName)
