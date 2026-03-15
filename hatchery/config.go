@@ -124,27 +124,35 @@ type Pricing struct {
 	Memory float64 `json:"memory"`
 }
 
+// SharedWorkspaceConfig holds configuration for shared S3 workspace mounts.
+type SharedWorkspaceConfig struct {
+	Enabled       bool   `json:"enabled"`
+	S3BucketName  string `json:"s3-bucket-name"`
+	MountBasePath string `json:"mount-base-path"` // Mount root inside pod; default "$HOME/shared"
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
 	DefaultPayModel PayModel `json:"default-pay-model"`
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
-	SkipNodeSelector       bool                 `json:"skip-node-selector"`
-	UseInteralServicesURL  bool                 `json:"use-internal-services-url"`
-	PayModels              []PayModel           `json:"pay-models"`
-	PayModelsDynamodbTable string               `json:"pay-models-dynamodb-table"`
-	PayModelsDynamodbArn   string               `json:"pay-models-dynamodb-arn"`
-	LicenseUserMapsTable   string               `json:"license-user-maps-dynamodb-table"`
-	LicenseUserMapsGSI     string               `json:"license-user-maps-global-secondary-index"`
-	License                LicenseInfo          `json:"license"`
-	SubDir                 string               `json:"sub-dir"`
-	Containers             []Container          `json:"containers"`
-	UserVolumeSize         string               `json:"user-volume-size"`
-	Sidecar                SidecarContainer     `json:"sidecar"`
-	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
-	PrismaConfig           PrismaConfig         `json:"prisma"`
-	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
-	Pricing                Pricing              `json:"pricing"`
+	SkipNodeSelector       bool                  `json:"skip-node-selector"`
+	UseInteralServicesURL  bool                  `json:"use-internal-services-url"`
+	PayModels              []PayModel            `json:"pay-models"`
+	PayModelsDynamodbTable string                `json:"pay-models-dynamodb-table"`
+	PayModelsDynamodbArn   string                `json:"pay-models-dynamodb-arn"`
+	LicenseUserMapsTable   string                `json:"license-user-maps-dynamodb-table"`
+	LicenseUserMapsGSI     string                `json:"license-user-maps-global-secondary-index"`
+	License                LicenseInfo           `json:"license"`
+	SubDir                 string                `json:"sub-dir"`
+	Containers             []Container           `json:"containers"`
+	UserVolumeSize         string                `json:"user-volume-size"`
+	Sidecar                SidecarContainer      `json:"sidecar"`
+	MoreConfigs            []AppConfigInfo       `json:"more-configs"`
+	PrismaConfig           PrismaConfig          `json:"prisma"`
+	NextflowGlobalConfig   NextflowGlobalConfig  `json:"nextflow-global"`
+	Pricing                Pricing               `json:"pricing"`
+	SharedWorkspace        SharedWorkspaceConfig `json:"shared-workspace"`
 }
 
 // Config to allow for Prisma Agents

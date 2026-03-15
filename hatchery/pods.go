@@ -731,6 +731,31 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 		}
 	}
 
+	if Config.Config.SharedWorkspace.Enabled {
+		Config.Logger.Printf("Setting up shared workspaces for user %s", userName)
+
+		if err := cleanupUserSharedWorkspaces(ctx, podClient, userName, Config.Config.UserNamespace); err != nil {
+			Config.Logger.Printf("Warning: failed to clean up old shared workspaces for user %s: %v (continuing)", userName, err)
+		}
+
+		prefixes, prefixErr := getSharedWorkspacePrefixes(ctx, accessToken)
+		if prefixErr != nil {
+			Config.Logger.Printf("Warning: failed to get shared workspace prefixes for user %s: %v (launching without shared workspaces)", userName, prefixErr)
+		} else {
+			var successPrefixes []SharedWorkspacePrefix
+			for _, prefix := range prefixes {
+				if err := createSharedWorkspacePVAndPVC(ctx, podClient, userName, Config.Config.UserNamespace, prefix); err != nil {
+					Config.Logger.Printf("Warning: failed to create shared workspace for prefix %s, user %s: %v (skipping)", prefix.Name, userName, err)
+					continue
+				}
+				successPrefixes = append(successPrefixes, prefix)
+			}
+			if len(successPrefixes) > 0 {
+				addSharedWorkspaceVolumesToPod(pod, userName, successPrefixes, Config.Config.SharedWorkspace.MountBasePath)
+			}
+		}
+	}
+
 	_, err = podClient.Pods(Config.Config.UserNamespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		Config.Logger.Printf("Failed to launch pod %s for user %s. Image: %s, CPU %s, Memory %s. Error: %s\n", hatchApp.Name, userName, hatchApp.Image, hatchApp.CPULimit, hatchApp.MemoryLimit, err)
