@@ -245,6 +245,7 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 					VolumeAttributes: map[string]string{
 						"bucketName":           swCfg.S3BucketName,
 						"authenticationSource": "pod",
+						"stsRegion":            "us-east-1",
 					},
 				},
 			},
