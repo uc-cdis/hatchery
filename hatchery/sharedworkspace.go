@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/iam"
 	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,6 +16,124 @@ import (
 )
 
 const sharedWorkspaceLabelKey = "hatchery-shared-user"
+
+// sharedWorkspaceSAName returns the per-user Kubernetes ServiceAccount name.
+func sharedWorkspaceSAName(userName string) string {
+	return fmt.Sprintf("hatchery-shared-%s", escapism(userName))
+}
+
+// sharedWorkspaceRoleName returns the per-user AWS IAM role name.
+func sharedWorkspaceRoleName(userName string) string {
+	return fmt.Sprintf("hatchery-shared-%s", escapism(userName))
+}
+
+// oidcProviderID returns the host portion of the OIDC provider ARN,
+// e.g. "oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E".
+func oidcProviderID(providerARN string) string {
+	parts := strings.SplitN(providerARN, ":oidc-provider/", 2)
+	if len(parts) == 2 {
+		return parts[1]
+	}
+	return ""
+}
+
+// accountIDFromOIDCARN parses the AWS account ID embedded in the OIDC provider ARN.
+func accountIDFromOIDCARN(providerARN string) string {
+	// arn:aws:iam::ACCOUNT_ID:oidc-provider/...
+	parts := strings.Split(providerARN, ":")
+	if len(parts) >= 5 {
+		return parts[4]
+	}
+	return ""
+}
+
+// ensureSharedWorkspaceIAMRole creates (or updates the inline policy of) a
+// per-user IAM role whose S3 policy is scoped to exactly the given prefixes.
+// Returns the role ARN.
+func ensureSharedWorkspaceIAMRole(userName, namespace, bucketName, oidcProviderARN string, prefixes []SharedWorkspacePrefix) (string, error) {
+	roleName := sharedWorkspaceRoleName(userName)
+	accountID := accountIDFromOIDCARN(oidcProviderARN)
+	providerID := oidcProviderID(oidcProviderARN)
+	saName := sharedWorkspaceSAName(userName)
+
+	trustPolicy := fmt.Sprintf(`{
+		"Version": "2012-10-17",
+		"Statement": [{
+			"Effect": "Allow",
+			"Principal": {"Federated": %q},
+			"Action": "sts:AssumeRoleWithWebIdentity",
+			"Condition": {"StringEquals": {
+				%q: "system:serviceaccount:%s:%s",
+				%q: "sts.amazonaws.com"
+			}}
+		}]
+	}`,
+		oidcProviderARN,
+		providerID+":sub", namespace, saName,
+		providerID+":aud",
+	)
+
+	resources := []string{fmt.Sprintf(`"arn:aws:s3:::%s"`, bucketName)}
+	for _, p := range prefixes {
+		resources = append(resources, fmt.Sprintf(`"arn:aws:s3:::%s/%s*"`, bucketName, p.Prefix))
+	}
+	s3Policy := fmt.Sprintf(`{
+		"Version": "2012-10-17",
+		"Statement": [{
+			"Effect": "Allow",
+			"Action": ["s3:GetObject", "s3:ListBucket"],
+			"Resource": [%s]
+		}]
+	}`, strings.Join(resources, ","))
+
+	svc := iam.New(session.Must(session.NewSession()))
+
+	_, err := svc.GetRole(&iam.GetRoleInput{RoleName: aws.String(roleName)})
+	if err != nil {
+		if _, err = svc.CreateRole(&iam.CreateRoleInput{
+			RoleName:                 aws.String(roleName),
+			AssumeRolePolicyDocument: aws.String(trustPolicy),
+		}); err != nil {
+			return "", fmt.Errorf("failed to create IAM role %s: %w", roleName, err)
+		}
+	}
+
+	if _, err = svc.PutRolePolicy(&iam.PutRolePolicyInput{
+		RoleName:       aws.String(roleName),
+		PolicyName:     aws.String("shared-workspace-s3"),
+		PolicyDocument: aws.String(s3Policy),
+	}); err != nil {
+		return "", fmt.Errorf("failed to put inline policy for IAM role %s: %w", roleName, err)
+	}
+
+	return fmt.Sprintf("arn:aws:iam::%s:role/%s", accountID, roleName), nil
+}
+
+// ensureSharedWorkspaceServiceAccount creates or updates the per-user Kubernetes
+// ServiceAccount annotated with the IAM role ARN for IRSA.
+func ensureSharedWorkspaceServiceAccount(ctx context.Context, podClient corev1.CoreV1Interface, namespace, userName, roleARN string) error {
+	saName := sharedWorkspaceSAName(userName)
+	existing, err := podClient.ServiceAccounts(namespace).Get(ctx, saName, metav1.GetOptions{})
+	if err != nil {
+		sa := &k8sv1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      saName,
+				Namespace: namespace,
+				Annotations: map[string]string{
+					"eks.amazonaws.com/role-arn": roleARN,
+				},
+			},
+		}
+		_, err = podClient.ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
+		return err
+	}
+	if existing.Annotations == nil {
+		existing.Annotations = make(map[string]string)
+	}
+	existing.Annotations["eks.amazonaws.com/role-arn"] = roleARN
+	_, err = podClient.ServiceAccounts(namespace).Update(ctx, existing, metav1.UpdateOptions{})
+	return err
+}
 
 // SharedWorkspacePrefix represents one S3 prefix the user can access.
 type SharedWorkspacePrefix struct {
@@ -121,7 +243,8 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 					Driver:       "s3.csi.aws.com",
 					VolumeHandle: volumeHandle,
 					VolumeAttributes: map[string]string{
-						"bucketName": swCfg.S3BucketName,
+						"bucketName":           swCfg.S3BucketName,
+						"authenticationSource": "pod",
 					},
 				},
 			},
