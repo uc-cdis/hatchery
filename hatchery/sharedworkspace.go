@@ -237,7 +237,7 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 			AccessModes:                   []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadOnlyMany},
 			PersistentVolumeReclaimPolicy: k8sv1.PersistentVolumeReclaimDelete,
 			StorageClassName:              storageClass,
-			MountOptions:                  []string{fmt.Sprintf("--prefix=%s", prefix.Prefix), "--read-only"},
+			MountOptions:                  []string{fmt.Sprintf("--prefix=%s", prefix.Prefix), "--read-only", "--uid=1010", "--gid=100"},
 			PersistentVolumeSource: k8sv1.PersistentVolumeSource{
 				CSI: &k8sv1.CSIPersistentVolumeSource{
 					Driver:       "s3.csi.aws.com",
