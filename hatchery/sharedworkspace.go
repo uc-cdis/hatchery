@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 	k8sv1 "k8s.io/api/core/v1"
@@ -90,6 +91,11 @@ func ensureSharedWorkspaceIAMRole(userName, namespace, bucketName, oidcProviderA
 
 	_, err := svc.GetRole(&iam.GetRoleInput{RoleName: aws.String(roleName)})
 	if err != nil {
+		aerr, ok := err.(awserr.Error)
+		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+			return "", fmt.Errorf("failed to check IAM role %s: %w", roleName, err)
+		}
+
 		if _, err = svc.CreateRole(&iam.CreateRoleInput{
 			RoleName:                 aws.String(roleName),
 			AssumeRolePolicyDocument: aws.String(trustPolicy),
