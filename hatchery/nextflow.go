@@ -1140,7 +1140,7 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2, 
 			},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("Error describing instance type offerings: %v", err)
+			return nil, fmt.Errorf("error describing instance type offerings: %v", err)
 		}
 		if len(result.InstanceTypeOfferings) > 0 {
 			Config.Logger.Printf("Debug: Zone: %v has instance type %v available. Using that for subnet", *zone.ZoneName, instanceType)
@@ -1871,7 +1871,7 @@ workDir = '%s'`,
 func replaceAllUsernamePlaceholders(strArray []string, userName string) []string {
 	var result []string
 	for _, str := range strArray {
-		result = append(result, strings.Replace(str, "{{username}}", userName, -1))
+		result = append(result, strings.ReplaceAll(str, "{{username}}", userName))
 	}
 	return result
 }

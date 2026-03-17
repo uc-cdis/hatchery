@@ -154,14 +154,14 @@ func (sess *CREDS) findEcsCluster() (*ecs.Cluster, error) {
 					if aerr, ok := err.(awserr.Error); ok {
 						switch aerr.Code() {
 						default:
-							return nil, fmt.Errorf("Cannot create ECS cluster named %s: %s", clusterName, aerr.Code())
+							return nil, fmt.Errorf("cannot create ECS cluster named %s: %s", clusterName, aerr.Code())
 						}
 					}
-					return nil, fmt.Errorf("Cannot create ECS cluster named %s: %s", clusterName, err.Error())
+					return nil, fmt.Errorf("cannot create ECS cluster named %s: %s", clusterName, err.Error())
 				}
 				describeClusterResult, err = svc.DescribeClusters(clusterInput)
 				if err != nil || len(describeClusterResult.Failures) > 0 {
-					return nil, fmt.Errorf("Still cannot find ECS cluster named %s: %s", clusterName, err.Error())
+					return nil, fmt.Errorf("still cannot find ECS cluster named %s: %s", clusterName, err.Error())
 				}
 				return describeClusterResult.Clusters[0], nil
 			}

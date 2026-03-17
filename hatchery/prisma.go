@@ -31,7 +31,11 @@ func getPrismaToken(username string, password string) (*string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			Config.Logger.Printf("Error closing response body: %v", err)
+		}
+	}()
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)
 		Config.Logger.Print(string(b))
@@ -75,7 +79,11 @@ func getInstallBundle() (*InstallBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			Config.Logger.Printf("Error closing response body: %v", err)
+		}
+	}()
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)
 		Config.Logger.Print(string(b))
@@ -117,7 +125,11 @@ func getPrismaImage() (*string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			Config.Logger.Printf("Error closing response body: %v", err)
+		}
+	}()
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)
 		Config.Logger.Print(string(b))

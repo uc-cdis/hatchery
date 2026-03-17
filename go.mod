@@ -1,8 +1,8 @@
 module github.com/uc-cdis/hatchery
 
-go 1.23.4
+go 1.26
 
-toolchain go1.23.5
+toolchain go1.26.0
 
 require (
 	github.com/apparentlymart/go-cidr v1.1.0
