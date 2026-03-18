@@ -169,9 +169,15 @@ func (pt *PodTracker) watchPods(ctx context.Context) error {
 				return fmt.Errorf("pod watch channel closed")
 			}
 
-			pod := event.Object.(*v1.Pod)
-			pt.lastPodRV = pod.ResourceVersion
+			pod, ok := event.Object.(*v1.Pod)
+			if !ok {
+				if status, ok := event.Object.(*metav1.Status); ok {
+					return fmt.Errorf("watch error (code %d): %s", status.Code, status.Message)
+				}
+				return fmt.Errorf("unexpected watch object type: %T", event.Object)
+			}
 
+			pt.lastPodRV = pod.ResourceVersion
 			switch event.Type {
 			case watch.Added:
 				pt.handlePodCreated(pod, "watch")
