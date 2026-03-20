@@ -387,8 +387,8 @@ func userToResourceName(userName string, resourceType string) string {
 }
 
 func s3NamesForUser(userName string, namespace string) (pvName, pvcName, volumeHandle string) {
-	base := userToResourceName(userName, "s3")       // e.g. john-doe-s3
-	return base + "-" + namespace + "-pv", base + "-pvc", "s3-" + base // unique handle
+	base := userToResourceName(userName, "s3")                                   // e.g. john-doe-s3
+	return base + "-" + namespace + "-pv", base + "-pvc", base + "-" + namespace // unique handle
 }
 
 func s3PrefixForUser(userName string) string {
