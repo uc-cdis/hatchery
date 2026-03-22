@@ -2,6 +2,7 @@ package hatchery
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -74,18 +75,24 @@ func ensureSharedWorkspaceIAMRole(userName, namespace, bucketName, oidcProviderA
 		providerID+":aud",
 	)
 
-	resources := []string{fmt.Sprintf(`"arn:aws:s3:::%s"`, bucketName)}
+	bucketARN := fmt.Sprintf(`"arn:aws:s3:::%s"`, bucketName)
+	var readOnlyResources, writableResources []string
 	for _, p := range prefixes {
-		resources = append(resources, fmt.Sprintf(`"arn:aws:s3:::%s/%s*"`, bucketName, p.Prefix))
+		arn := fmt.Sprintf(`"arn:aws:s3:::%s/%s*"`, bucketName, p.Prefix)
+		if p.IsReadOnly() {
+			readOnlyResources = append(readOnlyResources, arn)
+		} else {
+			writableResources = append(writableResources, arn)
+		}
 	}
-	s3Policy := fmt.Sprintf(`{
-		"Version": "2012-10-17",
-		"Statement": [{
-			"Effect": "Allow",
-			"Action": ["s3:GetObject", "s3:ListBucket"],
-			"Resource": [%s]
-		}]
-	}`, strings.Join(resources, ","))
+	statements := []string{fmt.Sprintf(`{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":[%s]}`, bucketARN)}
+	if len(readOnlyResources) > 0 {
+		statements = append(statements, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject"],"Resource":[%s]}`, strings.Join(readOnlyResources, ",")))
+	}
+	if len(writableResources) > 0 {
+		statements = append(statements, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload"],"Resource":[%s]}`, strings.Join(writableResources, ",")))
+	}
+	s3Policy := fmt.Sprintf(`{"Version":"2012-10-17","Statement":[%s]}`, strings.Join(statements, ","))
 
 	svc := iam.New(session.Must(session.NewSession()))
 
@@ -141,10 +148,30 @@ func ensureSharedWorkspaceServiceAccount(ctx context.Context, podClient corev1.C
 	return err
 }
 
-// SharedWorkspacePrefix represents one S3 prefix the user can access.
+// SharedWorkspacePrefix represents one shared workspace the user can access.
 type SharedWorkspacePrefix struct {
-	Name   string `json:"name"`
-	Prefix string `json:"prefix"`
+	Name        string   `json:"name"`
+	Prefix      string   `json:"prefix"`
+	Permissions []string `json:"permissions"`
+}
+
+// IsReadOnly returns true unless Fence granted the "write" method.
+func (p SharedWorkspacePrefix) IsReadOnly() bool {
+	for _, perm := range p.Permissions {
+		if strings.EqualFold(perm, "write") {
+			return false
+		}
+	}
+	return true
+}
+
+type fenceAuthzEntry struct {
+	Method  string `json:"method"`
+	Service string `json:"service"`
+}
+
+type fenceUserResponse struct {
+	Authz map[string][]fenceAuthzEntry `json:"authz"`
 }
 
 // sharedPVName returns the cluster-scoped PersistentVolume name for a user+prefix pair.
@@ -160,7 +187,7 @@ func sharedPVCName(userName, prefixName string) string {
 // getSharedWorkspacePrefixes calls the configured external API with the user's
 // bearer token and returns the list of S3 prefixes the user may access.
 func getSharedWorkspacePrefixes(ctx context.Context, accessToken string) ([]SharedWorkspacePrefix, error) {
-	endpoint := "http://arborist-service/user"
+	endpoint := "http://fence-service/user"
 	resp, err := MakeARequestWithContext(ctx, "GET", endpoint, accessToken, "application/json", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("shared workspace API request failed: %w", err)
@@ -175,21 +202,34 @@ func getSharedWorkspacePrefixes(ctx context.Context, accessToken string) ([]Shar
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		Config.Logger.Fatal(err)
+		return nil, fmt.Errorf("failed to read shared workspace API response: %w", err)
 	}
 
-	Config.Logger.Println(string(body))
-
-	// var prefixes []SharedWorkspacePrefix
-	// if err := json.NewDecoder(resp.Body).Decode(&prefixes); err != nil {
-	// 	return nil, fmt.Errorf("failed to decode shared workspace API response: %w", err)
-	// }
-
-	prefixes := []SharedWorkspacePrefix{
-		{Name: "group-a", Prefix: "A/"},
-		{Name: "group-b", Prefix: "B/"},
+	var fenceResp fenceUserResponse
+	if err := json.Unmarshal(body, &fenceResp); err != nil {
+		return nil, fmt.Errorf("failed to decode shared workspace API response: %w", err)
 	}
 
+	const pathPrefix = "/shared/workspaces/"
+	var prefixes []SharedWorkspacePrefix
+	for path, perms := range fenceResp.Authz {
+		if !strings.HasPrefix(path, pathPrefix) {
+			continue
+		}
+		segment := strings.TrimPrefix(path, pathPrefix)
+		if segment == "" {
+			continue
+		}
+		methods := make([]string, len(perms))
+		for i, p := range perms {
+			methods[i] = p.Method
+		}
+		prefixes = append(prefixes, SharedWorkspacePrefix{
+			Name:        "group-" + segment,
+			Prefix:      segment + "/",
+			Permissions: methods,
+		})
+	}
 	return prefixes, nil
 }
 
@@ -231,6 +271,14 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 	storageClass := ""
 	volumeHandle := fmt.Sprintf("%s/%s/%s", swCfg.S3BucketName, escapism(userName), escapism(prefix.Name))
 
+	readOnly := prefix.IsReadOnly()
+	accessMode := k8sv1.ReadOnlyMany
+	mountOptions := []string{fmt.Sprintf("prefix=%s", prefix.Prefix), "read-only", "uid=1010", "gid=100"}
+	if !readOnly {
+		accessMode = k8sv1.ReadWriteMany
+		mountOptions = []string{fmt.Sprintf("prefix=%s", prefix.Prefix), "uid=1010", "gid=100"}
+	}
+
 	pv := &k8sv1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   pvName,
@@ -240,10 +288,10 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 			Capacity: k8sv1.ResourceList{
 				k8sv1.ResourceStorage: storageSize,
 			},
-			AccessModes:                   []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadOnlyMany},
+			AccessModes:                   []k8sv1.PersistentVolumeAccessMode{accessMode},
 			PersistentVolumeReclaimPolicy: k8sv1.PersistentVolumeReclaimDelete,
 			StorageClassName:              storageClass,
-			MountOptions:                  []string{fmt.Sprintf("prefix=%s", prefix.Prefix), "read-only", "uid=1010", "gid=100"},
+			MountOptions:                  mountOptions,
 			PersistentVolumeSource: k8sv1.PersistentVolumeSource{
 				CSI: &k8sv1.CSIPersistentVolumeSource{
 					Driver:       "s3.csi.aws.com",
@@ -274,7 +322,7 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 			Labels:    labels,
 		},
 		Spec: k8sv1.PersistentVolumeClaimSpec{
-			AccessModes:      []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadOnlyMany},
+			AccessModes:      []k8sv1.PersistentVolumeAccessMode{accessMode},
 			StorageClassName: &storageClass,
 			VolumeName:       pvName,
 			Resources: k8sv1.VolumeResourceRequirements{
@@ -294,7 +342,7 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 }
 
 // addSharedWorkspaceVolumesToPod mutates the pod spec in-place, appending one
-// PVC-backed volume and one read-only VolumeMount on hatchery-container per prefix.
+// PVC-backed volume and one VolumeMount on hatchery-container per prefix.
 func addSharedWorkspaceVolumesToPod(pod *k8sv1.Pod, userName string, prefixes []SharedWorkspacePrefix, mountBasePath string) {
 	if mountBasePath == "" {
 		mountBasePath = "/home/jovyan/shared"
@@ -309,7 +357,7 @@ func addSharedWorkspaceVolumesToPod(pod *k8sv1.Pod, userName string, prefixes []
 			VolumeSource: k8sv1.VolumeSource{
 				PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
 					ClaimName: pvcName,
-					ReadOnly:  true,
+					ReadOnly:  prefix.IsReadOnly(),
 				},
 			},
 		})
@@ -321,7 +369,7 @@ func addSharedWorkspaceVolumesToPod(pod *k8sv1.Pod, userName string, prefixes []
 					k8sv1.VolumeMount{
 						Name:      volName,
 						MountPath: mountPath,
-						ReadOnly:  true,
+						ReadOnly:  prefix.IsReadOnly(),
 					},
 				)
 				break
