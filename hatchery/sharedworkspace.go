@@ -212,6 +212,9 @@ func getSharedWorkspacePrefixes(ctx context.Context, accessToken string) ([]Shar
 
 	const pathPrefix = "/shared/workspaces/"
 	var prefixes []SharedWorkspacePrefix
+
+	Config.Logger.Printf("%s", fenceResp.Authz)
+
 	for path, perms := range fenceResp.Authz {
 		if !strings.HasPrefix(path, pathPrefix) {
 			continue
