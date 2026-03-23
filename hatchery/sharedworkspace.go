@@ -210,7 +210,7 @@ func getSharedWorkspacePrefixes(ctx context.Context, accessToken string) ([]Shar
 		return nil, fmt.Errorf("failed to decode shared workspace API response: %w", err)
 	}
 
-	const pathPrefix = "/shared/workspaces/"
+	const pathPrefix = "/shared/workspace/"
 	var prefixes []SharedWorkspacePrefix
 
 	Config.Logger.Printf("%s", fenceResp.Authz)
