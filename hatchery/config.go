@@ -127,7 +127,6 @@ type Pricing struct {
 // SharedWorkspaceConfig holds configuration for shared S3 workspace mounts.
 type SharedWorkspaceConfig struct {
 	Enabled         bool   `json:"enabled"`
-	S3BucketName    string `json:"s3-bucket-name"`
 	MountBasePath   string `json:"mount-base-path"`   // Mount root inside pod; default "$HOME/shared"
 	OIDCProviderARN string `json:"oidc-provider-arn"` // Full ARN of the EKS OIDC provider, e.g. arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E
 }

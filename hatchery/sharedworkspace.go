@@ -52,7 +52,7 @@ func accountIDFromOIDCARN(providerARN string) string {
 // ensureSharedWorkspaceIAMRole creates (or updates the inline policy of) a
 // per-user IAM role whose S3 policy is scoped to exactly the given prefixes.
 // Returns the role ARN.
-func ensureSharedWorkspaceIAMRole(userName, namespace, bucketName, oidcProviderARN string, prefixes []SharedWorkspacePrefix) (string, error) {
+func ensureSharedWorkspaceIAMRole(userName, namespace, oidcProviderARN string, prefixes []SharedWorkspacePrefix) (string, error) {
 	roleName := sharedWorkspaceRoleName(userName)
 	accountID := accountIDFromOIDCARN(oidcProviderARN)
 	providerID := oidcProviderID(oidcProviderARN)
@@ -75,17 +75,22 @@ func ensureSharedWorkspaceIAMRole(userName, namespace, bucketName, oidcProviderA
 		providerID+":aud",
 	)
 
-	bucketARN := fmt.Sprintf(`"arn:aws:s3:::%s"`, bucketName)
+	seenBuckets := map[string]bool{}
+	var bucketARNs []string
 	var readOnlyResources, writableResources []string
 	for _, p := range prefixes {
-		arn := fmt.Sprintf(`"arn:aws:s3:::%s/%s*"`, bucketName, p.Prefix)
+		if !seenBuckets[p.BucketName] {
+			seenBuckets[p.BucketName] = true
+			bucketARNs = append(bucketARNs, fmt.Sprintf(`"arn:aws:s3:::%s"`, p.BucketName))
+		}
+		arn := fmt.Sprintf(`"arn:aws:s3:::%s/%s*"`, p.BucketName, p.Prefix)
 		if p.IsReadOnly() {
 			readOnlyResources = append(readOnlyResources, arn)
 		} else {
 			writableResources = append(writableResources, arn)
 		}
 	}
-	statements := []string{fmt.Sprintf(`{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":[%s]}`, bucketARN)}
+	statements := []string{fmt.Sprintf(`{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":[%s]}`, strings.Join(bucketARNs, ","))}
 	if len(readOnlyResources) > 0 {
 		statements = append(statements, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject"],"Resource":[%s]}`, strings.Join(readOnlyResources, ",")))
 	}
@@ -151,6 +156,7 @@ func ensureSharedWorkspaceServiceAccount(ctx context.Context, podClient corev1.C
 // SharedWorkspacePrefix represents one shared workspace the user can access.
 type SharedWorkspacePrefix struct {
 	Name        string   `json:"name"`
+	BucketName  string   `json:"bucket-name"`
 	Prefix      string   `json:"prefix"`
 	Permissions []string `json:"permissions"`
 }
@@ -219,17 +225,23 @@ func getSharedWorkspacePrefixes(ctx context.Context, accessToken string) ([]Shar
 		if !strings.HasPrefix(path, pathPrefix) {
 			continue
 		}
-		segment := strings.TrimPrefix(path, pathPrefix)
-		if segment == "" {
+		// Expected format: /shared/workspace/<bucket>/<group>/
+		remainder := strings.Trim(strings.TrimPrefix(path, pathPrefix), "/")
+		parts := strings.SplitN(remainder, "/", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			Config.Logger.Printf("Warning: skipping shared workspace path with unexpected format: %s", path)
 			continue
 		}
+		bucketName := parts[0]
+		group := parts[1]
 		methods := make([]string, len(perms))
 		for i, p := range perms {
 			methods[i] = p.Method
 		}
 		prefixes = append(prefixes, SharedWorkspacePrefix{
-			Name:        "group-" + segment,
-			Prefix:      segment + "/",
+			Name:        "group-" + group,
+			BucketName:  bucketName,
+			Prefix:      group + "/",
 			Permissions: methods,
 		})
 	}
@@ -264,7 +276,6 @@ func cleanupUserSharedWorkspaces(ctx context.Context, podClient corev1.CoreV1Int
 // createSharedWorkspacePVAndPVC creates a statically-provisioned CSI PersistentVolume
 // backed by the Mountpoint S3 driver and a PersistentVolumeClaim directly bound to it.
 func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1Interface, userName, namespace string, prefix SharedWorkspacePrefix) error {
-	swCfg := Config.Config.SharedWorkspace
 	pvName := sharedPVName(userName, prefix.Name)
 	pvcName := sharedPVCName(userName, prefix.Name)
 	labels := map[string]string{
@@ -272,7 +283,7 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 	}
 	storageSize := resource.MustParse("1Gi")
 	storageClass := ""
-	volumeHandle := fmt.Sprintf("%s/%s/%s", swCfg.S3BucketName, escapism(userName), escapism(prefix.Name))
+	volumeHandle := fmt.Sprintf("%s/%s/%s", prefix.BucketName, escapism(userName), escapism(prefix.Name))
 
 	readOnly := prefix.IsReadOnly()
 	accessMode := k8sv1.ReadOnlyMany
@@ -300,7 +311,7 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 					Driver:       "s3.csi.aws.com",
 					VolumeHandle: volumeHandle,
 					VolumeAttributes: map[string]string{
-						"bucketName":           swCfg.S3BucketName,
+						"bucketName":           prefix.BucketName,
 						"authenticationSource": "pod",
 						"stsRegion":            "us-east-1",
 					},

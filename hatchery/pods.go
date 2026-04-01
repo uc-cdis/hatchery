@@ -746,7 +746,7 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 			Config.Logger.Printf("Warning: failed to get shared workspace prefixes for user %s: %v (launching without shared workspaces)", userName, prefixErr)
 		} else if len(prefixes) > 0 {
 			Config.Logger.Printf("Creating roles for user %s", userName)
-			roleARN, roleErr := ensureSharedWorkspaceIAMRole(userName, Config.Config.UserNamespace, swCfg.S3BucketName, swCfg.OIDCProviderARN, prefixes)
+			roleARN, roleErr := ensureSharedWorkspaceIAMRole(userName, Config.Config.UserNamespace, swCfg.OIDCProviderARN, prefixes)
 			if roleErr != nil {
 				Config.Logger.Printf("Warning: failed to ensure IAM role for user %s: %v (skipping shared workspaces)", userName, roleErr)
 			} else if err := ensureSharedWorkspaceServiceAccount(ctx, podClient, Config.Config.UserNamespace, userName, roleARN); err != nil {
