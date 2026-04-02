@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -395,7 +396,11 @@ func addSharedWorkspaceVolumesToPod(pod *k8sv1.Pod, userName string, prefixes []
 	for _, prefix := range prefixes {
 		pvcName := sharedPVCName(userName, prefix.Name)
 		volName := fmt.Sprintf("shared-%s", escapism(prefix.Name))
-		mountPath := fmt.Sprintf("%s/%s", mountBasePath, prefix.Name)
+		relativePrefixPath := strings.Trim(prefix.Prefix, "/")
+		if relativePrefixPath == "" {
+			relativePrefixPath = prefix.Name
+		}
+		mountPath := path.Join(mountBasePath, relativePrefixPath)
 
 		pod.Spec.Volumes = append(pod.Spec.Volumes, k8sv1.Volume{
 			Name: volName,
