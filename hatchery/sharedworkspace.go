@@ -321,7 +321,7 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 	mountOptions := []string{fmt.Sprintf("prefix=%s", prefix.Prefix), "read-only", "uid=1010", "gid=100"}
 	if !readOnly {
 		accessMode = k8sv1.ReadWriteMany
-		mountOptions = []string{fmt.Sprintf("prefix=%s", prefix.Prefix), "uid=1010", "gid=100"}
+		mountOptions = []string{fmt.Sprintf("prefix=%s", prefix.Prefix), "uid=1010", "gid=100", "allow-overwrite", "allow-delete"}
 	}
 
 	pv := &k8sv1.PersistentVolume{
