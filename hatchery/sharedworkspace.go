@@ -234,18 +234,49 @@ func getSharedWorkspacePrefixes(ctx context.Context, accessToken string) ([]Shar
 		}
 		bucketName := parts[0]
 		group := parts[1]
+		if strings.Contains(group, "//") || strings.HasPrefix(group, "/") {
+			Config.Logger.Printf("Warning: skipping shared workspace path with empty segments: %s", path)
+			continue
+		}
 		methods := make([]string, len(perms))
 		for i, p := range perms {
 			methods[i] = p.Method
 		}
+		safeName := strings.ReplaceAll(group, "/", "-")
 		prefixes = append(prefixes, SharedWorkspacePrefix{
-			Name:        "group-" + group,
+			Name:        "group-" + safeName,
 			BucketName:  bucketName,
 			Prefix:      group + "/",
 			Permissions: methods,
 		})
 	}
-	return prefixes, nil
+	return deduplicatePrefixes(prefixes), nil
+}
+
+// deduplicatePrefixes removes child prefixes that are already fully covered by
+// an ancestor prefix with equal or higher permissions. A writable ancestor
+// covers any child; a read-only ancestor covers a read-only child but not a
+// writable one (which requires its own mount to expose write access).
+func deduplicatePrefixes(prefixes []SharedWorkspacePrefix) []SharedWorkspacePrefix {
+	var result []SharedWorkspacePrefix
+	for _, p := range prefixes {
+		covered := false
+		for _, other := range prefixes {
+			if other.BucketName != p.BucketName || other.Prefix == p.Prefix {
+				continue
+			}
+			if strings.HasPrefix(p.Prefix, other.Prefix) {
+				if !other.IsReadOnly() || p.IsReadOnly() {
+					covered = true
+					break
+				}
+			}
+		}
+		if !covered {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 // cleanupUserSharedWorkspaces deletes all shared PVCs (and their bound PVs) for
