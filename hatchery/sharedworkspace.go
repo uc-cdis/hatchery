@@ -13,7 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
 	k8sv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
@@ -305,86 +304,25 @@ func cleanupUserSharedWorkspaces(ctx context.Context, podClient corev1.CoreV1Int
 	return nil
 }
 
-// createSharedWorkspacePVAndPVC creates a statically-provisioned CSI PersistentVolume
-// backed by the Mountpoint S3 driver and a PersistentVolumeClaim directly bound to it.
+// createSharedWorkspacePVAndPVC creates a statically-provisioned Mountpoint-S3
+// PersistentVolume and PersistentVolumeClaim for the given user and prefix.
 func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1Interface, userName, namespace string, prefix SharedWorkspacePrefix) error {
-	pvName := sharedPVName(userName, prefix.Name)
-	pvcName := sharedPVCName(userName, prefix.Name)
-	labels := map[string]string{
-		sharedWorkspaceLabelKey: escapism(userName),
-	}
-	storageSize := resource.MustParse("1Gi")
-	storageClass := ""
-	volumeHandle := fmt.Sprintf("%s/%s/%s", prefix.BucketName, escapism(userName), escapism(prefix.Name))
-
-	readOnly := prefix.IsReadOnly()
 	accessMode := k8sv1.ReadOnlyMany
 	mountOptions := []string{fmt.Sprintf("prefix=%s", prefix.Prefix), "read-only", "uid=1010", "gid=100"}
-	if !readOnly {
+	if !prefix.IsReadOnly() {
 		accessMode = k8sv1.ReadWriteMany
 		mountOptions = []string{fmt.Sprintf("prefix=%s", prefix.Prefix), "uid=1010", "gid=100", "allow-overwrite", "allow-delete"}
 	}
-
-	pv := &k8sv1.PersistentVolume{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   pvName,
-			Labels: labels,
-		},
-		Spec: k8sv1.PersistentVolumeSpec{
-			Capacity: k8sv1.ResourceList{
-				k8sv1.ResourceStorage: storageSize,
-			},
-			AccessModes:                   []k8sv1.PersistentVolumeAccessMode{accessMode},
-			PersistentVolumeReclaimPolicy: k8sv1.PersistentVolumeReclaimDelete,
-			StorageClassName:              storageClass,
-			MountOptions:                  mountOptions,
-			PersistentVolumeSource: k8sv1.PersistentVolumeSource{
-				CSI: &k8sv1.CSIPersistentVolumeSource{
-					Driver:       "s3.csi.aws.com",
-					VolumeHandle: volumeHandle,
-					VolumeAttributes: map[string]string{
-						"bucketName":           prefix.BucketName,
-						"authenticationSource": "pod",
-						"stsRegion":            "us-east-1",
-					},
-				},
-			},
-			ClaimRef: &k8sv1.ObjectReference{
-				Kind:      "PersistentVolumeClaim",
-				Namespace: namespace,
-				Name:      pvcName,
-			},
-		},
-	}
-
-	if _, err := podClient.PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{}); err != nil {
-		return fmt.Errorf("failed to create shared PV %s: %w", pvName, err)
-	}
-
-	pvc := &k8sv1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      pvcName,
-			Namespace: namespace,
-			Labels:    labels,
-		},
-		Spec: k8sv1.PersistentVolumeClaimSpec{
-			AccessModes:      []k8sv1.PersistentVolumeAccessMode{accessMode},
-			StorageClassName: &storageClass,
-			VolumeName:       pvName,
-			Resources: k8sv1.VolumeResourceRequirements{
-				Requests: k8sv1.ResourceList{
-					k8sv1.ResourceStorage: storageSize,
-				},
-			},
-		},
-	}
-
-	if _, err := podClient.PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
-		_ = podClient.PersistentVolumes().Delete(ctx, pvName, metav1.DeleteOptions{})
-		return fmt.Errorf("failed to create shared PVC %s: %w", pvcName, err)
-	}
-
-	return nil
+	return createMountpointS3PVAndPVC(ctx, podClient, mountpointS3PVSpec{
+		PVName:       sharedPVName(userName, prefix.Name),
+		PVCName:      sharedPVCName(userName, prefix.Name),
+		Namespace:    namespace,
+		Labels:       map[string]string{sharedWorkspaceLabelKey: escapism(userName)},
+		BucketName:   prefix.BucketName,
+		VolumeHandle: fmt.Sprintf("%s/%s/%s", prefix.BucketName, escapism(userName), escapism(prefix.Name)),
+		MountOptions: mountOptions,
+		AccessMode:   accessMode,
+	})
 }
 
 // addSharedWorkspaceVolumesToPod mutates the pod spec in-place, appending one
