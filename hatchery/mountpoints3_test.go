@@ -43,12 +43,12 @@ func TestCreateMountpointS3PVAndPVC(t *testing.T) {
 		clientset := fake.NewSimpleClientset()
 
 		if tc.failPV {
-			clientset.Fake.PrependReactor("create", "persistentvolumes", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			clientset.PrependReactor("create", "persistentvolumes", func(action k8stesting.Action) (bool, runtime.Object, error) {
 				return true, nil, fmt.Errorf("simulated PV error")
 			})
 		}
 		if tc.failPVC {
-			clientset.Fake.PrependReactor("create", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			clientset.PrependReactor("create", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
 				return true, nil, fmt.Errorf("simulated PVC error")
 			})
 		}
