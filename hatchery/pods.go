@@ -660,6 +660,59 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	return pod, nil
 }
 
+// setupSharedWorkspacesForPod configures shared workspace volumes on a pod if
+// the feature is enabled. All failures are logged as warnings; the pod launch
+// continues regardless.
+func setupSharedWorkspacesForPod(ctx context.Context, podClient corev1.CoreV1Interface, pod *k8sv1.Pod, userName, accessToken string) {
+	if !Config.Config.SharedWorkspace.Enabled {
+		return
+	}
+	Config.Logger.Printf("Setting up shared workspaces for user %s", userName)
+	swCfg := Config.Config.SharedWorkspace
+
+	Config.Logger.Printf("Cleaning up old shared workspaces resources")
+	if err := cleanupUserSharedWorkspaces(ctx, podClient, userName, Config.Config.UserNamespace); err != nil {
+		Config.Logger.Printf("Warning: failed to clean up old shared workspaces for user %s: %v (continuing)", userName, err)
+	}
+
+	Config.Logger.Printf("Getting prefixes for user %s", userName)
+	prefixes, prefixErr := getSharedWorkspacePrefixes(ctx, accessToken)
+	if prefixErr != nil {
+		Config.Logger.Printf("Warning: failed to get shared workspace prefixes for user %s: %v (launching without shared workspaces)", userName, prefixErr)
+		return
+	}
+	if len(prefixes) == 0 {
+		return
+	}
+
+	Config.Logger.Printf("Creating roles for user %s", userName)
+	roleARN, roleErr := ensureSharedWorkspaceIAMRole(userName, Config.Config.UserNamespace, swCfg.OIDCProviderARN, prefixes)
+	if roleErr != nil {
+		Config.Logger.Printf("Warning: failed to ensure IAM role for user %s: %v (skipping shared workspaces)", userName, roleErr)
+		return
+	}
+	if err := ensureSharedWorkspaceServiceAccount(ctx, podClient, Config.Config.UserNamespace, userName, roleARN); err != nil {
+		Config.Logger.Printf("Warning: failed to ensure service account for user %s: %v (skipping shared workspaces)", userName, err)
+		return
+	}
+
+	Config.Logger.Printf("Creating serviceAccount")
+	pod.Spec.ServiceAccountName = sharedWorkspaceSAName(userName)
+
+	var successPrefixes []SharedWorkspacePrefix
+	for _, prefix := range prefixes {
+		Config.Logger.Printf("Creating PV/PVC")
+		if err := createSharedWorkspacePVAndPVC(ctx, podClient, userName, Config.Config.UserNamespace, prefix); err != nil {
+			Config.Logger.Printf("Warning: failed to create shared workspace for prefix %s, user %s: %v (skipping)", prefix.Name, userName, err)
+			continue
+		}
+		successPrefixes = append(successPrefixes, prefix)
+	}
+	if len(successPrefixes) > 0 {
+		addSharedWorkspaceVolumesToPod(pod, userName, successPrefixes, swCfg.MountBasePath)
+	}
+}
+
 var createLocalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, envVars []k8sv1.EnvVar, payModelId ...string) error {
 	// Set default if not provided
 	payModelIdValue := ""
@@ -730,6 +783,8 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 			}
 		}
 	}
+
+	setupSharedWorkspacesForPod(ctx, podClient, pod, userName, accessToken)
 
 	_, err = podClient.Pods(Config.Config.UserNamespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
