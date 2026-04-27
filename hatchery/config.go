@@ -43,6 +43,19 @@ type S3Config struct {
 	PrefixBase string `json:"prefixBase"` // e.g. "" (we’ll compute from userName)
 }
 
+// Configuration for FSx for Lustre shared software library
+type FSxConfig struct {
+	FsxID     string `json:"fsxId"`     // e.g. "fs-0db570e0cb6e6f5af"
+	DnsName   string `json:"dnsName"`   // e.g. "fs-0db570e0cb6e6f5af.fsx.us-east-1.amazonaws.com"
+	MountName string `json:"mountName"` // e.g. "nyj6tamv"
+
+	// Optional: defaults to "1200Gi" if not specified
+	Storage string `json:"storage"` // e.g. "1200Gi"
+
+	// Optional: where the volume is mounted inside the pod
+	MountPath string `json:"mountPath"` // e.g. "/apps"
+}
+
 // LicenseInfo contains configuration for Gen3 supplied licenses.
 type LicenseInfo struct {
 	Enabled         bool   `json:"enabled"`
@@ -152,6 +165,7 @@ type HatcheryConfig struct {
 	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
 	PrismaConfig           PrismaConfig         `json:"prisma"`
 	S3Config               S3Config             `json:"s3-config"`
+	FSxConfig              FSxConfig            `json:fsx-config`
 	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
 	Pricing                Pricing              `json:"pricing"`
 }
