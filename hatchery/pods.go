@@ -386,23 +386,23 @@ func userToResourceName(userName string, resourceType string) string {
 	return fmt.Sprintf("%s-%s", resourceType, safeUserName)
 }
 
-const (
-	SoftwareLibraryPVName  = "software-library-lustre-pv"
-	SoftwareLibraryPVCName = "software-library-lustre-pvc"
-)
-
 func ensureSharedSoftwareLibrary(
 	ctx context.Context,
 	podClient corev1.CoreV1Interface,
 	namespace string,
 	cfg FSxConfig,
 ) error {
+
+	// Use the namespaced, pv name (PV is a cluster resource)
+	pvName := "sl-" + namespace
+	pvcName := "software-library-pvc"
+
 	// 1. Ensure the Singleton PV exists
-	_, err := podClient.PersistentVolumes().Get(ctx, SoftwareLibraryPVName, metav1.GetOptions{})
+	_, err := podClient.PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{})
 	if err != nil {
-		Config.Logger.Printf("Creating shared Lustre PV: %s", SoftwareLibraryPVName)
+		Config.Logger.Printf("Creating shared Lustre PV: %s", pvName)
 		pv := &k8sv1.PersistentVolume{
-			ObjectMeta: metav1.ObjectMeta{Name: SoftwareLibraryPVName},
+			ObjectMeta: metav1.ObjectMeta{Name: pvName},
 			Spec: k8sv1.PersistentVolumeSpec{
 				Capacity:                      k8sv1.ResourceList{k8sv1.ResourceStorage: resource.MustParse("1200Gi")},
 				VolumeMode:                    (*k8sv1.PersistentVolumeMode)(aws.String(string(k8sv1.PersistentVolumeFilesystem))),
@@ -428,13 +428,13 @@ func ensureSharedSoftwareLibrary(
 	}
 
 	// 2. Ensure the Singleton PVC exists in the shared namespace
-	_, err = podClient.PersistentVolumeClaims(namespace).Get(ctx, SoftwareLibraryPVCName, metav1.GetOptions{})
+	_, err = podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
 	if err != nil {
-		Config.Logger.Printf("Creating shared Lustre PVC: %s in namespace: %s", SoftwareLibraryPVCName, namespace)
+		Config.Logger.Printf("Creating shared Lustre PVC: %s in namespace: %s", pvcName, namespace)
 		emptySC := ""
 		pvc := &k8sv1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      SoftwareLibraryPVCName,
+				Name:      pvcName,
 				Namespace: namespace,
 			},
 			Spec: k8sv1.PersistentVolumeClaimSpec{
@@ -443,7 +443,7 @@ func ensureSharedSoftwareLibrary(
 				Resources: k8sv1.VolumeResourceRequirements{
 					Requests: k8sv1.ResourceList{k8sv1.ResourceStorage: resource.MustParse("1200Gi")},
 				},
-				VolumeName: SoftwareLibraryPVName,
+				VolumeName: pvName,
 			},
 		}
 		_, err = podClient.PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{})
@@ -457,13 +457,14 @@ func ensureSharedSoftwareLibrary(
 
 func injectSoftwareLibrary(pod *k8sv1.Pod) {
 	volumeName := "software-library"
+	pvcName := "software-library-pvc"
 
 	// Add Volume to Pod Spec if not present
 	pod.Spec.Volumes = append(pod.Spec.Volumes, k8sv1.Volume{
 		Name: volumeName,
 		VolumeSource: k8sv1.VolumeSource{
 			PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
-				ClaimName: SoftwareLibraryPVCName,
+				ClaimName: pvcName,
 				ReadOnly:  true, // Highly recommended for a shared software library
 			},
 		},
