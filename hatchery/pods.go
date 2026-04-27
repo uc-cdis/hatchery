@@ -261,6 +261,99 @@ func podStatus(ctx context.Context, userName string, accessToken string, payMode
 	return &status, nil
 }
 
+func ensureSharedSoftwareLibrary(
+	ctx context.Context,
+	podClient corev1.CoreV1Interface,
+	namespace string,
+	cfg FSxConfig,
+) error {
+
+	// Use the namespaced, pv name (PV is a cluster resource)
+	pvName := "sl-" + namespace
+	pvcName := "software-library-pvc"
+
+	// 1. Ensure the Singleton PV exists
+	_, err := podClient.PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{})
+	if err != nil {
+		Config.Logger.Printf("Creating shared Lustre PV: %s", pvName)
+		pv := &k8sv1.PersistentVolume{
+			ObjectMeta: metav1.ObjectMeta{Name: pvName},
+			Spec: k8sv1.PersistentVolumeSpec{
+				Capacity:                      k8sv1.ResourceList{k8sv1.ResourceStorage: resource.MustParse("1200Gi")},
+				VolumeMode:                    (*k8sv1.PersistentVolumeMode)(aws.String(string(k8sv1.PersistentVolumeFilesystem))),
+				AccessModes:                   []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteMany},
+				PersistentVolumeReclaimPolicy: k8sv1.PersistentVolumeReclaimRetain,
+				StorageClassName:              "", // Static binding
+				PersistentVolumeSource: k8sv1.PersistentVolumeSource{
+					CSI: &k8sv1.CSIPersistentVolumeSource{
+						Driver:       "fsx.csi.aws.com",
+						VolumeHandle: cfg.FsxID,
+						VolumeAttributes: map[string]string{
+							"mountname": cfg.MountName,
+							"dnsname":   cfg.DnsName,
+						},
+					},
+				},
+			},
+		}
+		_, err = podClient.PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{})
+		if err != nil {
+			return err
+		}
+	}
+
+	// 2. Ensure the Singleton PVC exists in the shared namespace
+	_, err = podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
+	if err != nil {
+		Config.Logger.Printf("Creating shared Lustre PVC: %s in namespace: %s", pvcName, namespace)
+		emptySC := ""
+		pvc := &k8sv1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pvcName,
+				Namespace: namespace,
+			},
+			Spec: k8sv1.PersistentVolumeClaimSpec{
+				AccessModes:      []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteMany},
+				StorageClassName: &emptySC,
+				Resources: k8sv1.VolumeResourceRequirements{
+					Requests: k8sv1.ResourceList{k8sv1.ResourceStorage: resource.MustParse("1200Gi")},
+				},
+				VolumeName: pvName,
+			},
+		}
+		_, err = podClient.PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func injectSoftwareLibrary(pod *k8sv1.Pod) {
+	volumeName := "software-library"
+	pvcName := "software-library-pvc"
+
+	// Add Volume to Pod Spec if not present
+	pod.Spec.Volumes = append(pod.Spec.Volumes, k8sv1.Volume{
+		Name: volumeName,
+		VolumeSource: k8sv1.VolumeSource{
+			PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
+				ClaimName: pvcName,
+				ReadOnly:  true, // Highly recommended for a shared software library
+			},
+		},
+	})
+
+	// Mount to all containers
+	for i := range pod.Spec.Containers {
+		pod.Spec.Containers[i].VolumeMounts = append(pod.Spec.Containers[i].VolumeMounts, k8sv1.VolumeMount{
+			Name:      volumeName,
+			MountPath: Config.Config.FSxConfig.MountPath,
+		})
+	}
+}
+
 var statusK8sPod = func(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) (*WorkspaceStatus, error) {
 	status, err := podStatus(ctx, userName, accessToken, payModelPtr)
 	if err != nil {
@@ -752,6 +845,21 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 	if err != nil {
 		Config.Logger.Panicf("Error in createLocalK8sPod: %v", err)
 		return err
+	}
+
+	if Config.Config.FSxConfig.FsxID != "" {
+		err := ensureSharedSoftwareLibrary(
+			ctx,
+			podClient,
+			Config.Config.UserNamespace,
+			Config.Config.FSxConfig,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to setup software library: %w", err)
+		}
+
+		// Wire it into the pod spec we just built
+		injectSoftwareLibrary(pod)
 	}
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
