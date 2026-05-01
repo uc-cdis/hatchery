@@ -128,7 +128,7 @@ func NewEKSClientset(ctx context.Context, userName string, payModel PayModel) (c
 		ClusterID:     aws.StringValue(result.Cluster.Name),
 		AssumeRoleARN: roleARN,
 	}
-	tok, err := gen.GetWithOptions(opts)
+	tok, err := gen.GetWithOptions(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
