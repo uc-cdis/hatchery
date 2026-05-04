@@ -2,6 +2,8 @@ package hatchery
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam"
 	k8sv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8svalidation "k8s.io/apimachinery/pkg/util/validation"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
@@ -190,6 +193,24 @@ func sharedPVCName(userName, prefixName string) string {
 	return fmt.Sprintf("shared-claim-%s-%s", escapism(userName), escapism(prefixName))
 }
 
+// shortenedVolumeName returns the volume name hashed version.
+func shortenedVolumeName(prefix string, name string) string {
+	const dns1123LabelMaxLength = 63
+	sum := sha256.Sum256([]byte(name))
+	hash := hex.EncodeToString(sum[:])[:16]
+	out := fmt.Sprintf("%s-%s", prefix, hash)
+	return out
+}
+
+// sharedVolName returns the volume name or a hashed version.
+func sharedVolName(name string) string {
+	old := fmt.Sprintf("shared-%s", escapism(name))
+	if len(k8svalidation.IsDNS1123Label(old)) == 0 {
+		return old
+	}
+	return shortenedVolumeName("shared", name)
+}
+
 // getSharedWorkspacePrefixes calls the configured external API with the user's
 // bearer token and returns the list of S3 prefixes the user may access.
 func getSharedWorkspacePrefixes(ctx context.Context, accessToken string) ([]SharedWorkspacePrefix, error) {
@@ -333,7 +354,7 @@ func addSharedWorkspaceVolumesToPod(pod *k8sv1.Pod, userName string, prefixes []
 	}
 	for _, prefix := range prefixes {
 		pvcName := sharedPVCName(userName, prefix.Name)
-		volName := fmt.Sprintf("shared-%s", escapism(prefix.Name))
+		volName := sharedVolName(prefix.Name)
 		relativePrefixPath := strings.Trim(prefix.Prefix, "/")
 		if relativePrefixPath == "" {
 			relativePrefixPath = prefix.Name
