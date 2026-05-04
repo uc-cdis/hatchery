@@ -195,7 +195,6 @@ func sharedPVCName(userName, prefixName string) string {
 
 // shortenedVolumeName returns the volume name hashed version.
 func shortenedVolumeName(prefix string, name string) string {
-	const dns1123LabelMaxLength = 63
 	sum := sha256.Sum256([]byte(name))
 	hash := hex.EncodeToString(sum[:])[:16]
 	out := fmt.Sprintf("%s-%s", prefix, hash)
