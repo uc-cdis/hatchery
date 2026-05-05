@@ -28,8 +28,8 @@ func sharedWorkspaceSAName(userName string) string {
 }
 
 // sharedWorkspaceRoleName returns the per-user AWS IAM role name.
-func sharedWorkspaceRoleName(userName string) string {
-	return fmt.Sprintf("hatchery-shared-%s", escapism(userName))
+func sharedWorkspaceRoleName(namespace string, userName string) string {
+	return fmt.Sprintf("hatchery-shared-%s-%s", escapism(namespace), escapism(userName))
 }
 
 // oidcProviderID returns the host portion of the OIDC provider ARN,
@@ -56,7 +56,7 @@ func accountIDFromOIDCARN(providerARN string) string {
 // per-user IAM role whose S3 policy is scoped to exactly the given prefixes.
 // Returns the role ARN.
 func ensureSharedWorkspaceIAMRole(userName, namespace, oidcProviderARN string, prefixes []SharedWorkspacePrefix) (string, error) {
-	roleName := sharedWorkspaceRoleName(userName)
+	roleName := sharedWorkspaceRoleName(namespace, userName)
 	accountID := accountIDFromOIDCARN(oidcProviderARN)
 	providerID := oidcProviderID(oidcProviderARN)
 	saName := sharedWorkspaceSAName(userName)
