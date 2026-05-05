@@ -27,9 +27,22 @@ func sharedWorkspaceSAName(userName string) string {
 	return fmt.Sprintf("hatchery-shared-%s", escapism(userName))
 }
 
+// shortenedWorkspaceRoleName returns the workspace role name hashed version.
+func shortenedWorkspaceRoleName(prefix string, namespace string, name string) string {
+	suffix := fmt.Sprintf("%s-%s", escapism(namespace), escapism(name))
+	sum := sha256.Sum256([]byte(suffix))
+	hash := hex.EncodeToString(sum[:])[:16]
+	out := fmt.Sprintf("%s-%s", prefix, hash)
+	return out
+}
+
 // sharedWorkspaceRoleName returns the per-user AWS IAM role name.
 func sharedWorkspaceRoleName(namespace string, userName string) string {
-	return fmt.Sprintf("hatchery-shared-%s-%s", escapism(namespace), escapism(userName))
+	old := fmt.Sprintf("hatchery-shared-%s-%s", escapism(namespace), escapism(userName))
+	if len(old) < 64 {
+		return old
+	}
+	return shortenedWorkspaceRoleName("hatchery-shared", namespace, userName)
 }
 
 // oidcProviderID returns the host portion of the OIDC provider ARN,
@@ -114,6 +127,16 @@ func ensureSharedWorkspaceIAMRole(userName, namespace, oidcProviderARN string, p
 		if _, err = svc.CreateRole(&iam.CreateRoleInput{
 			RoleName:                 aws.String(roleName),
 			AssumeRolePolicyDocument: aws.String(trustPolicy),
+			Tags: []*iam.Tag{
+				{
+					Key:   aws.String("Namespace"),
+					Value: &namespace,
+				},
+				{
+					Key:   aws.String("Username"),
+					Value: &userName,
+				},
+			},
 		}); err != nil {
 			return "", fmt.Errorf("failed to create IAM role %s: %w", roleName, err)
 		}
