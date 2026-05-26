@@ -135,6 +135,7 @@ type SharedWorkspaceConfig struct {
 type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
 	DefaultPayModel PayModel `json:"default-pay-model"`
+	HashedUsernames bool     `json:"hashed-usernames"`
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
 	SkipNodeSelector       bool                  `json:"skip-node-selector"`
 	UseInteralServicesURL  bool                  `json:"use-internal-services-url"`

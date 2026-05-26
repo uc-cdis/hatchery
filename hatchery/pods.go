@@ -336,6 +336,11 @@ var deleteK8sPod = func(ctx context.Context, userName string, accessToken string
 // and a resource type
 func userToResourceName(userName string, resourceType string) string {
 	safeUserName := escapism(userName)
+
+	if Config.Config.HashedUsernames {
+		safeUserName = hashUserName32(userName)
+	}
+
 	if resourceType == "pod" {
 		return fmt.Sprintf("hatchery-%s", safeUserName)
 	}
