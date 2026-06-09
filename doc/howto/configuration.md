@@ -12,6 +12,7 @@ An example manifest entry may look like
     "user-namespace": "jupyter-pods",
     "sub-dir": "/lw-workspace",
     "user-volume-size": "10Gi",
+    "hashed-usernames": false,
     "use-internal-services-url": false
     "prisma": {
       "enable": true,
@@ -114,6 +115,8 @@ An example manifest entry may look like
 
 * `user-namespace` is which namespace the pods will be deployed into.
 * `sub-dir` is the path to Hatchery off the host domain, i.e. if the full domain path is `https://nci-crdc-demo.datacommons.io/lw-workspace` then `sub-dir` is `/lw-workspace`.
+* `hashed-usernames` if set to `true`, Hatchery hashes usernames before using them to generate Kubernetes resource names and related label/selector values, including pods, services, Ambassador mappings, and PVCs. This is useful when usernames may be too long or contain characters that are not safe for Kubernetes metadata, such as long OIDC `sub` values.
+  **Warning:** changing this setting changes the generated Kubernetes resource names for users. Existing PVCs created under the previous naming scheme will not be reused automatically. Enabling this setting will cause new PVCs to be created for users, so previous persistent workspace drives must be migrated manually if they need to be preserved.
 * `user-volume-size` the size of the user volume to be created. Applies to all containers because the user storage is the same across all of them.
 * `use-internal-services-url` Use internal service URLs (http://fence-service/ and http://ambassador-service/) for communication with other services instead of using GEN3_ENDPOINT environmental variable
 * `skip-node-selector` if set to `true`, will not set a node selector for the pods, which will be scheduled on any node. Useful for single-node clusters.

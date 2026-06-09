@@ -7,7 +7,7 @@ ENV GOARCH=amd64
 
 # Use Go toolchains (Go 1.21+ feature) to build with a newer Go toolchain
 # Pick the Go 1.2x.x that is needed for the build.
-ENV GOTOOLCHAIN=go1.26.2
+ENV GOTOOLCHAIN=go1.26.3
 
 WORKDIR $GOPATH/src/github.com/uc-cdis/hatchery/
 
