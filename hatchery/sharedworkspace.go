@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go/service/s3"
 	k8sv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -47,6 +48,25 @@ func accountIDFromOIDCARN(providerARN string) string {
 		return parts[4]
 	}
 	return ""
+}
+
+// ensureKeepFiles creates an empty file in the path because mountpoint-s3 can't
+// use S3 path if it doesn't exist
+func ensureKeepFiles(prefixes []SharedWorkspacePrefix) error {
+	svc := s3.New(session.Must(session.NewSession()))
+	for _, p := range prefixes {
+		key := path.Join(p.Prefix, ".keep")
+
+		_, err := svc.PutObject(&s3.PutObjectInput{
+			Bucket: aws.String(p.BucketName),
+			Key:    aws.String(key),
+			Body:   nil,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ensureSharedWorkspaceIAMRole creates (or updates the inline policy of) a
