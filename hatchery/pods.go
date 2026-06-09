@@ -685,6 +685,10 @@ func setupSharedWorkspacesForPod(ctx context.Context, podClient corev1.CoreV1Int
 		return
 	}
 
+	if err := ensureKeepFiles(prefixes); err != nil {
+		Config.Logger.Printf("Failed to create .keep files: %v", err)
+	}
+
 	Config.Logger.Printf("Creating roles for user %s", userName)
 	roleARN, roleErr := ensureSharedWorkspaceIAMRole(userName, Config.Config.UserNamespace, swCfg.OIDCProviderARN, prefixes)
 	if roleErr != nil {
