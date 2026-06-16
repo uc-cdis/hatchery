@@ -455,6 +455,19 @@ func Test_LaunchEndpoint(t *testing.T) {
 			calledFunctionName: "createLocalK8sPod",
 		},
 		{
+			name:       "UsageInPayModelExceededSoftLimit",
+			want:       "Current Paymodel has reached usage limit. Launch forbidden",
+			wantStatus: http.StatusInternalServerError,
+			mockRequest: &RequestBody{
+				Method:   "POST",
+				id:       "random_id",
+				username: "testUser",
+			},
+			payModelsForUser: &AllPayModels{
+				CurrentPayModel: &PayModel{Status: "active", SoftLimit: 4.5, TotalUsage: 4.6},
+			},
+		},
+		{
 			name:       "NonActiveEcsPayModelExists",
 			want:       "Paymodel is not active. Launch forbidden",
 			wantStatus: http.StatusInternalServerError,

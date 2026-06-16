@@ -627,7 +627,7 @@ func launch(w http.ResponseWriter, r *http.Request) {
 			return
 		} else if payModel.SoftLimit > 0 && payModel.TotalUsage >= payModel.SoftLimit {
 			Config.Logger.Printf("Current Paymodel has reached usage limit (%f/%f). Launch forbidden for user %s", payModel.TotalUsage, payModel.SoftLimit, userName)
-			http.Error(w, "Current Paymodel is has reached usage limit. Launch forbidden", http.StatusInternalServerError)
+			http.Error(w, "Current Paymodel has reached usage limit. Launch forbidden", http.StatusInternalServerError)
 			return
 		} else if payModel.Local {
 			err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars, payModelId)
