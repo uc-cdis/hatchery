@@ -464,7 +464,7 @@ func Test_LaunchEndpoint(t *testing.T) {
 				username: "testUser",
 			},
 			payModelsForUser: &AllPayModels{
-				CurrentPayModel: &PayModel{Status: "active", SoftLimit: 4.5, TotalUsage: 4.6},
+				CurrentPayModel: &PayModel{Status: "active", HardLimit: 4.5, TotalUsage: 4.6},
 			},
 		},
 		{
