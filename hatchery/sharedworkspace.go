@@ -2,6 +2,8 @@ package hatchery
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	k8sv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8svalidation "k8s.io/apimachinery/pkg/util/validation"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
@@ -25,9 +28,22 @@ func sharedWorkspaceSAName(userName string) string {
 	return fmt.Sprintf("hatchery-shared-%s", escapism(userName))
 }
 
+// shortenedWorkspaceRoleName returns the workspace role name hashed version.
+func shortenedWorkspaceRoleName(prefix string, namespace string, name string) string {
+	suffix := fmt.Sprintf("%s-%s", escapism(namespace), escapism(name))
+	sum := sha256.Sum256([]byte(suffix))
+	hash := hex.EncodeToString(sum[:])[:16]
+	out := fmt.Sprintf("%s-%s", prefix, hash)
+	return out
+}
+
 // sharedWorkspaceRoleName returns the per-user AWS IAM role name.
-func sharedWorkspaceRoleName(userName string) string {
-	return fmt.Sprintf("hatchery-shared-%s", escapism(userName))
+func sharedWorkspaceRoleName(namespace string, userName string) string {
+	old := fmt.Sprintf("hatchery-shared-%s-%s", escapism(namespace), escapism(userName))
+	if len(old) < 64 {
+		return old
+	}
+	return shortenedWorkspaceRoleName("hatchery-shared", namespace, userName)
 }
 
 // oidcProviderID returns the host portion of the OIDC provider ARN,
@@ -73,7 +89,7 @@ func ensureKeepFiles(prefixes []SharedWorkspacePrefix) error {
 // per-user IAM role whose S3 policy is scoped to exactly the given prefixes.
 // Returns the role ARN.
 func ensureSharedWorkspaceIAMRole(userName, namespace, oidcProviderARN string, prefixes []SharedWorkspacePrefix) (string, error) {
-	roleName := sharedWorkspaceRoleName(userName)
+	roleName := sharedWorkspaceRoleName(namespace, userName)
 	accountID := accountIDFromOIDCARN(oidcProviderARN)
 	providerID := oidcProviderID(oidcProviderARN)
 	saName := sharedWorkspaceSAName(userName)
@@ -131,6 +147,16 @@ func ensureSharedWorkspaceIAMRole(userName, namespace, oidcProviderARN string, p
 		if _, err = svc.CreateRole(&iam.CreateRoleInput{
 			RoleName:                 aws.String(roleName),
 			AssumeRolePolicyDocument: aws.String(trustPolicy),
+			Tags: []*iam.Tag{
+				{
+					Key:   aws.String("Namespace"),
+					Value: &namespace,
+				},
+				{
+					Key:   aws.String("Username"),
+					Value: &userName,
+				},
+			},
 		}); err != nil {
 			return "", fmt.Errorf("failed to create IAM role %s: %w", roleName, err)
 		}
@@ -208,6 +234,23 @@ func sharedPVName(userName, prefixName string) string {
 // sharedPVCName returns the PersistentVolumeClaim name for a user+prefix pair.
 func sharedPVCName(userName, prefixName string) string {
 	return fmt.Sprintf("shared-claim-%s-%s", escapism(userName), escapism(prefixName))
+}
+
+// shortenedVolumeName returns the volume name hashed version.
+func shortenedVolumeName(prefix string, name string) string {
+	sum := sha256.Sum256([]byte(name))
+	hash := hex.EncodeToString(sum[:])[:16]
+	out := fmt.Sprintf("%s-%s", prefix, hash)
+	return out
+}
+
+// sharedVolName returns the volume name or a hashed version.
+func sharedVolName(name string) string {
+	old := fmt.Sprintf("shared-%s", escapism(name))
+	if len(k8svalidation.IsDNS1123Label(old)) == 0 {
+		return old
+	}
+	return shortenedVolumeName("shared", name)
 }
 
 // getSharedWorkspacePrefixes calls the configured external API with the user's
@@ -353,7 +396,7 @@ func addSharedWorkspaceVolumesToPod(pod *k8sv1.Pod, userName string, prefixes []
 	}
 	for _, prefix := range prefixes {
 		pvcName := sharedPVCName(userName, prefix.Name)
-		volName := fmt.Sprintf("shared-%s", escapism(prefix.Name))
+		volName := sharedVolName(prefix.Name)
 		relativePrefixPath := strings.Trim(prefix.Prefix, "/")
 		if relativePrefixPath == "" {
 			relativePrefixPath = prefix.Name
