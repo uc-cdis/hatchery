@@ -132,10 +132,18 @@ type Pricing struct {
 	Memory float64 `json:"memory"`
 }
 
+// SharedWorkspaceConfig holds configuration for shared S3 workspace mounts.
+type SharedWorkspaceConfig struct {
+	Enabled         bool   `json:"enabled"`
+	MountBasePath   string `json:"mount-base-path"`   // Mount root inside pod; default "$HOME/shared"
+	OIDCProviderARN string `json:"oidc-provider-arn"` // Full ARN of the EKS OIDC provider, e.g. arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
 	DefaultPayModel PayModel `json:"default-pay-model"`
+	HashedUsernames bool     `json:"hashed-usernames"`
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
 	SkipNodeSelector       bool                 `json:"skip-node-selector"`
 	UseInteralServicesURL  bool                 `json:"use-internal-services-url"`
@@ -154,6 +162,7 @@ type HatcheryConfig struct {
 	S3Config               S3Config             `json:"s3-config"`
 	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
 	Pricing                Pricing              `json:"pricing"`
+	SharedWorkspace        SharedWorkspaceConfig `json:"shared-workspace"`
 }
 
 // Config to allow for Prisma Agents

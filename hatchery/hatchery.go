@@ -3,6 +3,8 @@ package hatchery
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -199,6 +201,15 @@ func timeTracker(w http.ResponseWriter, r *http.Request) {
 
 	// Important: Reset the body so it can be read again if needed
 	r.Body = io.NopCloser(bytes.NewBuffer(body))
+}
+
+func hashUserName32(userName string) string {
+	sum := sha256.Sum256([]byte(userName))
+
+	// 16 bytes = 128 bits = 32 lowercase hex chars.
+	// Full SHA-256 hex is 64 chars and can still exceed k8s 63-char limits
+	// once prefixes/suffixes are added.
+	return hex.EncodeToString(sum[:16])
 }
 
 func getCurrentUserName(r *http.Request) (userName string) {
@@ -613,6 +624,10 @@ func launch(w http.ResponseWriter, r *http.Request) {
 		if payModel == nil {
 			Config.Logger.Printf("Current Paymodel is not set. Launch forbidden for user %s", userName)
 			http.Error(w, "Current Paymodel is not set. Launch forbidden", http.StatusInternalServerError)
+			return
+		} else if payModel.HardLimit > 0 && payModel.TotalUsage >= payModel.HardLimit {
+			Config.Logger.Printf("Current Paymodel has reached usage limit (%f/%f). Launch forbidden for user %s", payModel.TotalUsage, payModel.HardLimit, userName)
+			http.Error(w, "Current Paymodel has reached usage limit. Launch forbidden", http.StatusInternalServerError)
 			return
 		} else if payModel.Local {
 			err = createLocalK8sPod(r.Context(), hash, userName, accessToken, envVars, payModelId)
