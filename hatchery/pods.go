@@ -1067,11 +1067,11 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 	}
 
 	if hatchApp.SquashFSMount.Enabled {
-		Config.Logger.Printf("Applying SquashFS mounter setup for container target: %s", hatchApp.Name)
+		Config.Logger.Printf("Applying SquashFS mounter setup for container: %s", hatchApp.Name)
 
 		err := applySquashFSMounter(pod, hatchApp.SquashFSMount)
 		if err != nil {
-			Config.Logger.Printf("failed to apply squashfs sidecar for container %q: %v", hatchApp.Name, err)
+			Config.Logger.Printf("failed to apply squashfs sidecar for container %s: %v", hatchApp.Name, err)
 			return err
 		}
 	} else {
