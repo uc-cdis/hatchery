@@ -56,31 +56,32 @@ type LicenseInfo struct {
 
 // Container Struct to hold the configuration for Pod Container
 type Container struct {
-	Name               string            `json:"name"`
-	GPU                bool              `json:"gpu"`
-	CPULimit           string            `json:"cpu-limit"`
-	MemoryLimit        string            `json:"memory-limit"`
-	Image              string            `json:"image"`
-	PullPolicy         string            `json:"pull_policy"`
-	Env                map[string]string `json:"env"`
-	TargetPort         int32             `json:"target-port"`
-	Args               []string          `json:"args"`
-	Command            []string          `json:"command"`
-	PathRewrite        string            `json:"path-rewrite"`
-	UseTLS             string            `json:"use-tls"`
-	ReadyProbe         string            `json:"ready-probe"`
-	LifecyclePreStop   []string          `json:"lifecycle-pre-stop"`
-	LifecyclePostStart []string          `json:"lifecycle-post-start"`
-	UserUID            int64             `json:"user-uid"`
-	GroupUID           int64             `json:"group-uid"`
-	FSGID              int64             `json:"fs-gid"`
-	UserVolumeLocation string            `json:"user-volume-location"`
-	Gen3VolumeLocation string            `json:"gen3-volume-location"`
-	UseSharedMemory    string            `json:"use-shared-memory"`
-	Friends            []k8sv1.Container `json:"friends"`
-	NextflowConfig     NextflowConfig    `json:"nextflow"`
-	License            LicenseInfo       `json:"license"`
-	Authz              AuthzConfig       `json:"authz"`
+	Name               string              `json:"name"`
+	GPU                bool                `json:"gpu"`
+	CPULimit           string              `json:"cpu-limit"`
+	MemoryLimit        string              `json:"memory-limit"`
+	Image              string              `json:"image"`
+	PullPolicy         string              `json:"pull_policy"`
+	Env                map[string]string   `json:"env"`
+	TargetPort         int32               `json:"target-port"`
+	Args               []string            `json:"args"`
+	Command            []string            `json:"command"`
+	PathRewrite        string              `json:"path-rewrite"`
+	UseTLS             string              `json:"use-tls"`
+	ReadyProbe         string              `json:"ready-probe"`
+	LifecyclePreStop   []string            `json:"lifecycle-pre-stop"`
+	LifecyclePostStart []string            `json:"lifecycle-post-start"`
+	UserUID            int64               `json:"user-uid"`
+	GroupUID           int64               `json:"group-uid"`
+	FSGID              int64               `json:"fs-gid"`
+	UserVolumeLocation string              `json:"user-volume-location"`
+	Gen3VolumeLocation string              `json:"gen3-volume-location"`
+	UseSharedMemory    string              `json:"use-shared-memory"`
+	Friends            []k8sv1.Container   `json:"friends"`
+	NextflowConfig     NextflowConfig      `json:"nextflow"`
+	License            LicenseInfo         `json:"license"`
+	Authz              AuthzConfig         `json:"authz"`
+	SquashFSMount      SquashFSMountConfig `json:"squashfs_mount"`
 }
 
 // SidecarContainer holds fuse sidecar configuration
@@ -139,29 +140,39 @@ type SharedWorkspaceConfig struct {
 	OIDCProviderARN string `json:"oidc-provider-arn"` // Full ARN of the EKS OIDC provider, e.g. arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E
 }
 
+// SquashFSMountConfig defines parameters for dynamic loop-mounting of squashfs inside pods
+type SquashFSMountConfig struct {
+	Enabled        bool   `json:"enabled"`
+	SourceSqsh     string `json:"source_sqsh"`
+	ExpectedSha256 string `json:"expected_sha256"`
+	MounterImage   string `json:"mounter_image"`
+	CacheSizeLimit string `json:"cache_size_limit"` // e.g., "20Gi"
+	PVCClaimName   string `json:"pvc_claim_name"`   // e.g., "software-library-pvc"
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
 	DefaultPayModel PayModel `json:"default-pay-model"`
 	HashedUsernames bool     `json:"hashed-usernames"`
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
-	SkipNodeSelector       bool                 `json:"skip-node-selector"`
-	UseInteralServicesURL  bool                 `json:"use-internal-services-url"`
-	PayModels              []PayModel           `json:"pay-models"`
-	PayModelsDynamodbTable string               `json:"pay-models-dynamodb-table"`
-	PayModelsDynamodbArn   string               `json:"pay-models-dynamodb-arn"`
-	LicenseUserMapsTable   string               `json:"license-user-maps-dynamodb-table"`
-	LicenseUserMapsGSI     string               `json:"license-user-maps-global-secondary-index"`
-	License                LicenseInfo          `json:"license"`
-	SubDir                 string               `json:"sub-dir"`
-	Containers             []Container          `json:"containers"`
-	UserVolumeSize         string               `json:"user-volume-size"`
-	Sidecar                SidecarContainer     `json:"sidecar"`
-	MoreConfigs            []AppConfigInfo      `json:"more-configs"`
-	PrismaConfig           PrismaConfig         `json:"prisma"`
-	S3Config               S3Config             `json:"s3-config"`
-	NextflowGlobalConfig   NextflowGlobalConfig `json:"nextflow-global"`
-	Pricing                Pricing              `json:"pricing"`
+	SkipNodeSelector       bool                  `json:"skip-node-selector"`
+	UseInteralServicesURL  bool                  `json:"use-internal-services-url"`
+	PayModels              []PayModel            `json:"pay-models"`
+	PayModelsDynamodbTable string                `json:"pay-models-dynamodb-table"`
+	PayModelsDynamodbArn   string                `json:"pay-models-dynamodb-arn"`
+	LicenseUserMapsTable   string                `json:"license-user-maps-dynamodb-table"`
+	LicenseUserMapsGSI     string                `json:"license-user-maps-global-secondary-index"`
+	License                LicenseInfo           `json:"license"`
+	SubDir                 string                `json:"sub-dir"`
+	Containers             []Container           `json:"containers"`
+	UserVolumeSize         string                `json:"user-volume-size"`
+	Sidecar                SidecarContainer      `json:"sidecar"`
+	MoreConfigs            []AppConfigInfo       `json:"more-configs"`
+	PrismaConfig           PrismaConfig          `json:"prisma"`
+	S3Config               S3Config              `json:"s3-config"`
+	NextflowGlobalConfig   NextflowGlobalConfig  `json:"nextflow-global"`
+	Pricing                Pricing               `json:"pricing"`
 	SharedWorkspace        SharedWorkspaceConfig `json:"shared-workspace"`
 }
 

@@ -2,6 +2,7 @@ package hatchery
 
 import (
 	"context"
+	_ "embed" // Required for go:embed
 	"encoding/base64"
 	"fmt"
 	"log"
@@ -30,6 +31,14 @@ import (
 
 	"sigs.k8s.io/aws-iam-authenticator/pkg/token"
 )
+
+// Compile-time embedding of the script files
+//
+//go:embed scripts/squashfs_sidecar_script.sh
+var squashFSSidecarScript string
+
+//go:embed scripts/squashfs_wrapper_script.sh
+var squashFSWrapperScript string
 
 var (
 	trueVal  = true
@@ -902,6 +911,120 @@ func setupSharedWorkspacesForPod(ctx context.Context, podClient corev1.CoreV1Int
 	}
 }
 
+func applySquashFSMounter(pod *k8sv1.Pod, opts SquashFSMountConfig) error {
+	if !opts.Enabled {
+		return nil
+	}
+
+	mounterImage := opts.MounterImage
+	if mounterImage == "" {
+		mounterImage = "quay.io/cdis/ecs-ws-sidecar:master"
+	}
+	sourceSqsh := opts.SourceSqsh
+	if sourceSqsh == "" {
+		sourceSqsh = "/image/apps-current.sqsh"
+	}
+	cacheSizeStr := opts.CacheSizeLimit
+	if cacheSizeStr == "" {
+		cacheSizeStr = "20Gi"
+	}
+	cacheSize, err := resource.ParseQuantity(cacheSizeStr)
+	if err != nil {
+		return fmt.Errorf("invalid squashfs cache size limit %q: %v", cacheSizeStr, err)
+	}
+	pvcName := opts.PVCClaimName
+	if pvcName == "" {
+		pvcName = "software-library-pvc"
+	}
+
+	extraVolumes := []k8sv1.Volume{
+		{
+			Name: "apps-mount",
+			VolumeSource: k8sv1.VolumeSource{
+				EmptyDir: &k8sv1.EmptyDirVolumeSource{
+					Medium: k8sv1.StorageMediumMemory,
+				},
+			},
+		},
+		{
+			Name: "sqsh-cache",
+			VolumeSource: k8sv1.VolumeSource{
+				EmptyDir: &k8sv1.EmptyDirVolumeSource{
+					SizeLimit: &cacheSize,
+				},
+			},
+		},
+		{
+			Name: "software-library",
+			VolumeSource: k8sv1.VolumeSource{
+				PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
+					ClaimName: pvcName,
+					ReadOnly:  true,
+				},
+			},
+		},
+	}
+	pod.Spec.Volumes = append(pod.Spec.Volumes, extraVolumes...)
+
+	propBidirectional := k8sv1.MountPropagationBidirectional
+	propHostToContainer := k8sv1.MountPropagationHostToContainer
+
+	// Construct the apps-mounter sidecar container
+	privileged := true
+	rootID := int64(0)
+
+	sidecar := k8sv1.Container{
+		Name:            "apps-mounter",
+		Image:           mounterImage,
+		ImagePullPolicy: k8sv1.PullIfNotPresent,
+		SecurityContext: &k8sv1.SecurityContext{
+			Privileged: &privileged,
+			RunAsUser:  &rootID,
+			RunAsGroup: &rootID,
+		},
+		Env: []k8sv1.EnvVar{
+			{Name: "SOURCE_SQSH", Value: sourceSqsh},
+			{Name: "EXPECTED_SHA256", Value: opts.ExpectedSha256},
+		},
+		Command: []string{"/bin/sh", "-ceu"},
+		Args:    []string{squashFSSidecarScript}, // Used embedded variable
+		VolumeMounts: []k8sv1.VolumeMount{
+			{Name: "software-library", MountPath: "/image", ReadOnly: true},
+			{Name: "sqsh-cache", MountPath: "/sqsh-cache"},
+			{Name: "apps-mount", MountPath: "/apps", MountPropagation: &propBidirectional},
+		},
+	}
+	pod.Spec.Containers = append([]k8sv1.Container{sidecar}, pod.Spec.Containers...)
+
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name == "hatchery-container" {
+
+			container := &pod.Spec.Containers[i]
+
+			container.VolumeMounts = append(container.VolumeMounts,
+				k8sv1.VolumeMount{Name: "apps-mount", MountPath: "/apps", MountPropagation: &propHostToContainer},
+			)
+
+			origCommand := container.Command
+			origArgs := container.Args
+
+			if len(origCommand) == 0 {
+				origCommand = []string{"/bin/sh", "-c"}
+			}
+
+			container.Command = []string{"/bin/sh", "-ceu"}
+
+			newArgs := []string{squashFSWrapperScript} // Used embedded variable
+			newArgs = append(newArgs, origCommand...)
+			newArgs = append(newArgs, origArgs...)
+			container.Args = newArgs
+			break
+		}
+	}
+
+	return nil
+}
+
 var createLocalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, envVars []k8sv1.EnvVar, payModelId ...string) error {
 	// Set default if not provided
 	payModelIdValue := ""
@@ -942,22 +1065,33 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 		Config.Logger.Panicf("Error in createLocalK8sPod: %v", err)
 		return err
 	}
-	// ensure S3 PV/PVC (dynamic per user) and wire into pod
-	if Config.Config.S3Config.BucketName != "" && Config.Config.S3Config.Region != "" {
-		Config.Logger.Print("Mounting S3 bucket as well..")
-		s3PVCName, err := ensureS3PVandPVC(
-			ctx,
-			podClient,
-			Config.Config.UserNamespace,
-			userName,
-			Config.Config.S3Config.BucketName,
-			Config.Config.S3Config.Region,
-		)
+
+	if hatchApp.SquashFSMount.Enabled {
+		Config.Logger.Printf("Applying SquashFS mounter setup for container target: %s", hatchApp.Name)
+
+		err := applySquashFSMounter(pod, hatchApp.SquashFSMount)
 		if err != nil {
-			Config.Logger.Printf("Failed ensuring S3 PV/PVC for user %s: %v", userName, err)
+			Config.Logger.Printf("failed to apply squashfs sidecar for container %q: %v", hatchApp.Name, err)
 			return err
 		}
-		addS3VolumeToPod(pod, s3PVCName)
+	} else {
+		// ensure S3 PV/PVC (dynamic per user) and wire into pod
+		if Config.Config.S3Config.BucketName != "" && Config.Config.S3Config.Region != "" {
+			Config.Logger.Print("Mounting S3 bucket as well..")
+			s3PVCName, err := ensureS3PVandPVC(
+				ctx,
+				podClient,
+				Config.Config.UserNamespace,
+				userName,
+				Config.Config.S3Config.BucketName,
+				Config.Config.S3Config.Region,
+			)
+			if err != nil {
+				Config.Logger.Printf("Failed ensuring S3 PV/PVC for user %s: %v", userName, err)
+				return err
+			}
+			addS3VolumeToPod(pod, s3PVCName)
+		}
 	}
 
 	// a null image indicates a dockstore app - always mount user volume
