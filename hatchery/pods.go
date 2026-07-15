@@ -1014,6 +1014,8 @@ func applySquashFSMounter(pod *k8sv1.Pod, opts SquashFSMountConfig) error {
 
 			container.Command = []string{"/bin/sh", "-ceu"}
 
+			// Pass "hatchery-wrapper" as a dummy argument.
+			// This becomes $0 inside the shell script, ensuring that following command (/jupyterlab-start.sh) becomes $1 and is included in "$@".
 			newArgs := []string{squashFSWrapperScript, "hatchery-wrapper"} // Used embedded variable
 			newArgs = append(newArgs, origCommand...)
 			newArgs = append(newArgs, origArgs...)
