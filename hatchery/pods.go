@@ -1014,7 +1014,7 @@ func applySquashFSMounter(pod *k8sv1.Pod, opts SquashFSMountConfig) error {
 
 			container.Command = []string{"/bin/sh", "-ceu"}
 
-			newArgs := []string{squashFSWrapperScript} // Used embedded variable
+			newArgs := []string{squashFSWrapperScript, "hatchery-wrapper"} // Used embedded variable
 			newArgs = append(newArgs, origCommand...)
 			newArgs = append(newArgs, origArgs...)
 			container.Args = newArgs
