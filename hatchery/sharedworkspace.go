@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"path"
 	"strings"
 
@@ -73,7 +74,21 @@ func ensureKeepFiles(prefixes []SharedWorkspacePrefix) error {
 	for _, p := range prefixes {
 		key := path.Join(p.Prefix, ".keep")
 
-		_, err := svc.PutObject(&s3.PutObjectInput{
+		_, err := svc.HeadObject(&s3.HeadObjectInput{
+			Bucket: aws.String(p.BucketName),
+			Key:    aws.String(key),
+		})
+		if err == nil {
+			// The .keep object already exists.
+			continue
+		}
+
+		// Only create the object when it does not exist.
+		if reqErr, ok := err.(awserr.RequestFailure); !ok || reqErr.StatusCode() != http.StatusNotFound {
+			return err
+		}
+
+		_, err = svc.PutObject(&s3.PutObjectInput{
 			Bucket: aws.String(p.BucketName),
 			Key:    aws.String(key),
 			Body:   nil,
