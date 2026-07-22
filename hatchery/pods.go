@@ -400,148 +400,148 @@ func userToResourceName(userName string, resourceType string) string {
 	return fmt.Sprintf("%s-%s", resourceType, safeUserName)
 }
 
-func s3NamesForUser(userName string, namespace string) (pvName, pvcName, volumeHandle string) {
-	base := userToResourceName(userName, "s3")                                   // e.g. john-doe-s3
-	return base + "-" + namespace + "-pv", base + "-pvc", base + "-" + namespace // unique handle
-}
+// func s3NamesForUser(userName string, namespace string) (pvName, pvcName, volumeHandle string) {
+// 	base := userToResourceName(userName, "s3")                                   // e.g. john-doe-s3
+// 	return base + "-" + namespace + "-pv", base + "-pvc", base + "-" + namespace // unique handle
+// }
 
-func s3PrefixForUser(userName string) string {
-	// If you prefer purely the username: return fmt.Sprintf("%s/", userName)
-	// Using resource-safe version tends to be nicer:
-	return fmt.Sprintf("%s/", userToResourceName(userName, ""))
-}
+// func s3PrefixForUser(userName string) string {
+// 	// If you prefer purely the username: return fmt.Sprintf("%s/", userName)
+// 	// Using resource-safe version tends to be nicer:
+// 	return fmt.Sprintf("%s/", userToResourceName(userName, ""))
+// }
 
-func ensureS3PVandPVC(
-	ctx context.Context,
-	podClient corev1.CoreV1Interface,
-	namespace string,
-	userName string,
-	bucket string,
-	region string,
-) (pvcName string, err error) {
+// func ensureS3PVandPVC(
+// 	ctx context.Context,
+// 	podClient corev1.CoreV1Interface,
+// 	namespace string,
+// 	userName string,
+// 	bucket string,
+// 	region string,
+// ) (pvcName string, err error) {
 
-	pvName, pvcName, volumeHandle := s3NamesForUser(userName, namespace)
-	// Commented out for now as we don't need a prefix, this bucket will be mounted at / for all users, but read only.
-	// This will be used for the "software-repository" feature
-	// prefix := s3PrefixForUser(userName)
-	// prefix := "/"
+// 	pvName, pvcName, volumeHandle := s3NamesForUser(userName, namespace)
+// 	// Commented out for now as we don't need a prefix, this bucket will be mounted at / for all users, but read only.
+// 	// This will be used for the "software-repository" feature
+// 	// prefix := s3PrefixForUser(userName)
+// 	// prefix := "/"
 
-	// ----- Ensure PV exists (cluster-scoped) -----
-	// Try GET; if not found, create.
-	if _, errGet := podClient.PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{}); errGet != nil {
-		pv := &k8sv1.PersistentVolume{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: pvName,
-			},
-			Spec: k8sv1.PersistentVolumeSpec{
-				Capacity: k8sv1.ResourceList{
-					k8sv1.ResourceStorage: resource.MustParse("1200Gi"), // ignored by S3 CSI, but required
-				},
-				AccessModes:      []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteMany},
-				StorageClassName: "", // static provisioning
-				ClaimRef: &k8sv1.ObjectReference{
-					Namespace: namespace,
-					Name:      pvcName,
-				},
-				MountOptions: []string{
-					"allow-delete",
-					"allow-other",
-					"gid=100",
-					"file-mode=555",
-					"dir-mode=555",
-					fmt.Sprintf("region %s", region),
-					// fmt.Sprintf("prefix %s", prefix),
-					// Caches directory listings and file stats for 1 hour (fixes the 77x walk/stat slowdown)
-					"metadata-ttl=3600",
-				},
-				PersistentVolumeSource: k8sv1.PersistentVolumeSource{
-					CSI: &k8sv1.CSIPersistentVolumeSource{
-						Driver:       "s3.csi.aws.com",
-						VolumeHandle: volumeHandle, // must be unique
-						VolumeAttributes: map[string]string{
-							"bucketName": bucket,
-							// Enables safe file caching using an ephemeral emptyDir on the K8s node
-							// and hard-caps the cache at 10 Gigabytes to prevent disk pressure
-							"cacheEmptyDirSizeLimit": "10Gi",
-						},
-					},
-				},
-			},
-		}
-		if _, errCreatePV := podClient.PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{}); errCreatePV != nil {
-			return "", fmt.Errorf("failed to create S3 PV %s: %w", pvName, errCreatePV)
-		}
-	}
+// 	// ----- Ensure PV exists (cluster-scoped) -----
+// 	// Try GET; if not found, create.
+// 	if _, errGet := podClient.PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{}); errGet != nil {
+// 		pv := &k8sv1.PersistentVolume{
+// 			ObjectMeta: metav1.ObjectMeta{
+// 				Name: pvName,
+// 			},
+// 			Spec: k8sv1.PersistentVolumeSpec{
+// 				Capacity: k8sv1.ResourceList{
+// 					k8sv1.ResourceStorage: resource.MustParse("1200Gi"), // ignored by S3 CSI, but required
+// 				},
+// 				AccessModes:      []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteMany},
+// 				StorageClassName: "", // static provisioning
+// 				ClaimRef: &k8sv1.ObjectReference{
+// 					Namespace: namespace,
+// 					Name:      pvcName,
+// 				},
+// 				MountOptions: []string{
+// 					"allow-delete",
+// 					"allow-other",
+// 					"gid=100",
+// 					"file-mode=555",
+// 					"dir-mode=555",
+// 					fmt.Sprintf("region %s", region),
+// 					// fmt.Sprintf("prefix %s", prefix),
+// 					// Caches directory listings and file stats for 1 hour (fixes the 77x walk/stat slowdown)
+// 					"metadata-ttl=3600",
+// 				},
+// 				PersistentVolumeSource: k8sv1.PersistentVolumeSource{
+// 					CSI: &k8sv1.CSIPersistentVolumeSource{
+// 						Driver:       "s3.csi.aws.com",
+// 						VolumeHandle: volumeHandle, // must be unique
+// 						VolumeAttributes: map[string]string{
+// 							"bucketName": bucket,
+// 							// Enables safe file caching using an ephemeral emptyDir on the K8s node
+// 							// and hard-caps the cache at 10 Gigabytes to prevent disk pressure
+// 							"cacheEmptyDirSizeLimit": "10Gi",
+// 						},
+// 					},
+// 				},
+// 			},
+// 		}
+// 		if _, errCreatePV := podClient.PersistentVolumes().Create(ctx, pv, metav1.CreateOptions{}); errCreatePV != nil {
+// 			return "", fmt.Errorf("failed to create S3 PV %s: %w", pvName, errCreatePV)
+// 		}
+// 	}
 
-	// ----- Ensure PVC exists (namespaced) -----
-	if _, errGet := podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{}); errGet != nil {
-		empty := "" // PVC.StorageClassName is *string
-		pvc := &k8sv1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      pvcName,
-				Namespace: namespace,
-			},
-			Spec: k8sv1.PersistentVolumeClaimSpec{
-				AccessModes:      []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteMany},
-				StorageClassName: &empty,
-				Resources: k8sv1.VolumeResourceRequirements{
-					Requests: k8sv1.ResourceList{
-						k8sv1.ResourceStorage: resource.MustParse("1200Gi"),
-					},
-				},
-				VolumeName: pvName,
-			},
-		}
-		if _, errCreatePVC := podClient.PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{}); errCreatePVC != nil {
-			return "", fmt.Errorf("failed to create S3 PVC %s: %w", pvcName, errCreatePVC)
-		}
-	}
+// 	// ----- Ensure PVC exists (namespaced) -----
+// 	if _, errGet := podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{}); errGet != nil {
+// 		empty := "" // PVC.StorageClassName is *string
+// 		pvc := &k8sv1.PersistentVolumeClaim{
+// 			ObjectMeta: metav1.ObjectMeta{
+// 				Name:      pvcName,
+// 				Namespace: namespace,
+// 			},
+// 			Spec: k8sv1.PersistentVolumeClaimSpec{
+// 				AccessModes:      []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteMany},
+// 				StorageClassName: &empty,
+// 				Resources: k8sv1.VolumeResourceRequirements{
+// 					Requests: k8sv1.ResourceList{
+// 						k8sv1.ResourceStorage: resource.MustParse("1200Gi"),
+// 					},
+// 				},
+// 				VolumeName: pvName,
+// 			},
+// 		}
+// 		if _, errCreatePVC := podClient.PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{}); errCreatePVC != nil {
+// 			return "", fmt.Errorf("failed to create S3 PVC %s: %w", pvcName, errCreatePVC)
+// 		}
+// 	}
 
-	return pvcName, nil
-}
+// 	return pvcName, nil
+// }
 
-// Adds the S3 volume + mount to the pod in-place.
-// Call this after buildPod(), before creating it.
-func addS3VolumeToPod(pod *k8sv1.Pod, pvcName string) {
-	// 1) Add Volume
-	hasVolume := false
-	for _, v := range pod.Spec.Volumes {
-		if v.Name == "s3-volume" {
-			hasVolume = true
-			break
-		}
-	}
-	if !hasVolume {
-		pod.Spec.Volumes = append(pod.Spec.Volumes, k8sv1.Volume{
-			Name: "s3-volume",
-			VolumeSource: k8sv1.VolumeSource{
-				PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
-					ClaimName: pvcName,
-					// ReadOnly: false, // optional
-				},
-			},
-		})
-	}
+// // Adds the S3 volume + mount to the pod in-place.
+// // Call this after buildPod(), before creating it.
+// func addS3VolumeToPod(pod *k8sv1.Pod, pvcName string) {
+// 	// 1) Add Volume
+// 	hasVolume := false
+// 	for _, v := range pod.Spec.Volumes {
+// 		if v.Name == "s3-volume" {
+// 			hasVolume = true
+// 			break
+// 		}
+// 	}
+// 	if !hasVolume {
+// 		pod.Spec.Volumes = append(pod.Spec.Volumes, k8sv1.Volume{
+// 			Name: "s3-volume",
+// 			VolumeSource: k8sv1.VolumeSource{
+// 				PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
+// 					ClaimName: pvcName,
+// 					// ReadOnly: false, // optional
+// 				},
+// 			},
+// 		})
+// 	}
 
-	// 2) Add VolumeMount (/apps) to every container (or just the main one)
-	for ci := range pod.Spec.Containers {
-		c := &pod.Spec.Containers[ci]
-		alreadyMounted := false
-		for _, m := range c.VolumeMounts {
-			if m.Name == "s3-volume" {
-				alreadyMounted = true
-				break
-			}
-		}
-		if !alreadyMounted {
-			c.VolumeMounts = append(c.VolumeMounts, k8sv1.VolumeMount{
-				Name: "s3-volume",
-				// TODO: Read this path from config
-				MountPath: "/apps",
-			})
-		}
-	}
-}
+// 	// 2) Add VolumeMount (/apps) to every container (or just the main one)
+// 	for ci := range pod.Spec.Containers {
+// 		c := &pod.Spec.Containers[ci]
+// 		alreadyMounted := false
+// 		for _, m := range c.VolumeMounts {
+// 			if m.Name == "s3-volume" {
+// 				alreadyMounted = true
+// 				break
+// 			}
+// 		}
+// 		if !alreadyMounted {
+// 			c.VolumeMounts = append(c.VolumeMounts, k8sv1.VolumeMount{
+// 				Name: "s3-volume",
+// 				// TODO: Read this path from config
+// 				MountPath: "/apps",
+// 			})
+// 		}
+// 	}
+// }
 
 // buildPod returns a pod ready to pass to the k8s API given
 // a hatchery Container instance, and the name of the user
@@ -1076,25 +1076,26 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 			Config.Logger.Printf("failed to apply squashfs sidecar for container %s: %v", hatchApp.Name, err)
 			return err
 		}
-	} else {
-		// ensure S3 PV/PVC (dynamic per user) and wire into pod
-		if Config.Config.S3Config.BucketName != "" && Config.Config.S3Config.Region != "" {
-			Config.Logger.Print("Mounting S3 bucket as well..")
-			s3PVCName, err := ensureS3PVandPVC(
-				ctx,
-				podClient,
-				Config.Config.UserNamespace,
-				userName,
-				Config.Config.S3Config.BucketName,
-				Config.Config.S3Config.Region,
-			)
-			if err != nil {
-				Config.Logger.Printf("Failed ensuring S3 PV/PVC for user %s: %v", userName, err)
-				return err
-			}
-			addS3VolumeToPod(pod, s3PVCName)
-		}
 	}
+	// else {
+	// 	// ensure S3 PV/PVC (dynamic per user) and wire into pod
+	// 	if Config.Config.S3Config.BucketName != "" && Config.Config.S3Config.Region != "" {
+	// 		Config.Logger.Print("Mounting S3 bucket as well..")
+	// 		s3PVCName, err := ensureS3PVandPVC(
+	// 			ctx,
+	// 			podClient,
+	// 			Config.Config.UserNamespace,
+	// 			userName,
+	// 			Config.Config.S3Config.BucketName,
+	// 			Config.Config.S3Config.Region,
+	// 		)
+	// 		if err != nil {
+	// 			Config.Logger.Printf("Failed ensuring S3 PV/PVC for user %s: %v", userName, err)
+	// 			return err
+	// 		}
+	// 		addS3VolumeToPod(pod, s3PVCName)
+	// 	}
+	// }
 
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
