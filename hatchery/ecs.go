@@ -341,7 +341,7 @@ var terminateEcsWorkspace = func(ctx context.Context, userName string, accessTok
 	}
 
 	// Terminate target group
-	err = svc.terminateLoadBalancerTargetGroup(userName)
+	err = svc.terminateLoadBalancerTargetGroup(ctx, userName)
 	if err != nil {
 		Config.Logger.Printf("Error occurred when terminating load balancer target group for user %s: %s\n", userName, err.Error())
 	}
@@ -559,7 +559,7 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 		return "", err
 	}
 
-	loadBalancer, targetGroupArn, _, err := sess.CreateLoadBalancer(userName)
+	loadBalancer, targetGroupArn, _, err := sess.CreateLoadBalancer(ctx, userName)
 	if err != nil {
 		return "", err
 	}
