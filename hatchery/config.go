@@ -131,6 +131,19 @@ type SharedWorkspaceConfig struct {
 	OIDCProviderARN string `json:"oidc-provider-arn"` // Full ARN of the EKS OIDC provider, e.g. arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E
 }
 
+// Configuration for FSx for Lustre shared software library
+type FSxConfig struct {
+	FsxID     string `json:"fsxId"`     // e.g. "fs-0db570e0cb6e6f5af"
+	DnsName   string `json:"dnsName"`   // e.g. "fs-0db570e0cb6e6f5af.fsx.us-east-1.amazonaws.com"
+	MountName string `json:"mountName"` // e.g. "nyj6tamv"
+
+	// Optional: defaults to "1200Gi" if not specified
+	Storage string `json:"storage"` // e.g. "1200Gi"
+
+	// where the volume is mounted inside the pod
+	MountPath string `json:"mountPath"` // e.g. "/apps"
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
@@ -148,6 +161,7 @@ type HatcheryConfig struct {
 	SubDir                 string                `json:"sub-dir"`
 	Containers             []Container           `json:"containers"`
 	UserVolumeSize         string                `json:"user-volume-size"`
+	FSxConfig              FSxConfig             `json:fsx-config`
 	Sidecar                SidecarContainer      `json:"sidecar"`
 	MoreConfigs            []AppConfigInfo       `json:"more-configs"`
 	PrismaConfig           PrismaConfig          `json:"prisma"`
