@@ -11,9 +11,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
+	"github.com/aws/smithy-go"
 )
 
-func (creds *CREDS) createTargetGroup(ctx context.Context, userName string, vpcId string, svc *elasticloadbalancingv2.Client) (*elasticloadbalancingv2.CreateTargetGroupOutput, error) {
+func (creds *CREDS) createTargetGroup(userName string, vpcId string, svc *elasticloadbalancingv2.Client) (*elasticloadbalancingv2.CreateTargetGroupOutput, error) {
 	tgName := truncateString(strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")+userToResourceName(userName, "service")+"tg", 32)
 	input := &elasticloadbalancingv2.CreateTargetGroupInput{
 		Name:            aws.String(tgName),
@@ -27,27 +28,24 @@ func (creds *CREDS) createTargetGroup(ctx context.Context, userName string, vpcI
 		},
 	}
 
+	//TODO: Consider using parent request context for propagation.
+	//In AWS GO SDK V2 context is now required.
+	//Currently we do not propagate context canceling to downstream requests
+	//To preserve current behavior, local context is created.
+	ctx = context.TODO()
+
 	result, err := svc.CreateTargetGroup(ctx, input)
 
+	//TODO: Consider typecasting error to specific type for more specific error handling
+	//i.e. types.DuplicateTargetGroupNameException
+	//Previous code only print out error type string, so there is no need for type casting
 	if err != nil {
-		var duplicateTargetGroupErr *types.DuplicateTargetGroupNameException
-		var tooManyTargetGroupsException *types.TooManyTargetGroupsException
-		var invalidConfigurationRequestException *types.InvalidConfigurationRequestException
-		var tooManyTagsException *types.TooManyTagsException
-
-		if errors.As(err, &duplicateTargetGroupErr) {
-			fmt.Println("%T: %s\n", duplicateTargetGroupErr, duplicateTargetGroupErr.Error())
-		} else if errors.As(err, &tooManyTargetGroupsException) {
-			fmt.Println("%T: %s\n", tooManyTargetGroupsException, tooManyTargetGroupsException.Error())
-		} else if errors.As(err, &invalidConfigurationRequestException) {
-			fmt.Println("%T: %s\n", invalidConfigurationRequestException, invalidConfigurationRequestException.Error())
-		} else if errors.As(err, &tooManyTagsException) {
-			fmt.Println("%T: %s\n", tooManyTagsException, tooManyTagsException.Error())
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			fmt.Println(apiErr.ErrorCode(), apiErr.ErrorMessage())
 		} else {
 			fmt.Println(err.Error())
-			return nil, err
 		}
-
 		return nil, err
 	}
 
@@ -55,7 +53,7 @@ func (creds *CREDS) createTargetGroup(ctx context.Context, userName string, vpcI
 
 }
 
-func (creds *CREDS) setTargetGroupAttributes(ctx context.Context, svc *elasticloadbalancingv2.Client, targetGroupArn string) (*elasticloadbalancingv2.ModifyTargetGroupAttributesOutput, error) {
+func (creds *CREDS) setTargetGroupAttributes(svc *elasticloadbalancingv2.Client, targetGroupArn string) (*elasticloadbalancingv2.ModifyTargetGroupAttributesOutput, error) {
 	modifyTargetGroupAttributesInput := &elasticloadbalancingv2.ModifyTargetGroupAttributesInput{
 		TargetGroupArn: aws.String(targetGroupArn),
 		Attributes: []types.TargetGroupAttribute{
@@ -65,6 +63,9 @@ func (creds *CREDS) setTargetGroupAttributes(ctx context.Context, svc *elasticlo
 			},
 		},
 	}
+
+	ctx = context.TODO()
+
 	modifyTargetGroup, err := svc.ModifyTargetGroupAttributes(ctx, modifyTargetGroupAttributesInput)
 
 	if err != nil {
@@ -73,7 +74,7 @@ func (creds *CREDS) setTargetGroupAttributes(ctx context.Context, svc *elasticlo
 	return modifyTargetGroup, nil
 }
 
-func (creds *CREDS) createListener(ctx context.Context, svc *elasticloadbalancingv2.Client, loadBalancer string, targetGroup string) (*elasticloadbalancingv2.CreateListenerOutput, error) {
+func (creds *CREDS) createListener(svc *elasticloadbalancingv2.Client, loadBalancer string, targetGroup string) (*elasticloadbalancingv2.CreateListenerOutput, error) {
 	input := &elasticloadbalancingv2.CreateListenerInput{
 		DefaultActions: []types.Action{
 			{
@@ -86,75 +87,24 @@ func (creds *CREDS) createListener(ctx context.Context, svc *elasticloadbalancin
 		Protocol:        types.ProtocolEnumHttp,
 	}
 
-	result, err := svc.CreateListener(ctx, input)
-	if err != nil {
-		//Type cast enables code to read extra properties sent back by AWS inside the error struct itself (i.e. duplicateListenerErr.StorageLimit)
-		var duplicateListenerException *types.DuplicateListenerException
-		var tooManyListenersException *types.TooManyListenersException
-		var tooManyCertificatesException *types.TooManyCertificatesException
-		var loadBalancerNotFoundException *types.LoadBalancerNotFoundException
-		var targetGroupNotFoundException *types.TargetGroupNotFoundException
-		var targetGroupAssociationLimitException *types.TargetGroupAssociationLimitException
-		var invalidConfigurationRequestException *types.InvalidConfigurationRequestException
-		var incompatibleProtocolsException *types.IncompatibleProtocolsException
-		var SSLPolicyNotFoundException *types.SSLPolicyNotFoundException
-		var certificateNotFoundException *types.CertificateNotFoundException
-		var unsupportedProtocolException *types.UnsupportedProtocolException
-		var tooManyRegistrationsForTargetIdException *types.TooManyRegistrationsForTargetIdException
-		var tooManyTargetsException *types.TooManyTargetsException
-		var tooManyActionsException *types.TooManyActionsException
-		var invalidLoadBalancerActionException *types.InvalidLoadBalancerActionException
-		var tooManyUniqueTargetGroupsPerLoadBalancerException *types.TooManyUniqueTargetGroupsPerLoadBalancerException
-		var ALPNPolicyNotSupportedException *types.ALPNPolicyNotSupportedException
-		var tooManyTagsException *types.TooManyTagsException
+	ctx = context.TODO()
 
-		if errors.As(err, &duplicateListenerException) {
-			fmt.Println("%T: %s\n", duplicateListenerException, duplicateListenerException.Error())
-		} else if errors.As(err, &tooManyListenersException) {
-			fmt.Println("%T: %s\n", tooManyListenersException, tooManyListenersException.Error())
-		} else if errors.As(err, &tooManyCertificatesException) {
-			fmt.Println("%T: %s\n", tooManyCertificatesException, tooManyCertificatesException.Error())
-		} else if errors.As(err, &loadBalancerNotFoundException) {
-			fmt.Println("%T: %s\n", loadBalancerNotFoundException, loadBalancerNotFoundException.Error())
-		} else if errors.As(err, &targetGroupNotFoundException) {
-			fmt.Println("%T: %s\n", targetGroupNotFoundException, targetGroupNotFoundException.Error())
-		} else if errors.As(err, &targetGroupAssociationLimitException) {
-			fmt.Println("%T: %s\n", targetGroupAssociationLimitException, targetGroupAssociationLimitException.Error())
-		} else if errors.As(err, &invalidConfigurationRequestException) {
-			fmt.Println("%T: %s\n", invalidConfigurationRequestException, invalidConfigurationRequestException.Error())
-		} else if errors.As(err, &incompatibleProtocolsException) {
-			fmt.Println("%T: %s\n", incompatibleProtocolsException, incompatibleProtocolsException.Error())
-		} else if errors.As(err, &SSLPolicyNotFoundException) {
-			fmt.Println("%T: %s\n", SSLPolicyNotFoundException, SSLPolicyNotFoundException.Error())
-		} else if errors.As(err, &certificateNotFoundException) {
-			fmt.Println("%T: %s\n", certificateNotFoundException, certificateNotFoundException.Error())
-		} else if errors.As(err, &unsupportedProtocolException) {
-			fmt.Println("%T: %s\n", unsupportedProtocolException, unsupportedProtocolException.Error())
-		} else if errors.As(err, &tooManyRegistrationsForTargetIdException) {
-			fmt.Println("%T: %s\n", tooManyRegistrationsForTargetIdException, tooManyRegistrationsForTargetIdException.Error())
-		} else if errors.As(err, &tooManyTargetsException) {
-			fmt.Println("%T: %s\n", tooManyTargetsException, tooManyTargetsException.Error())
-		} else if errors.As(err, &tooManyActionsException) {
-			fmt.Println("%T: %s\n", tooManyActionsException, tooManyActionsException.Error())
-		} else if errors.As(err, &invalidLoadBalancerActionException) {
-			fmt.Println("%T: %s\n", invalidLoadBalancerActionException, invalidLoadBalancerActionException.Error())
-		} else if errors.As(err, &tooManyUniqueTargetGroupsPerLoadBalancerException) {
-			fmt.Println("%T: %s\n", tooManyUniqueTargetGroupsPerLoadBalancerException, tooManyUniqueTargetGroupsPerLoadBalancerException.Error())
-		} else if errors.As(err, &ALPNPolicyNotSupportedException) {
-			fmt.Println("%T: %s\n", ALPNPolicyNotSupportedException, ALPNPolicyNotSupportedException.Error())
-		} else if errors.As(err, &tooManyTagsException) {
-			fmt.Println("%T: %s\n", tooManyTagsException, tooManyTagsException.Error())
+	result, err := svc.CreateListener(ctx, input)
+
+	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			fmt.Println(apiErr.ErrorCode(), apiErr.ErrorMessage())
 		} else {
 			fmt.Println(err.Error())
 		}
-
-		return nil, err
+		return result, nil
 	}
 
 	return result, nil
 }
 
-func (creds *CREDS) CreateLoadBalancer(ctx context.Context, userName string) (*elasticloadbalancingv2.CreateLoadBalancerOutput, *string, *elasticloadbalancingv2.CreateListenerOutput, error) {
+func (creds *CREDS) CreateLoadBalancer(userName string) (*elasticloadbalancingv2.CreateLoadBalancerOutput, *string, *elasticloadbalancingv2.CreateListenerOutput, error) {
 
 	//Client with Config replaces session in aws go sdk v1
 	cfg, err := config.LoadDefaultConfig(ctx,
@@ -182,50 +132,15 @@ func (creds *CREDS) CreateLoadBalancer(ctx context.Context, userName string) (*e
 		},
 	}
 
+	ctx = context.TODO()
+
 	loadBalancer, err := svc.CreateLoadBalancer(ctx, input)
 	if err != nil {
-		var duplicateLoadBalancerName *types.DuplicateLoadBalancerNameException
-		var tooManyLoadBalancers *types.TooManyLoadBalancersException
-		var invalidConfigurationRequest *types.InvalidConfigurationRequestException
-		var subnetNotFound *types.SubnetNotFoundException
-		var invalidSubnet *types.InvalidSubnetException
-		var invalidSecurityGroup *types.InvalidSecurityGroupException
-		var invalidScheme *types.InvalidSchemeException
-		var tooManyTags *types.TooManyTagsException
-		var duplicateTagKeys *types.DuplicateTagKeysException
-		var resourceInUse *types.ResourceInUseException
-		var allocationIDNotFound *types.AllocationIdNotFoundException
-		var availabilityZoneNotSupported *types.AvailabilityZoneNotSupportedException
-		var operationNotPermitted *types.OperationNotPermittedException
-
-		if errors.As(err, &duplicateLoadBalancerName) {
-			fmt.Printf("%T: %s\n", duplicateLoadBalancerName, duplicateLoadBalancerName.Error())
-		} else if errors.As(err, &tooManyLoadBalancers) {
-			fmt.Printf("%T: %s\n", tooManyLoadBalancers, tooManyLoadBalancers.Error())
-		} else if errors.As(err, &invalidConfigurationRequest) {
-			fmt.Printf("%T: %s\n", invalidConfigurationRequest, invalidConfigurationRequest.Error())
-		} else if errors.As(err, &subnetNotFound) {
-			fmt.Printf("%T: %s\n", subnetNotFound, subnetNotFound.Error())
-		} else if errors.As(err, &invalidSubnet) {
-			fmt.Printf("%T: %s\n", invalidSubnet, invalidSubnet.Error())
-		} else if errors.As(err, &invalidSecurityGroup) {
-			fmt.Printf("%T: %s\n", invalidSecurityGroup, invalidSecurityGroup.Error())
-		} else if errors.As(err, &invalidScheme) {
-			fmt.Printf("%T: %s\n", invalidScheme, invalidScheme.Error())
-		} else if errors.As(err, &tooManyTags) {
-			fmt.Printf("%T: %s\n", tooManyTags, tooManyTags.Error())
-		} else if errors.As(err, &duplicateTagKeys) {
-			fmt.Printf("%T: %s\n", duplicateTagKeys, duplicateTagKeys.Error())
-		} else if errors.As(err, &resourceInUse) {
-			fmt.Printf("%T: %s\n", resourceInUse, resourceInUse.Error())
-		} else if errors.As(err, &allocationIDNotFound) {
-			fmt.Printf("%T: %s\n", allocationIDNotFound, allocationIDNotFound.Error())
-		} else if errors.As(err, &availabilityZoneNotSupported) {
-			fmt.Printf("%T: %s\n", availabilityZoneNotSupported, availabilityZoneNotSupported.Error())
-		} else if errors.As(err, &operationNotPermitted) {
-			fmt.Printf("%T: %s\n", operationNotPermitted, operationNotPermitted.Error())
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			fmt.Println(apiErr.ErrorCode(), apiErr.ErrorMessage())
 		} else {
-			fmt.Printf("%T: %s\n", err, err.Error())
+			fmt.Println(err.Error())
 		}
 		return nil, nil, nil, err
 	}
@@ -245,7 +160,7 @@ func (creds *CREDS) CreateLoadBalancer(ctx context.Context, userName string) (*e
 	return loadBalancer, targetGroup.TargetGroups[0].TargetGroupArn, listener, nil
 }
 
-func (creds *CREDS) terminateLoadBalancerTargetGroup(ctx context.Context, userName string) error {
+func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 	//Client with Config replaces session in aws go sdk v1
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion("us-east-1"),
@@ -260,7 +175,8 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(ctx context.Context, userNa
 	if err != nil {
 		var targetGroupNotFoundException *types.TargetGroupNotFoundException
 		if errors.As(err, &targetGroupNotFoundException) {
-			fmt.Printf("%T: %s\n", targetGroupNotFoundException, targetGroupNotFoundException.Error())
+			/ Target group not found, nothing to do
+			return nil
 		} else {
 			Config.Logger.Printf("Error describing target group: %s", err.Error())
 		}
@@ -271,11 +187,14 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(ctx context.Context, userNa
 		TargetGroupArn: tgArn.TargetGroups[0].TargetGroupArn,
 	}
 
+	ctx = context.TODO()
+
 	_, err = svc.DeleteTargetGroup(ctx, input)
 	if err != nil {
 		var resourceInUseException *types.ResourceInUseException
 		if errors.As(err, &resourceInUseException) {
-			fmt.Printf("%T: %s\n", resourceInUseException, resourceInUseException.Error())
+			// Target group in use, nothing to do
+			return nil
 		} else {
 			Config.Logger.Printf("Error deleting target group: %s", err.Error())
 		}
@@ -299,13 +218,18 @@ func (creds *CREDS) terminateLoadBalancer(ctx context.Context, userName string) 
 		Names: []string{albName},
 	}
 
+	ctx = context.TODO()
+
 	result, err := svc.DescribeLoadBalancers(ctx, getInput)
 	if err != nil {
 		var loadBalancerNotFoundException *types.LoadBalancerNotFoundException
 		if errors.As(err, &loadBalancerNotFoundException) {
-			fmt.Printf("%T: %s\n", loadBalancerNotFoundException, loadBalancerNotFoundException.Error())
+			// Load balancer doesn't exist, we are happy! :)
+			return nil
 		}
-		return err
+		else {
+			return err
+		}
 	}
 
 	if len(result.LoadBalancers) == 1 {
