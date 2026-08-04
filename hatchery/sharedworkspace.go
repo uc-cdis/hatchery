@@ -169,6 +169,7 @@ func ensureKeepFiles(prefixes []SharedWorkspacePrefix) error {
 			Body:   nil,
 		})
 		if err != nil {
+			Config.Logger.Fatalf(".keep file failed on bucket/prefix: %v / %v", p.BucketName, key)
 			return err
 		}
 	}
