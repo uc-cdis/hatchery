@@ -160,6 +160,7 @@ func ensureKeepFiles(prefixes []SharedWorkspacePrefix) error {
 
 		// Only create the object when it does not exist.
 		if reqErr, ok := err.(awserr.RequestFailure); !ok || reqErr.StatusCode() != http.StatusNotFound {
+			Config.Logger.Fatalf(".keep file access failed on bucket/prefix: %v / %v", p.BucketName, key)
 			return err
 		}
 
@@ -169,7 +170,7 @@ func ensureKeepFiles(prefixes []SharedWorkspacePrefix) error {
 			Body:   nil,
 		})
 		if err != nil {
-			Config.Logger.Fatalf(".keep file failed on bucket/prefix: %v / %v", p.BucketName, key)
+			Config.Logger.Fatalf(".keep file creation failed on bucket/prefix: %v / %v", p.BucketName, key)
 			return err
 		}
 	}
