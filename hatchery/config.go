@@ -35,6 +35,14 @@ type NextflowConfig struct {
 	InstanceMaxVCpus       int32    `json:"instance-max-vcpus"`
 }
 
+// Configuration for S3 bucket mounting into workspace pods
+type S3Config struct {
+	BucketName string `json:"bucketName"` // e.g. "workspace-software-s3-qa-gen3"
+	Region     string `json:"region"`     // e.g. "us-east-1"
+	// Optional; if empty we’ll default to "<userName>/".
+	PrefixBase string `json:"prefixBase"` // e.g. "" (we’ll compute from userName)
+}
+
 // LicenseInfo contains configuration for Gen3 supplied licenses.
 type LicenseInfo struct {
 	Enabled         bool   `json:"enabled"`
@@ -48,31 +56,32 @@ type LicenseInfo struct {
 
 // Container Struct to hold the configuration for Pod Container
 type Container struct {
-	Name               string            `json:"name"`
-	GPU                bool              `json:"gpu"`
-	CPULimit           string            `json:"cpu-limit"`
-	MemoryLimit        string            `json:"memory-limit"`
-	Image              string            `json:"image"`
-	PullPolicy         string            `json:"pull_policy"`
-	Env                map[string]string `json:"env"`
-	TargetPort         int32             `json:"target-port"`
-	Args               []string          `json:"args"`
-	Command            []string          `json:"command"`
-	PathRewrite        string            `json:"path-rewrite"`
-	UseTLS             string            `json:"use-tls"`
-	ReadyProbe         string            `json:"ready-probe"`
-	LifecyclePreStop   []string          `json:"lifecycle-pre-stop"`
-	LifecyclePostStart []string          `json:"lifecycle-post-start"`
-	UserUID            int64             `json:"user-uid"`
-	GroupUID           int64             `json:"group-uid"`
-	FSGID              int64             `json:"fs-gid"`
-	UserVolumeLocation string            `json:"user-volume-location"`
-	Gen3VolumeLocation string            `json:"gen3-volume-location"`
-	UseSharedMemory    string            `json:"use-shared-memory"`
-	Friends            []k8sv1.Container `json:"friends"`
-	NextflowConfig     NextflowConfig    `json:"nextflow"`
-	License            LicenseInfo       `json:"license"`
-	Authz              AuthzConfig       `json:"authz"`
+	Name               string              `json:"name"`
+	GPU                bool                `json:"gpu"`
+	CPULimit           string              `json:"cpu-limit"`
+	MemoryLimit        string              `json:"memory-limit"`
+	Image              string              `json:"image"`
+	PullPolicy         string              `json:"pull_policy"`
+	Env                map[string]string   `json:"env"`
+	TargetPort         int32               `json:"target-port"`
+	Args               []string            `json:"args"`
+	Command            []string            `json:"command"`
+	PathRewrite        string              `json:"path-rewrite"`
+	UseTLS             string              `json:"use-tls"`
+	ReadyProbe         string              `json:"ready-probe"`
+	LifecyclePreStop   []string            `json:"lifecycle-pre-stop"`
+	LifecyclePostStart []string            `json:"lifecycle-post-start"`
+	UserUID            int64               `json:"user-uid"`
+	GroupUID           int64               `json:"group-uid"`
+	FSGID              int64               `json:"fs-gid"`
+	UserVolumeLocation string              `json:"user-volume-location"`
+	Gen3VolumeLocation string              `json:"gen3-volume-location"`
+	UseSharedMemory    string              `json:"use-shared-memory"`
+	Friends            []k8sv1.Container   `json:"friends"`
+	NextflowConfig     NextflowConfig      `json:"nextflow"`
+	License            LicenseInfo         `json:"license"`
+	Authz              AuthzConfig         `json:"authz"`
+	SquashFSMount      SquashFSMountConfig `json:"squashfs_mount"`
 }
 
 // SidecarContainer holds fuse sidecar configuration
@@ -131,6 +140,16 @@ type SharedWorkspaceConfig struct {
 	OIDCProviderARN string `json:"oidc-provider-arn"` // Full ARN of the EKS OIDC provider, e.g. arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E
 }
 
+// SquashFSMountConfig defines parameters for dynamic loop-mounting of squashfs inside pods
+type SquashFSMountConfig struct {
+	Enabled        bool   `json:"enabled"`
+	SourceSqsh     string `json:"source_sqsh"`
+	ExpectedSha256 string `json:"expected_sha256"`
+	MounterImage   string `json:"mounter_image"`
+	CacheSizeLimit string `json:"cache_size_limit"` // e.g., "20Gi"
+	PVCClaimName   string `json:"pvc_claim_name"`   // e.g., "software-library-pvc"
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
@@ -151,6 +170,7 @@ type HatcheryConfig struct {
 	Sidecar                SidecarContainer      `json:"sidecar"`
 	MoreConfigs            []AppConfigInfo       `json:"more-configs"`
 	PrismaConfig           PrismaConfig          `json:"prisma"`
+	S3Config               S3Config              `json:"s3-config"`
 	NextflowGlobalConfig   NextflowGlobalConfig  `json:"nextflow-global"`
 	Pricing                Pricing               `json:"pricing"`
 	SharedWorkspace        SharedWorkspaceConfig `json:"shared-workspace"`
