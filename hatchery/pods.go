@@ -562,7 +562,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	var sideCarRunAsUser int64
 	var sideCarRunAsGroup int64
 	var hostToContainer = k8sv1.MountPropagationHostToContainer
-	var bidirectional = k8sv1.MountPropagationBidirectional
+	// var bidirectional = k8sv1.MountPropagationBidirectional
 	var envVars []k8sv1.EnvVar
 	// a null image indicates a dockstore app - always mount user volume
 	mountUserVolume := hatchApp.UserVolumeLocation != ""
@@ -685,7 +685,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		{
 			MountPath:        "/data",
 			Name:             "shared-data",
-			MountPropagation: &bidirectional,
+			// MountPropagation: &hostToContainer,
 		},
 		{
 			MountPath: "/.gen3",
@@ -741,7 +741,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 					Name:  "fuse-container",
 					Image: hatchConfig.Config.Sidecar.Image,
 					SecurityContext: &k8sv1.SecurityContext{
-						Privileged: &trueVal,
+						Privileged: &falseVal,
 						RunAsUser:  &sideCarRunAsUser,
 						RunAsGroup: &sideCarRunAsGroup,
 					},
