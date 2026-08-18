@@ -148,6 +148,14 @@ type SquashFSMountConfig struct {
 	MounterImage   string `json:"mounter_image"`
 	CacheSizeLimit string `json:"cache_size_limit"` // e.g., "20Gi"
 	PVCClaimName   string `json:"pvc_claim_name"`   // e.g., "software-library-pvc"
+	// Optional overrides for the S3 bucket holding the squashfs image. When empty,
+	// the top-level "s3-config" bucketName/region are used.
+	BucketName string `json:"bucket_name"`
+	Region     string `json:"region"`
+	// Optional S3 prefix ("directory") within the bucket that contains the .sqsh
+	// file. Mounted as the root of /image in the sidecar, so SourceSqsh is
+	// resolved relative to it. Empty means mount the bucket root.
+	BucketPrefix string `json:"bucket_prefix"` // e.g., "software-library/"
 }
 
 // HatcheryConfig is the root of all the configuration

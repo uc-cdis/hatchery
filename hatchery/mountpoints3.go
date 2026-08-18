@@ -3,8 +3,10 @@ package hatchery
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	k8sv1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -12,6 +14,10 @@ import (
 
 // mountpointS3CSIDriver is the CSI driver name for AWS Mountpoint for S3.
 const mountpointS3CSIDriver = "s3.csi.aws.com"
+
+// softwareLibraryLabelKey marks the PV/PVC pair backing the shared squashfs
+// software library, so it can be identified independently of user-scoped mounts.
+const softwareLibraryLabelKey = "hatchery-software-library"
 
 // mountpointS3PVSpec holds all parameters needed to create a statically-provisioned
 // Mountpoint-S3 CSI PersistentVolume and its bound PersistentVolumeClaim.
@@ -93,4 +99,85 @@ func createMountpointS3PVAndPVC(ctx context.Context, podClient corev1.CoreV1Inte
 	}
 
 	return nil
+}
+
+// ensureSoftwareLibraryPVAndPVC makes sure the read-only Mountpoint-S3 PV/PVC
+// backing the squashfs software library exists in the given namespace. The PVC is
+// shared by every workspace pod in the namespace rather than being per-user, so
+// this is idempotent: an existing claim is left untouched and reported as ready.
+func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1Interface, namespace, pvcName string, opts SquashFSMountConfig) error {
+	bucketName := opts.BucketName
+	if bucketName == "" {
+		bucketName = Config.Config.S3Config.BucketName
+	}
+	if bucketName == "" {
+		return fmt.Errorf("no S3 bucket configured for the squashfs software library: set squashfs_mount.bucket_name or s3-config.bucketName")
+	}
+	region := opts.Region
+	if region == "" {
+		region = Config.Config.S3Config.Region
+	}
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	// A PVC already bound in this namespace is reused as-is. Any other Get error
+	// is surfaced so we do not attempt to create over a claim we cannot read.
+	_, err := podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
+	if err == nil {
+		Config.Logger.Printf("Software library PVC %s already exists in namespace %s, reusing it", pvcName, namespace)
+		return nil
+	}
+	if !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("failed to check for existing software library PVC %s: %w", pvcName, err)
+	}
+
+	// The PV is cluster-scoped, so its name is namespaced by hand to avoid
+	// colliding with another namespace's claim of the same library.
+	pvName := fmt.Sprintf("%s-%s-pv", pvcName, escapism(namespace))
+	mountOptions := []string{"read-only", "uid=1010", "gid=100"}
+	if prefix := normalizeS3Prefix(opts.BucketPrefix); prefix != "" {
+		mountOptions = append(mountOptions, fmt.Sprintf("prefix=%s", prefix))
+	}
+
+	Config.Logger.Printf("Creating software library PV %s / PVC %s for bucket %s (region %s)", pvName, pvcName, bucketName, region)
+
+	// A stale PV from a previous run would block the new claim from binding, so
+	// clear it before recreating the pair.
+	if existing, getErr := podClient.PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{}); getErr == nil {
+		Config.Logger.Printf("Deleting orphaned software library PV %s before recreating it", existing.Name)
+		if delErr := podClient.PersistentVolumes().Delete(ctx, pvName, metav1.DeleteOptions{}); delErr != nil && !k8serrors.IsNotFound(delErr) {
+			return fmt.Errorf("failed to delete orphaned software library PV %s: %w", pvName, delErr)
+		}
+	} else if !k8serrors.IsNotFound(getErr) {
+		return fmt.Errorf("failed to check for existing software library PV %s: %w", pvName, getErr)
+	}
+
+	err = createMountpointS3PVAndPVC(ctx, podClient, mountpointS3PVSpec{
+		PVName:       pvName,
+		PVCName:      pvcName,
+		Namespace:    namespace,
+		Labels:       map[string]string{softwareLibraryLabelKey: "true"},
+		BucketName:   bucketName,
+		VolumeHandle: fmt.Sprintf("%s-%s-software-library", bucketName, escapism(namespace)),
+		MountOptions: mountOptions,
+		AccessMode:   k8sv1.ReadOnlyMany,
+	})
+	// Another pod launching concurrently may have won the race; that is success.
+	if err != nil && k8serrors.IsAlreadyExists(err) {
+		Config.Logger.Printf("Software library PVC %s was created concurrently, reusing it", pvcName)
+		return nil
+	}
+	return err
+}
+
+// normalizeS3Prefix trims leading slashes and ensures a single trailing slash so
+// the value is usable as a Mountpoint-S3 "prefix=" mount option. Returns "" for
+// an empty or root prefix, meaning the bucket root is mounted.
+func normalizeS3Prefix(prefix string) string {
+	trimmed := strings.Trim(prefix, "/")
+	if trimmed == "" {
+		return ""
+	}
+	return trimmed + "/"
 }

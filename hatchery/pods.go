@@ -911,7 +911,7 @@ func setupSharedWorkspacesForPod(ctx context.Context, podClient corev1.CoreV1Int
 	}
 }
 
-func applySquashFSMounter(pod *k8sv1.Pod, opts SquashFSMountConfig) error {
+func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface, namespace string, pod *k8sv1.Pod, opts SquashFSMountConfig) error {
 	if !opts.Enabled {
 		return nil
 	}
@@ -935,6 +935,12 @@ func applySquashFSMounter(pod *k8sv1.Pod, opts SquashFSMountConfig) error {
 	pvcName := opts.PVCClaimName
 	if pvcName == "" {
 		pvcName = "software-library-pvc"
+	}
+
+	// The pod would otherwise sit in Pending with a "persistentvolumeclaim not
+	// found" event, so provision the claim before referencing it below.
+	if err := ensureSoftwareLibraryPVAndPVC(ctx, podClient, namespace, pvcName, opts); err != nil {
+		return fmt.Errorf("failed to ensure software library PVC %s: %w", pvcName, err)
 	}
 
 	extraVolumes := []k8sv1.Volume{
@@ -1071,7 +1077,7 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 	if hatchApp.SquashFSMount.Enabled {
 		Config.Logger.Printf("Applying SquashFS mounter setup for container: %s", hatchApp.Name)
 
-		err := applySquashFSMounter(pod, hatchApp.SquashFSMount)
+		err := applySquashFSMounter(ctx, podClient, Config.Config.UserNamespace, pod, hatchApp.SquashFSMount)
 		if err != nil {
 			Config.Logger.Printf("failed to apply squashfs sidecar for container %s: %v", hatchApp.Name, err)
 			return err
