@@ -40,6 +40,11 @@ An example manifest entry may look like
       "sample-config-public-image": "",
       "imagebuilder-reader-role-arn": ""
     },
+    "s3-config": {
+      "bucketName": "workspace-software-s3-qa-gen3",
+      "region": "us-east-1",
+      "prefixBase": ""
+    },
     "containers": [
       {
         "target-port": 8888,
@@ -58,6 +63,17 @@ An example manifest entry may look like
         "user-volume-location": "/home/jovyan/pd",
         "gen3-volume-location": "/home/jovyan/.gen3",
         "friends": [],
+        "squashfs_mount": {
+            "enabled": false,
+            "source_sqsh": "/image/apps-current.sqsh",
+            "expected_sha256": "",
+            "mounter_image": "quay.io/cdis/ecs-ws-sidecar:master",
+            "cache_size_limit": "20Gi",
+            "pvc_claim_name": "software-library-pvc",
+            "bucket_name": "",
+            "region": "",
+            "bucket_prefix": ""
+        },
         "authz": {
             "version": 0.1,
             "or": [
@@ -177,6 +193,20 @@ An example manifest entry may look like
       * `g3auto-key` g3auto key for the secret, eg `"license_file.txt"`.
       * `file-path` container file-path where license should be copied.
       * `workspace-flavor` description of type of gen3-licensed container.
+    * `squashfs_mount` mounts a shared, read-only software library into the workspace from a SquashFS image stored in S3. A privileged `apps-mounter` sidecar copies the `.sqsh` file to a local cache, loop-mounts it, and shares the mount with the workspace container at `/apps`.
+      * `enabled` is false by default; if true, add the sidecar and the supporting volumes to this container's pod.
+      * `source_sqsh` the path to the SquashFS file as seen by the sidecar (default `/image/apps-current.sqsh`). `/image` is the mounted S3 location, so this path is relative to `bucket_prefix` when one is set.
+      * `expected_sha256` the SHA-256 digest of the SquashFS file. Strongly recommended: when it is empty, the sidecar logs a warning and skips digest verification.
+      * `mounter_image` the sidecar image path with tag (default `quay.io/cdis/ecs-ws-sidecar:master`).
+      * `cache_size_limit` the size limit of the local cache volume holding the copied SquashFS file (default `20Gi`). Must exceed the size of the image, or the pod is evicted mid-copy.
+      * `pvc_claim_name` the name of the PersistentVolumeClaim providing the SquashFS file (default `software-library-pvc`). Hatchery creates this claim and its PersistentVolume on demand if they do not already exist, so the claim does not need to be provisioned ahead of time. The claim is shared by all workspace pods in `user-namespace`.
+      * `bucket_name` and `region` optionally override the top-level `s3-config` values for this container. **Note:** the region is not applied yet; the Mountpoint-S3 `stsRegion` is currently hardcoded to `us-east-1`.
+      * `bucket_prefix` the optional prefix ("directory") within the bucket that contains the SquashFS file, e.g. `"software-library/"`. It becomes the root of `/image` in the sidecar, so do not repeat it in `source_sqsh`.
+      * **Note:** the bucket, the object, and the [Mountpoint for S3 CSI driver](https://github.com/awslabs/mountpoint-s3-csi-driver) must all already exist; Hatchery only creates the Kubernetes PV/PVC that reference them. The volume is mounted using the pod's own credentials, so the workspace pod's service account needs IRSA read access to the bucket. A misconfiguration here does not fail the launch request: the PV/PVC are created successfully and the pod then fails to start, so check the pod events with `kubectl describe pod` to diagnose.
+* `s3-config` describes the S3 bucket used for mounting data into workspace pods, and provides the default bucket for any container using `squashfs_mount`.
+    * `bucketName` the name of an existing S3 bucket, e.g. `"workspace-software-s3-qa-gen3"`.
+    * `region` the region the bucket is in, e.g. `"us-east-1"`.
+    * `prefixBase` an optional prefix within the bucket; defaults to `"<userName>/"` when empty.
 * `more-configs`: see https://github.com/uc-cdis/hatchery/blob/master/doc/explanation/dockstore.md
 
 
