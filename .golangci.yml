@@ -1,0 +1,12 @@
+version: "2"
+linters:
+  exclusions:
+    rules:
+      # aws-sdk-go (v1) was deprecated by AWS on 2025-07-31 and recent releases
+      # carry deprecation markers that staticcheck reports as SA1019 on every
+      # import. The whole codebase still uses v1; migrating to aws-sdk-go-v2
+      # is a dedicated effort. Revisit this exclusion once that migration
+      # lands and the v1 dependency is removed.
+      - linters:
+          - staticcheck
+        text: "SA1019: github.com/aws/aws-sdk-go"
