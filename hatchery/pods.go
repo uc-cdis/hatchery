@@ -1027,6 +1027,34 @@ func applySquashFSMounter(pod *k8sv1.Pod, opts SquashFSMountConfig) error {
 	return nil
 }
 
+// newUserVolumePVC builds the PersistentVolumeClaim for a user's home directory
+// (the "user volume" mounted into workspace pods). If a default storage class is
+// configured via the `default-storage-class` config option, the claim is pinned to
+// that storage class. Otherwise storageClassName is left empty and the claim is
+// provisioned by the cluster-default StorageClass.
+func newUserVolumePVC(claimName string, pod *k8sv1.Pod) *k8sv1.PersistentVolumeClaim {
+	spec := k8sv1.PersistentVolumeClaimSpec{
+		AccessModes: []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteOnce},
+		Resources: k8sv1.VolumeResourceRequirements{
+			Requests: k8sv1.ResourceList{
+				k8sv1.ResourceStorage: resource.MustParse(Config.Config.UserVolumeSize),
+			},
+		},
+	}
+	if Config.Config.DefaultStorageClass != "" {
+		storageClass := Config.Config.DefaultStorageClass
+		spec.StorageClassName = &storageClass
+	}
+	return &k8sv1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        claimName,
+			Annotations: pod.Annotations,
+			Labels:      pod.Labels,
+		},
+		Spec: spec,
+	}
+}
+
 var createLocalK8sPod = func(ctx context.Context, hash string, userName string, accessToken string, envVars []k8sv1.EnvVar, payModelId ...string) error {
 	// Set default if not provided
 	payModelIdValue := ""
@@ -1105,21 +1133,7 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(ctx, claimName, metav1.GetOptions{})
 		if err != nil {
 			Config.Logger.Printf("Creating PersistentVolumeClaim %s.\n", claimName)
-			pvc := &k8sv1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        claimName,
-					Annotations: pod.Annotations,
-					Labels:      pod.Labels,
-				},
-				Spec: k8sv1.PersistentVolumeClaimSpec{
-					AccessModes: []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteOnce},
-					Resources: k8sv1.VolumeResourceRequirements{
-						Requests: k8sv1.ResourceList{
-							k8sv1.ResourceStorage: resource.MustParse(Config.Config.UserVolumeSize),
-						},
-					},
-				},
-			}
+			pvc := newUserVolumePVC(claimName, pod)
 			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(ctx, pvc, metav1.CreateOptions{})
 			if err != nil {
 				Config.Logger.Printf("Failed to create PVC %s. Error: %s\n", claimName, err)
@@ -1262,21 +1276,7 @@ var createExternalK8sPod = func(ctx context.Context, hash string, userName strin
 		_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Get(ctx, claimName, metav1.GetOptions{})
 		if err != nil {
 			Config.Logger.Printf("Creating PersistentVolumeClaim %s.\n", claimName)
-			pvc := &k8sv1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        claimName,
-					Annotations: pod.Annotations,
-					Labels:      pod.Labels,
-				},
-				Spec: k8sv1.PersistentVolumeClaimSpec{
-					AccessModes: []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteOnce},
-					Resources: k8sv1.VolumeResourceRequirements{
-						Requests: k8sv1.ResourceList{
-							k8sv1.ResourceStorage: resource.MustParse(Config.Config.UserVolumeSize),
-						},
-					},
-				},
-			}
+			pvc := newUserVolumePVC(claimName, pod)
 
 			_, err := podClient.PersistentVolumeClaims(Config.Config.UserNamespace).Create(ctx, pvc, metav1.CreateOptions{})
 			if err != nil {

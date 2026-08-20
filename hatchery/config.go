@@ -174,6 +174,12 @@ type HatcheryConfig struct {
 	NextflowGlobalConfig   NextflowGlobalConfig  `json:"nextflow-global"`
 	Pricing                Pricing               `json:"pricing"`
 	SharedWorkspace        SharedWorkspaceConfig `json:"shared-workspace"`
+
+	// DefaultStorageClass, when set, is used as the storageClassName of the
+	// user volume PersistentVolumeClaims created for workspaces. When empty,
+	// the claim is created without a storageClassName and the cluster-default
+	// StorageClass is used.
+	DefaultStorageClass string `json:"default-storage-class"`
 }
 
 // Config to allow for Prisma Agents
