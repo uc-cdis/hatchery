@@ -45,6 +45,7 @@ An example manifest entry may look like
       "region": "us-east-1",
       "prefixBase": ""
     },
+    "oidc-provider-arn": "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E",
     "containers": [
       {
         "target-port": 8888,
@@ -200,13 +201,15 @@ An example manifest entry may look like
       * `mounter_image` the sidecar image path with tag (default `quay.io/cdis/ecs-ws-sidecar:master`).
       * `cache_size_limit` the size limit of the local cache volume holding the copied SquashFS file (default `20Gi`). Must exceed the size of the image, or the pod is evicted mid-copy.
       * `pvc_claim_name` the name of the PersistentVolumeClaim providing the SquashFS file (default `software-library-pvc`). Hatchery creates this claim and its PersistentVolume on demand if they do not already exist, so the claim does not need to be provisioned ahead of time. The claim is shared by all workspace pods in `user-namespace`.
-      * `bucket_name` and `region` optionally override the top-level `s3-config` values for this container. **Note:** the region is not applied yet; the Mountpoint-S3 `stsRegion` is currently hardcoded to `us-east-1`.
+      * `bucket_name` and `region` optionally override the top-level `s3-config` values for this container. The region is used as the Mountpoint-S3 `stsRegion`, defaulting to `us-east-1`.
       * `bucket_prefix` the optional prefix ("directory") within the bucket that contains the SquashFS file, e.g. `"software-library/"`. It becomes the root of `/image` in the sidecar, so do not repeat it in `source_sqsh`.
-      * **Note:** the bucket, the object, and the [Mountpoint for S3 CSI driver](https://github.com/awslabs/mountpoint-s3-csi-driver) must all already exist; Hatchery only creates the Kubernetes PV/PVC that reference them. The volume is mounted using the pod's own credentials, so the workspace pod's service account needs IRSA read access to the bucket. A misconfiguration here does not fail the launch request: the PV/PVC are created successfully and the pod then fails to start, so check the pod events with `kubectl describe pod` to diagnose.
+      * **Note:** the bucket, the object, and the [Mountpoint for S3 CSI driver](https://github.com/awslabs/mountpoint-s3-csi-driver) must all already exist; Hatchery only creates the Kubernetes PV/PVC that reference them. A misconfiguration here does not fail the launch request: the PV/PVC are created successfully and the pod then fails to start, so check the pod events with `kubectl describe pod` to diagnose.
+      * The volume is mounted with the pod's own credentials, so Hatchery automatically creates a per-user IAM role and an IRSA-annotated ServiceAccount granting read access to the bucket. This requires the top-level `oidc-provider-arn` to be set, and requires Hatchery's own AWS credentials to allow `iam:GetRole`, `iam:CreateRole` and `iam:PutRolePolicy`. The same role and ServiceAccount are shared with the `shared-workspace` feature, so the two can be enabled together.
 * `s3-config` describes the S3 bucket used for mounting data into workspace pods, and provides the default bucket for any container using `squashfs_mount`.
     * `bucketName` the name of an existing S3 bucket, e.g. `"workspace-software-s3-qa-gen3"`.
     * `region` the region the bucket is in, e.g. `"us-east-1"`.
     * `prefixBase` an optional prefix within the bucket; defaults to `"<userName>/"` when empty.
+* `oidc-provider-arn` the full ARN of the EKS cluster's OIDC provider, e.g. `"arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E"`. Required by any feature that mounts S3 with the pod's own credentials (`squashfs_mount` and `shared-workspace`), because it is used to build the IRSA trust policy. For backward compatibility, `shared-workspace.oidc-provider-arn` is still honored when this is unset, but new configurations should set it here: one cluster has one OIDC provider, and both features share it.
 * `more-configs`: see https://github.com/uc-cdis/hatchery/blob/master/doc/explanation/dockstore.md
 
 

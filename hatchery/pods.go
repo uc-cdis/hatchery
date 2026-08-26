@@ -854,49 +854,86 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 	return pod, nil
 }
 
-// setupSharedWorkspacesForPod configures shared workspace volumes on a pod if
-// the feature is enabled. All failures are logged as warnings; the pod launch
-// continues regardless.
-func setupSharedWorkspacesForPod(ctx context.Context, podClient corev1.CoreV1Interface, pod *k8sv1.Pod, userName, accessToken string) {
-	if !Config.Config.SharedWorkspace.Enabled {
-		return
+// ensureWorkspaceIdentity resolves the per-user IAM role and ServiceAccount that
+// the Mountpoint-S3 CSI driver needs to authenticate, covering the shared
+// workspace prefixes and the squashfs software library with a single role. It sets
+// pod.Spec.ServiceAccountName when an identity is required, and returns the shared
+// workspace prefixes so the caller can create the matching PV/PVCs.
+//
+// Both features mount via authenticationSource=pod, so they must share one
+// ServiceAccount: the pod spec has only one such field, and the last writer would
+// otherwise silently break the other feature's mount.
+//
+// All failures are logged as warnings; the pod launch continues regardless.
+func ensureWorkspaceIdentity(ctx context.Context, podClient corev1.CoreV1Interface, pod *k8sv1.Pod, userName, accessToken string, squashFS SquashFSMountConfig) []SharedWorkspacePrefix {
+	var library *softwareLibraryAccess
+	if squashFS.Enabled {
+		bucket, _, prefix, err := resolveSoftwareLibraryBucket(squashFS)
+		if err != nil {
+			// applySquashFSMounter fails the launch on its own for this, so here we
+			// only skip granting access we cannot describe.
+			Config.Logger.Printf("Warning: cannot grant software library access for user %s: %v", userName, err)
+		} else {
+			library = &softwareLibraryAccess{BucketName: bucket, Prefix: prefix}
+		}
 	}
-	Config.Logger.Printf("Setting up shared workspaces for user %s", userName)
-	swCfg := Config.Config.SharedWorkspace
 
-	Config.Logger.Printf("Cleaning up old shared workspaces resources")
-	if err := cleanupUserSharedWorkspaces(ctx, podClient, userName, Config.Config.UserNamespace); err != nil {
-		Config.Logger.Printf("Warning: failed to clean up old shared workspaces for user %s: %v (continuing)", userName, err)
+	var prefixes []SharedWorkspacePrefix
+	if Config.Config.SharedWorkspace.Enabled {
+		Config.Logger.Printf("Setting up shared workspaces for user %s", userName)
+
+		Config.Logger.Printf("Cleaning up old shared workspaces resources")
+		if err := cleanupUserSharedWorkspaces(ctx, podClient, userName, Config.Config.UserNamespace); err != nil {
+			Config.Logger.Printf("Warning: failed to clean up old shared workspaces for user %s: %v (continuing)", userName, err)
+		}
+
+		Config.Logger.Printf("Getting prefixes for user %s", userName)
+		fetched, prefixErr := getSharedWorkspacePrefixes(ctx, accessToken)
+		if prefixErr != nil {
+			// Not fatal: the software library may still need the service account.
+			Config.Logger.Printf("Warning: failed to get shared workspace prefixes for user %s: %v (launching without shared workspaces)", userName, prefixErr)
+		} else {
+			prefixes = fetched
+		}
+
+		if len(prefixes) > 0 {
+			if err := ensureKeepFiles(prefixes); err != nil {
+				Config.Logger.Printf("Failed to create .keep files: %v", err)
+			}
+		}
 	}
 
-	Config.Logger.Printf("Getting prefixes for user %s", userName)
-	prefixes, prefixErr := getSharedWorkspacePrefixes(ctx, accessToken)
-	if prefixErr != nil {
-		Config.Logger.Printf("Warning: failed to get shared workspace prefixes for user %s: %v (launching without shared workspaces)", userName, prefixErr)
-		return
-	}
-	if len(prefixes) == 0 {
-		return
+	if len(prefixes) == 0 && library == nil {
+		return nil
 	}
 
-	if err := ensureKeepFiles(prefixes); err != nil {
-		Config.Logger.Printf("Failed to create .keep files: %v", err)
+	oidcProviderARN := resolveOIDCProviderARN()
+	if oidcProviderARN == "" {
+		Config.Logger.Printf("Warning: no OIDC provider configured for user %s: set \"oidc-provider-arn\" in the hatchery config (skipping S3 mounts)", userName)
+		return nil
 	}
 
 	Config.Logger.Printf("Creating roles for user %s", userName)
-	roleARN, roleErr := ensureSharedWorkspaceIAMRole(userName, Config.Config.UserNamespace, swCfg.OIDCProviderARN, prefixes)
+	roleARN, roleErr := ensureWorkspaceIAMRole(userName, Config.Config.UserNamespace, oidcProviderARN, prefixes, library)
 	if roleErr != nil {
-		Config.Logger.Printf("Warning: failed to ensure IAM role for user %s: %v (skipping shared workspaces)", userName, roleErr)
-		return
-	}
-	if err := ensureSharedWorkspaceServiceAccount(ctx, podClient, Config.Config.UserNamespace, userName, roleARN); err != nil {
-		Config.Logger.Printf("Warning: failed to ensure service account for user %s: %v (skipping shared workspaces)", userName, err)
-		return
+		Config.Logger.Printf("Warning: failed to ensure IAM role for user %s: %v (skipping S3 mounts)", userName, roleErr)
+		return nil
 	}
 
-	Config.Logger.Printf("Creating serviceAccount")
-	pod.Spec.ServiceAccountName = sharedWorkspaceSAName(userName)
+	Config.Logger.Printf("Creating serviceAccount for user %s", userName)
+	if err := ensureWorkspaceServiceAccount(ctx, podClient, Config.Config.UserNamespace, userName, roleARN); err != nil {
+		Config.Logger.Printf("Warning: failed to ensure service account for user %s: %v (skipping S3 mounts)", userName, err)
+		return nil
+	}
 
+	pod.Spec.ServiceAccountName = workspaceSAName(userName)
+	return prefixes
+}
+
+// setupSharedWorkspaceVolumes creates the PV/PVC pair for each shared workspace
+// prefix and attaches the resulting volumes to the pod. The pod's ServiceAccount
+// must already be set by ensureWorkspaceIdentity.
+func setupSharedWorkspaceVolumes(ctx context.Context, podClient corev1.CoreV1Interface, pod *k8sv1.Pod, userName string, prefixes []SharedWorkspacePrefix) {
 	var successPrefixes []SharedWorkspacePrefix
 	for _, prefix := range prefixes {
 		Config.Logger.Printf("Creating PV/PVC")
@@ -907,7 +944,7 @@ func setupSharedWorkspacesForPod(ctx context.Context, podClient corev1.CoreV1Int
 		successPrefixes = append(successPrefixes, prefix)
 	}
 	if len(successPrefixes) > 0 {
-		addSharedWorkspaceVolumesToPod(pod, userName, successPrefixes, swCfg.MountBasePath)
+		addSharedWorkspaceVolumesToPod(pod, userName, successPrefixes, Config.Config.SharedWorkspace.MountBasePath)
 	}
 }
 
@@ -1074,6 +1111,11 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 		return err
 	}
 
+	// Resolve the IRSA role and service account before either feature wires up its
+	// volumes: both mount with authenticationSource=pod and share one service
+	// account, and the role's policy has to cover both at once.
+	sharedPrefixes := ensureWorkspaceIdentity(ctx, podClient, pod, userName, accessToken, hatchApp.SquashFSMount)
+
 	if hatchApp.SquashFSMount.Enabled {
 		Config.Logger.Printf("Applying SquashFS mounter setup for container: %s", hatchApp.Name)
 
@@ -1134,7 +1176,7 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 		}
 	}
 
-	setupSharedWorkspacesForPod(ctx, podClient, pod, userName, accessToken)
+	setupSharedWorkspaceVolumes(ctx, podClient, pod, userName, sharedPrefixes)
 
 	_, err = podClient.Pods(Config.Config.UserNamespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {

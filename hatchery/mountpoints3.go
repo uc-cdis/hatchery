@@ -19,6 +19,35 @@ const mountpointS3CSIDriver = "s3.csi.aws.com"
 // software library, so it can be identified independently of user-scoped mounts.
 const softwareLibraryLabelKey = "hatchery-software-library"
 
+// defaultSTSRegion is used when no region is configured for a Mountpoint-S3 volume.
+const defaultSTSRegion = "us-east-1"
+
+// resolveSoftwareLibraryBucket returns the bucket, region and normalized prefix
+// backing the squashfs software library, applying the top-level "s3-config"
+// values as fallbacks for the per-container overrides.
+//
+// Both the PV and the IAM policy granting access to it are derived from this one
+// function: if they disagreed on the bucket, the role would grant access to one
+// bucket while the volume mounted another, which fails at mount time in a way
+// that is hard to trace back to config.
+func resolveSoftwareLibraryBucket(opts SquashFSMountConfig) (bucket string, region string, prefix string, err error) {
+	bucket = opts.BucketName
+	if bucket == "" {
+		bucket = Config.Config.S3Config.BucketName
+	}
+	if bucket == "" {
+		return "", "", "", fmt.Errorf("no S3 bucket configured for the squashfs software library: set squashfs_mount.bucket_name or s3-config.bucketName")
+	}
+	region = opts.Region
+	if region == "" {
+		region = Config.Config.S3Config.Region
+	}
+	if region == "" {
+		region = defaultSTSRegion
+	}
+	return bucket, region, normalizeS3Prefix(opts.BucketPrefix), nil
+}
+
 // mountpointS3PVSpec holds all parameters needed to create a statically-provisioned
 // Mountpoint-S3 CSI PersistentVolume and its bound PersistentVolumeClaim.
 type mountpointS3PVSpec struct {
@@ -30,6 +59,9 @@ type mountpointS3PVSpec struct {
 	VolumeHandle string
 	MountOptions []string
 	AccessMode   k8sv1.PersistentVolumeAccessMode
+	// Region is the STS region the CSI driver uses to assume the pod's role.
+	// Defaults to "us-east-1" when empty.
+	Region string
 }
 
 // createMountpointS3PVAndPVC creates a statically-provisioned PV backed by the
@@ -38,6 +70,10 @@ type mountpointS3PVSpec struct {
 func createMountpointS3PVAndPVC(ctx context.Context, podClient corev1.CoreV1Interface, spec mountpointS3PVSpec) error {
 	storageSize := resource.MustParse("1Gi")
 	storageClass := ""
+	stsRegion := spec.Region
+	if stsRegion == "" {
+		stsRegion = defaultSTSRegion
+	}
 
 	pv := &k8sv1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -59,7 +95,7 @@ func createMountpointS3PVAndPVC(ctx context.Context, podClient corev1.CoreV1Inte
 					VolumeAttributes: map[string]string{
 						"bucketName":           spec.BucketName,
 						"authenticationSource": "pod",
-						"stsRegion":            "us-east-1",
+						"stsRegion":            stsRegion,
 					},
 				},
 			},
@@ -106,24 +142,14 @@ func createMountpointS3PVAndPVC(ctx context.Context, podClient corev1.CoreV1Inte
 // shared by every workspace pod in the namespace rather than being per-user, so
 // this is idempotent: an existing claim is left untouched and reported as ready.
 func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1Interface, namespace, pvcName string, opts SquashFSMountConfig) error {
-	bucketName := opts.BucketName
-	if bucketName == "" {
-		bucketName = Config.Config.S3Config.BucketName
-	}
-	if bucketName == "" {
-		return fmt.Errorf("no S3 bucket configured for the squashfs software library: set squashfs_mount.bucket_name or s3-config.bucketName")
-	}
-	region := opts.Region
-	if region == "" {
-		region = Config.Config.S3Config.Region
-	}
-	if region == "" {
-		region = "us-east-1"
+	bucketName, region, bucketPrefix, err := resolveSoftwareLibraryBucket(opts)
+	if err != nil {
+		return err
 	}
 
 	// A PVC already bound in this namespace is reused as-is. Any other Get error
 	// is surfaced so we do not attempt to create over a claim we cannot read.
-	_, err := podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
+	_, err = podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
 	if err == nil {
 		Config.Logger.Printf("Software library PVC %s already exists in namespace %s, reusing it", pvcName, namespace)
 		return nil
@@ -136,8 +162,8 @@ func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 	// colliding with another namespace's claim of the same library.
 	pvName := fmt.Sprintf("%s-%s-pv", pvcName, escapism(namespace))
 	mountOptions := []string{"read-only", "uid=1010", "gid=100"}
-	if prefix := normalizeS3Prefix(opts.BucketPrefix); prefix != "" {
-		mountOptions = append(mountOptions, fmt.Sprintf("prefix=%s", prefix))
+	if bucketPrefix != "" {
+		mountOptions = append(mountOptions, fmt.Sprintf("prefix=%s", bucketPrefix))
 	}
 
 	Config.Logger.Printf("Creating software library PV %s / PVC %s for bucket %s (region %s)", pvName, pvcName, bucketName, region)
@@ -162,6 +188,7 @@ func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 		VolumeHandle: fmt.Sprintf("%s-%s-software-library", bucketName, escapism(namespace)),
 		MountOptions: mountOptions,
 		AccessMode:   k8sv1.ReadOnlyMany,
+		Region:       region,
 	})
 	// Another pod launching concurrently may have won the race; that is success.
 	if err != nil && k8serrors.IsAlreadyExists(err) {

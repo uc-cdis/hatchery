@@ -135,9 +135,12 @@ type Pricing struct {
 
 // SharedWorkspaceConfig holds configuration for shared S3 workspace mounts.
 type SharedWorkspaceConfig struct {
-	Enabled         bool   `json:"enabled"`
-	MountBasePath   string `json:"mount-base-path"`   // Mount root inside pod; default "$HOME/shared"
-	OIDCProviderARN string `json:"oidc-provider-arn"` // Full ARN of the EKS OIDC provider, e.g. arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E
+	Enabled       bool   `json:"enabled"`
+	MountBasePath string `json:"mount-base-path"` // Mount root inside pod; default "$HOME/shared"
+	// Deprecated: use the top-level "oidc-provider-arn" instead. Still honored as a
+	// fallback for existing manifests. Full ARN of the EKS OIDC provider, e.g.
+	// arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E
+	OIDCProviderARN string `json:"oidc-provider-arn"`
 }
 
 // SquashFSMountConfig defines parameters for dynamic loop-mounting of squashfs inside pods
@@ -182,6 +185,20 @@ type HatcheryConfig struct {
 	NextflowGlobalConfig   NextflowGlobalConfig  `json:"nextflow-global"`
 	Pricing                Pricing               `json:"pricing"`
 	SharedWorkspace        SharedWorkspaceConfig `json:"shared-workspace"`
+	// OIDCProviderARN is the full ARN of the EKS cluster's OIDC provider, used to
+	// build IRSA trust policies. It is a cluster-level property shared by the
+	// shared-workspace and squashfs software-library features.
+	OIDCProviderARN string `json:"oidc-provider-arn"`
+}
+
+// resolveOIDCProviderARN returns the cluster's OIDC provider ARN, preferring the
+// top-level "oidc-provider-arn" and falling back to the legacy
+// "shared-workspace.oidc-provider-arn" so existing manifests keep working.
+func resolveOIDCProviderARN() string {
+	if Config.Config.OIDCProviderARN != "" {
+		return Config.Config.OIDCProviderARN
+	}
+	return Config.Config.SharedWorkspace.OIDCProviderARN
 }
 
 // Config to allow for Prisma Agents
