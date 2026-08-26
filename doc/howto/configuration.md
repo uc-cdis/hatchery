@@ -209,9 +209,61 @@ An example manifest entry may look like
     * `bucketName` the name of an existing S3 bucket, e.g. `"workspace-software-s3-qa-gen3"`.
     * `region` the region the bucket is in, e.g. `"us-east-1"`.
     * `prefixBase` an optional prefix within the bucket; defaults to `"<userName>/"` when empty.
-* `oidc-provider-arn` the full ARN of the EKS cluster's OIDC provider, e.g. `"arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E"`. Required by any feature that mounts S3 with the pod's own credentials (`squashfs_mount` and `shared-workspace`), because it is used to build the IRSA trust policy. For backward compatibility, `shared-workspace.oidc-provider-arn` is still honored when this is unset, but new configurations should set it here: one cluster has one OIDC provider, and both features share it.
+* `oidc-provider-arn` the full ARN of the EKS cluster's OIDC provider, e.g. `"arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E"`. Required by any feature that mounts S3 with the pod's own credentials (`squashfs_mount` and `shared-workspace`), because it is used to build the IRSA trust policy. For backward compatibility, `shared-workspace.oidc-provider-arn` is still honored when this is unset, but new configurations should set it here: one cluster has one OIDC provider, and both features share it. See [Finding the OIDC provider ARN](#finding-the-oidc-provider-arn) below.
 * `more-configs`: see https://github.com/uc-cdis/hatchery/blob/master/doc/explanation/dockstore.md
 
+
+## Finding the OIDC provider ARN
+
+The `oidc-provider-arn` value is an IAM OIDC provider ARN built from the EKS
+cluster's OIDC issuer URL. The ARN is the issuer URL with the `https://` prefix
+removed, prefixed with `arn:aws:iam::<account-id>:oidc-provider/`.
+
+The most reliable way to get it is to derive it from the cluster, since an
+account usually has one provider per cluster and the ARNs are otherwise
+indistinguishable:
+
+```bash
+CLUSTER=my-cluster   # e.g. devplanetv2
+
+ISSUER=$(aws eks describe-cluster --name "$CLUSTER" \
+  --query 'cluster.identity.oidc.issuer' --output text)
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+
+echo "arn:aws:iam::${ACCOUNT}:oidc-provider/${ISSUER#https://}"
+```
+
+Confirm the provider is actually registered in IAM — the command above only
+builds a string, and a cluster can have an issuer URL with no corresponding IAM
+provider, in which case IRSA silently fails to work:
+
+```bash
+aws iam get-open-id-connect-provider \
+  --open-id-connect-provider-arn "<the ARN printed above>"
+```
+
+If that returns `NoSuchEntity`, the provider has not been created for the
+cluster yet; see the [AWS IRSA setup documentation](https://docs.aws.amazon.com/eks/latest/userguide/enable-iam-roles-for-service-accounts.html).
+
+To list the providers that do exist in the account:
+
+```bash
+aws iam list-open-id-connect-providers
+```
+
+If you do not have IAM read permissions but do have cluster access, the issuer
+can also be read directly from the cluster, then combined with the account ID as
+above:
+
+```bash
+kubectl get --raw /.well-known/openid-configuration | jq -r .issuer
+```
+
+**Note:** the ARN must be for the same AWS account the workspace pods run in,
+because Hatchery creates the per-user IAM role in whatever account its own
+credentials resolve to. A trust policy that references an OIDC provider in a
+different account produces a role that cannot be assumed, and the mount fails
+with a confusing error rather than a clear permissions one.
 
 ## Deployment
 
