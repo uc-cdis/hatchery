@@ -81,6 +81,48 @@ func TestBuildWorkspaceS3Policy(t *testing.T) {
 		}
 	})
 
+	t.Run("libraryWithKMSKey", func(t *testing.T) {
+		// An SSE-KMS bucket needs kms:Decrypt as well as s3:GetObject; without it
+		// the mount succeeds and the read fails part way through.
+		doc := buildWorkspaceS3Policy(nil, &softwareLibraryAccess{
+			BucketName: "library-bucket",
+			Prefix:     "software-library/",
+			KMSKeyARN:  "arn:aws:kms:us-east-1:707767160287:key/abc-123",
+		})
+		parsed := parsePolicy(t, doc)
+
+		var kmsActions []string
+		for _, stmt := range parsed.Statement {
+			for _, a := range stmt.Action {
+				if strings.HasPrefix(a, "kms:") {
+					kmsActions = append(kmsActions, a)
+				}
+			}
+		}
+		if len(kmsActions) == 0 {
+			t.Errorf("expected kms actions for an encrypted bucket, got: %s", doc)
+		}
+		if !strings.Contains(doc, `"kms:Decrypt"`) {
+			t.Errorf("expected kms:Decrypt, got: %s", doc)
+		}
+		if !strings.Contains(doc, "arn:aws:kms:us-east-1:707767160287:key/abc-123") {
+			t.Errorf("expected the key ARN as the resource, got: %s", doc)
+		}
+		// Read-only: the workspace never writes to the library.
+		for _, a := range kmsActions {
+			if a == "kms:Encrypt" || a == "kms:GenerateDataKey" {
+				t.Errorf("unexpected write-capable kms action %q: %s", a, doc)
+			}
+		}
+	})
+
+	t.Run("libraryWithoutKMSKeyOmitsKmsStatement", func(t *testing.T) {
+		doc := buildWorkspaceS3Policy(nil, library)
+		if strings.Contains(doc, "kms:") {
+			t.Errorf("did not expect kms actions when no key is configured: %s", doc)
+		}
+	})
+
 	t.Run("libraryOnlyNoPrefix", func(t *testing.T) {
 		doc := buildWorkspaceS3Policy(nil, &softwareLibraryAccess{BucketName: "library-bucket"})
 		parsePolicy(t, doc)

@@ -73,7 +73,8 @@ An example manifest entry may look like
             "pvc_claim_name": "software-library-pvc",
             "bucket_name": "",
             "region": "",
-            "bucket_prefix": ""
+            "bucket_prefix": "",
+            "kms_key_arn": ""
         },
         "authz": {
             "version": 0.1,
@@ -203,6 +204,7 @@ An example manifest entry may look like
       * `pvc_claim_name` the name of the PersistentVolumeClaim providing the SquashFS file (default `software-library-pvc`). Hatchery creates this claim and its PersistentVolume on demand if they do not already exist, so the claim does not need to be provisioned ahead of time. The claim is shared by all workspace pods in `user-namespace`.
       * `bucket_name` and `region` optionally override the top-level `s3-config` values for this container. The region is used as the Mountpoint-S3 `stsRegion`, defaulting to `us-east-1`.
       * `bucket_prefix` the optional prefix ("directory") within the bucket that contains the SquashFS file, e.g. `"software-library/"`. It becomes the root of `/image` in the sidecar, so do not repeat it in `source_sqsh`.
+      * `kms_key_arn` the customer managed KMS key the bucket is encrypted with, if any. **Required for SSE-KMS buckets:** the key policy alone is not enough, because granting an account root delegates to that account's IAM, so the per-user workspace role also needs `kms:Decrypt`. Omitting it fails in a way that looks unrelated to encryption — the volume mounts, the object stats, and the sidecar then dies part way through the copy with `cp: read error: I/O error`.
       * **Note:** the bucket, the object, and the [Mountpoint for S3 CSI driver](https://github.com/awslabs/mountpoint-s3-csi-driver) must all already exist; Hatchery only creates the Kubernetes PV/PVC that reference them. A misconfiguration here does not fail the launch request: the PV/PVC are created successfully and the pod then fails to start, so check the pod events with `kubectl describe pod` to diagnose.
       * The volume is mounted with the pod's own credentials, so Hatchery automatically creates a per-user IAM role and an IRSA-annotated ServiceAccount granting read access to the bucket. This requires the top-level `oidc-provider-arn` to be set, and requires Hatchery's own AWS credentials to allow `iam:GetRole`, `iam:CreateRole` and `iam:PutRolePolicy`. The same role and ServiceAccount are shared with the `shared-workspace` feature, so the two can be enabled together.
 * `s3-config` describes the S3 bucket used for mounting data into workspace pods, and provides the default bucket for any container using `squashfs_mount`.

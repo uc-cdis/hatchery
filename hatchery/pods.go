@@ -874,7 +874,7 @@ func ensureWorkspaceIdentity(ctx context.Context, podClient corev1.CoreV1Interfa
 			// only skip granting access we cannot describe.
 			Config.Logger.Printf("Warning: cannot grant software library access for user %s: %v", userName, err)
 		} else {
-			library = &softwareLibraryAccess{BucketName: bucket, Prefix: prefix}
+			library = &softwareLibraryAccess{BucketName: bucket, Prefix: prefix, KMSKeyARN: squashFS.KMSKeyARN}
 		}
 	}
 

@@ -40,6 +40,8 @@ func workspaceSAName(userName string) string {
 type softwareLibraryAccess struct {
 	BucketName string
 	Prefix     string // normalized with a trailing slash; "" means the bucket root
+	// KMSKeyARN is set when the bucket is encrypted with a customer managed key.
+	KMSKeyARN string
 }
 
 // buildWorkspaceS3Policy builds the inline S3 policy document for the per-user
@@ -88,6 +90,15 @@ func buildWorkspaceS3Policy(prefixes []SharedWorkspacePrefix, library *softwareL
 			listStmt,
 			fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::%s/%s*"]}`, library.BucketName, library.Prefix),
 		)
+
+		// An SSE-KMS bucket needs kms:Decrypt on top of s3:GetObject. Without it
+		// the volume still mounts and the object still stats, so the sidecar starts
+		// copying and only then fails with an I/O error.
+		if library.KMSKeyARN != "" {
+			statements = append(statements,
+				fmt.Sprintf(`{"Effect":"Allow","Action":["kms:Decrypt","kms:DescribeKey"],"Resource":["%s"]}`, library.KMSKeyARN),
+			)
+		}
 	}
 
 	return fmt.Sprintf(`{"Version":"2012-10-17","Statement":[%s]}`, strings.Join(statements, ","))

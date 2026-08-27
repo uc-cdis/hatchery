@@ -159,6 +159,11 @@ type SquashFSMountConfig struct {
 	// file. Mounted as the root of /image in the sidecar, so SourceSqsh is
 	// resolved relative to it. Empty means mount the bucket root.
 	BucketPrefix string `json:"bucket_prefix"` // e.g., "software-library/"
+	// KMSKeyARN is the customer managed key the bucket is encrypted with. When
+	// set, the per-user workspace role is also granted kms:Decrypt on it, which
+	// SSE-KMS buckets require in addition to s3:GetObject: without it the mount
+	// succeeds and reads fail part way through with an I/O error.
+	KMSKeyARN string `json:"kms_key_arn"` // e.g., "arn:aws:kms:us-east-1:123456789012:key/abc-123"
 }
 
 // HatcheryConfig is the root of all the configuration
