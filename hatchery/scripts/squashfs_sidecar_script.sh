@@ -75,7 +75,13 @@ ls -la "$TARGET" | head || true
 
 cleanup() {
   echo "Unmounting $TARGET"
-  umount "$TARGET" || true
+  # Use lazy unmount (-l) so the mount is detached from the filesystem tree
+  # immediately even if the loop device still has open file descriptors. Without
+  # this, umount returns EBUSY when the hatchery-container is still running,
+  # the loop device stays alive, the sqsh-cache emptyDir cannot be cleaned up
+  # by the kubelet, and the pod is stuck in Terminating — which in turn blocks
+  # the pvc-protection controller from removing its finalizer from the PVCs.
+  umount -l "$TARGET" || true
 }
 
 trap cleanup TERM INT EXIT

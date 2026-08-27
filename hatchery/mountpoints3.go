@@ -163,12 +163,17 @@ func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 		return err
 	}
 
-	// A PVC already bound in this namespace is reused as-is. Any other Get error
-	// is surfaced so we do not attempt to create over a claim we cannot read.
-	_, err = podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
+	// A PVC already bound in this namespace is reused as-is, unless it is
+	// Terminating (DeletionTimestamp set) — in that case we must not reference
+	// it from a new pod, so treat it like NotFound and fall through to recreate.
+	existing, err := podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
 	if err == nil {
-		Config.Logger.Printf("Software library PVC %s already exists in namespace %s, reusing it", pvcName, namespace)
-		return nil
+		if existing.DeletionTimestamp == nil {
+			Config.Logger.Printf("Software library PVC %s already exists in namespace %s, reusing it", pvcName, namespace)
+			return nil
+		}
+		Config.Logger.Printf("Software library PVC %s is Terminating; will wait for deletion before recreating", pvcName)
+		return fmt.Errorf("software library PVC %s is still terminating; retry later", pvcName)
 	}
 	if !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("failed to check for existing software library PVC %s: %w", pvcName, err)

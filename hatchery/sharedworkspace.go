@@ -454,11 +454,18 @@ func cleanupUserSharedWorkspaces(ctx context.Context, podClient corev1.CoreV1Int
 	deleteOpts := metav1.DeleteOptions{PropagationPolicy: &policy}
 	for _, pvc := range pvcs.Items {
 		pvName := pvc.Spec.VolumeName
-		if err := podClient.PersistentVolumeClaims(namespace).Delete(ctx, pvc.Name, deleteOpts); err != nil {
+		// Remove the pvc-protection finalizer before deletion. Without this the
+		// PVCProtectionController will not strip the finalizer while any pod that
+		// references the PVC is still terminating, leaving the PVC stuck in a
+		// Terminating state that blocks the next launch.
+		if err := removePVCProtectionFinalizer(ctx, podClient, namespace, pvc.Name); err != nil {
+			Config.Logger.Printf("Warning: failed to remove pvc-protection finalizer from PVC %s for user %s: %v (continuing)", pvc.Name, userName, err)
+		}
+		if err := podClient.PersistentVolumeClaims(namespace).Delete(ctx, pvc.Name, deleteOpts); err != nil && !k8serrors.IsNotFound(err) {
 			Config.Logger.Printf("Warning: failed to delete shared PVC %s for user %s: %v (continuing)", pvc.Name, userName, err)
 		}
 		if pvName != "" {
-			if err := podClient.PersistentVolumes().Delete(ctx, pvName, deleteOpts); err != nil {
+			if err := podClient.PersistentVolumes().Delete(ctx, pvName, deleteOpts); err != nil && !k8serrors.IsNotFound(err) {
 				Config.Logger.Printf("Warning: failed to delete shared PV %s for user %s: %v (continuing)", pvName, userName, err)
 			}
 		}
@@ -526,4 +533,30 @@ func addSharedWorkspaceVolumesToPod(pod *k8sv1.Pod, userName string, prefixes []
 			}
 		}
 	}
+}
+
+// removePVCProtectionFinalizer patches the named PVC to remove the
+// "kubernetes.io/pvc-protection" finalizer so that a subsequent Delete call is
+// not blocked by the PVCProtectionController while a referencing pod is still
+// terminating.
+func removePVCProtectionFinalizer(ctx context.Context, podClient corev1.CoreV1Interface, namespace, pvcName string) error {
+	pvc, err := podClient.PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	filtered := pvc.Finalizers[:0]
+	for _, f := range pvc.Finalizers {
+		if f != "kubernetes.io/pvc-protection" {
+			filtered = append(filtered, f)
+		}
+	}
+	if len(filtered) == len(pvc.Finalizers) {
+		return nil
+	}
+	pvc.Finalizers = filtered
+	_, err = podClient.PersistentVolumeClaims(namespace).Update(ctx, pvc, metav1.UpdateOptions{})
+	return err
 }

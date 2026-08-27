@@ -363,6 +363,14 @@ var deleteK8sPod = func(ctx context.Context, userName string, accessToken string
 		fmt.Printf("Error occurred when deleting pod: %s", err)
 	}
 
+	// Clean up shared workspace PVCs immediately at termination rather than
+	// waiting until the next launch. This must come after the pod Delete so
+	// that the pod's DeletionTimestamp is already set; the finalizer-stripping
+	// inside cleanupUserSharedWorkspaces then allows pvc-protection to proceed.
+	if cleanupErr := cleanupUserSharedWorkspaces(ctx, podClient, userName, Config.Config.UserNamespace); cleanupErr != nil {
+		fmt.Printf("Warning: failed to clean up shared workspace PVCs for user %s: %s\n", userName, cleanupErr)
+	}
+
 	serviceName := userToResourceName(userName, "service")
 	_, err = podClient.Services(Config.Config.UserNamespace).Get(ctx, serviceName, metav1.GetOptions{})
 	if err != nil {
