@@ -35,12 +35,23 @@ type NextflowConfig struct {
 	InstanceMaxVCpus       int32    `json:"instance-max-vcpus"`
 }
 
-// Configuration for S3 bucket mounting into workspace pods
+// Configuration for S3 bucket mounting into workspace pods. These are the
+// commons-wide defaults; a container's "squashfs_mount" block may override any
+// of them for the bucket holding its software library.
 type S3Config struct {
 	BucketName string `json:"bucketName"` // e.g. "workspace-software-s3-qa-gen3"
 	Region     string `json:"region"`     // e.g. "us-east-1"
 	// Optional; if empty we’ll default to "<userName>/".
 	PrefixBase string `json:"prefixBase"` // e.g. "" (we’ll compute from userName)
+	// BucketPrefix is the prefix ("directory") within the bucket that holds the
+	// SquashFS image. It becomes the root of /image in the mounter sidecar, so
+	// source_sqsh is resolved relative to it. Empty mounts the bucket root.
+	BucketPrefix string `json:"bucketPrefix"` // e.g. "software-library/"
+	// KMSKeyARN is the customer managed key the bucket is encrypted with. When
+	// set, the per-user workspace role is also granted kms:Decrypt on it, which
+	// SSE-KMS buckets require in addition to s3:GetObject: without it the mount
+	// succeeds and reads fail part way through with an I/O error.
+	KMSKeyARN string `json:"kmsKeyArn"` // e.g. "arn:aws:kms:us-east-1:123456789012:key/abc-123"
 }
 
 // LicenseInfo contains configuration for Gen3 supplied licenses.
@@ -151,19 +162,14 @@ type SquashFSMountConfig struct {
 	MounterImage   string `json:"mounter_image"`
 	CacheSizeLimit string `json:"cache_size_limit"` // e.g., "20Gi"
 	PVCClaimName   string `json:"pvc_claim_name"`   // e.g., "software-library-pvc"
-	// Optional overrides for the S3 bucket holding the squashfs image. When empty,
-	// the top-level "s3-config" bucketName/region are used.
-	BucketName string `json:"bucket_name"`
-	Region     string `json:"region"`
-	// Optional S3 prefix ("directory") within the bucket that contains the .sqsh
-	// file. Mounted as the root of /image in the sidecar, so SourceSqsh is
-	// resolved relative to it. Empty means mount the bucket root.
-	BucketPrefix string `json:"bucket_prefix"` // e.g., "software-library/"
-	// KMSKeyARN is the customer managed key the bucket is encrypted with. When
-	// set, the per-user workspace role is also granted kms:Decrypt on it, which
-	// SSE-KMS buckets require in addition to s3:GetObject: without it the mount
-	// succeeds and reads fail part way through with an I/O error.
-	KMSKeyARN string `json:"kms_key_arn"` // e.g., "arn:aws:kms:us-east-1:123456789012:key/abc-123"
+	// Per-container overrides for the bucket holding the squashfs image. Each
+	// falls back to the commons-wide "s3-config" when empty, which is where these
+	// normally belong -- set them here only when one workspace needs a different
+	// bucket from the rest.
+	BucketName   string `json:"bucket_name"`
+	Region       string `json:"region"`
+	BucketPrefix string `json:"bucket_prefix"`
+	KMSKeyARN    string `json:"kms_key_arn"`
 }
 
 // HatcheryConfig is the root of all the configuration

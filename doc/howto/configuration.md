@@ -43,7 +43,9 @@ An example manifest entry may look like
     "s3-config": {
       "bucketName": "workspace-software-s3-qa-gen3",
       "region": "us-east-1",
-      "prefixBase": ""
+      "prefixBase": "",
+      "bucketPrefix": "",
+      "kmsKeyArn": ""
     },
     "oidc-provider-arn": "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E",
     "containers": [
@@ -70,11 +72,7 @@ An example manifest entry may look like
             "expected_sha256": "",
             "mounter_image": "quay.io/cdis/ecs-ws-sidecar:master",
             "cache_size_limit": "20Gi",
-            "pvc_claim_name": "software-library-pvc",
-            "bucket_name": "",
-            "region": "",
-            "bucket_prefix": "",
-            "kms_key_arn": ""
+            "pvc_claim_name": "software-library-pvc"
         },
         "authz": {
             "version": 0.1,
@@ -202,15 +200,15 @@ An example manifest entry may look like
       * `mounter_image` the sidecar image path with tag (default `quay.io/cdis/ecs-ws-sidecar:master`).
       * `cache_size_limit` the size limit of the local cache volume holding the copied SquashFS file (default `20Gi`). Must exceed the size of the image, or the pod is evicted mid-copy.
       * `pvc_claim_name` the name of the PersistentVolumeClaim providing the SquashFS file (default `software-library-pvc`). Hatchery creates this claim and its PersistentVolume on demand if they do not already exist, so the claim does not need to be provisioned ahead of time. The claim is shared by all workspace pods in `user-namespace`.
-      * `bucket_name` and `region` optionally override the top-level `s3-config` values for this container. The region is used as the Mountpoint-S3 `stsRegion`, defaulting to `us-east-1`.
-      * `bucket_prefix` the optional prefix ("directory") within the bucket that contains the SquashFS file, e.g. `"software-library/"`. It becomes the root of `/image` in the sidecar, so do not repeat it in `source_sqsh`.
-      * `kms_key_arn` the customer managed KMS key the bucket is encrypted with, if any. **Required for SSE-KMS buckets:** the key policy alone is not enough, because granting an account root delegates to that account's IAM, so the per-user workspace role also needs `kms:Decrypt`. Omitting it fails in a way that looks unrelated to encryption — the volume mounts, the object stats, and the sidecar then dies part way through the copy with `cp: read error: I/O error`.
+      * `bucket_name`, `region`, `bucket_prefix` and `kms_key_arn` optionally override the corresponding [`s3-config`](#s3-config) values for this container. Each falls back independently, so overriding only the bucket keeps the inherited region, prefix and key. These belong in `s3-config` in almost all cases — set them here only when one workspace needs a different bucket from the rest of the commons.
       * **Note:** the bucket, the object, and the [Mountpoint for S3 CSI driver](https://github.com/awslabs/mountpoint-s3-csi-driver) must all already exist; Hatchery only creates the Kubernetes PV/PVC that reference them. A misconfiguration here does not fail the launch request: the PV/PVC are created successfully and the pod then fails to start, so check the pod events with `kubectl describe pod` to diagnose.
       * The volume is mounted with the pod's own credentials, so Hatchery automatically creates a per-user IAM role and an IRSA-annotated ServiceAccount granting read access to the bucket. This requires the top-level `oidc-provider-arn` to be set, and requires Hatchery's own AWS credentials to allow `iam:GetRole`, `iam:CreateRole` and `iam:PutRolePolicy`. The same role and ServiceAccount are shared with the `shared-workspace` feature, so the two can be enabled together.
-* `s3-config` describes the S3 bucket used for mounting data into workspace pods, and provides the default bucket for any container using `squashfs_mount`.
+* <a name="s3-config"></a>`s3-config` describes the S3 bucket used for mounting data into workspace pods, and is where any container using `squashfs_mount` reads its bucket settings from unless it overrides them.
     * `bucketName` the name of an existing S3 bucket, e.g. `"workspace-software-s3-qa-gen3"`.
-    * `region` the region the bucket is in, e.g. `"us-east-1"`.
+    * `region` the region the bucket is in, e.g. `"us-east-1"`. Used as the Mountpoint-S3 `stsRegion`; defaults to `us-east-1`.
     * `prefixBase` an optional prefix within the bucket; defaults to `"<userName>/"` when empty.
+    * `bucketPrefix` the optional prefix ("directory") within the bucket that contains the SquashFS file, e.g. `"software-library/"`. It becomes the root of `/image` in the mounter sidecar, so do not repeat it in `source_sqsh`.
+    * `kmsKeyArn` the customer managed KMS key the bucket is encrypted with, if any. **Required for SSE-KMS buckets:** the key policy alone is not enough, because granting an account root delegates the decision to that account's IAM, so the per-user workspace role also needs `kms:Decrypt`. Omitting it fails in a way that points away from encryption — the volume mounts, the object stats, and the sidecar then dies part way through the copy with `cp: read error: I/O error`.
 * `oidc-provider-arn` the full ARN of the EKS cluster's OIDC provider, e.g. `"arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E"`. Required by any feature that mounts S3 with the pod's own credentials (`squashfs_mount` and `shared-workspace`), because it is used to build the IRSA trust policy. For backward compatibility, `shared-workspace.oidc-provider-arn` is still honored when this is unset, but new configurations should set it here: one cluster has one OIDC provider, and both features share it. See [Finding the OIDC provider ARN](#finding-the-oidc-provider-arn) below.
 * `more-configs`: see https://github.com/uc-cdis/hatchery/blob/master/doc/explanation/dockstore.md
 

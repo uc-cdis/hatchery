@@ -22,30 +22,46 @@ const softwareLibraryLabelKey = "hatchery-software-library"
 // defaultSTSRegion is used when no region is configured for a Mountpoint-S3 volume.
 const defaultSTSRegion = "us-east-1"
 
-// resolveSoftwareLibraryBucket returns the bucket, region and normalized prefix
-// backing the squashfs software library, applying the top-level "s3-config"
-// values as fallbacks for the per-container overrides.
+// softwareLibraryBucket describes the resolved location of the squashfs software
+// library image and how to read it.
+type softwareLibraryBucket struct {
+	Name      string
+	Region    string
+	Prefix    string // normalized with a trailing slash; "" means the bucket root
+	KMSKeyARN string // empty unless the bucket uses a customer managed key
+}
+
+// resolveSoftwareLibraryBucket returns the bucket backing the squashfs software
+// library. Every field comes from the commons-wide "s3-config" unless the
+// container overrides it in its own "squashfs_mount" block.
 //
 // Both the PV and the IAM policy granting access to it are derived from this one
 // function: if they disagreed on the bucket, the role would grant access to one
 // bucket while the volume mounted another, which fails at mount time in a way
 // that is hard to trace back to config.
-func resolveSoftwareLibraryBucket(opts SquashFSMountConfig) (bucket string, region string, prefix string, err error) {
-	bucket = opts.BucketName
-	if bucket == "" {
-		bucket = Config.Config.S3Config.BucketName
+func resolveSoftwareLibraryBucket(opts SquashFSMountConfig) (softwareLibraryBucket, error) {
+	s3Cfg := Config.Config.S3Config
+
+	resolved := softwareLibraryBucket{
+		Name:      firstNonEmpty(opts.BucketName, s3Cfg.BucketName),
+		Region:    firstNonEmpty(opts.Region, s3Cfg.Region, defaultSTSRegion),
+		Prefix:    normalizeS3Prefix(firstNonEmpty(opts.BucketPrefix, s3Cfg.BucketPrefix)),
+		KMSKeyARN: firstNonEmpty(opts.KMSKeyARN, s3Cfg.KMSKeyARN),
 	}
-	if bucket == "" {
-		return "", "", "", fmt.Errorf("no S3 bucket configured for the squashfs software library: set squashfs_mount.bucket_name or s3-config.bucketName")
+	if resolved.Name == "" {
+		return softwareLibraryBucket{}, fmt.Errorf("no S3 bucket configured for the squashfs software library: set s3-config.bucketName or squashfs_mount.bucket_name")
 	}
-	region = opts.Region
-	if region == "" {
-		region = Config.Config.S3Config.Region
+	return resolved, nil
+}
+
+// firstNonEmpty returns the first non-empty value, or "" when there is none.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
 	}
-	if region == "" {
-		region = defaultSTSRegion
-	}
-	return bucket, region, normalizeS3Prefix(opts.BucketPrefix), nil
+	return ""
 }
 
 // mountpointS3PVSpec holds all parameters needed to create a statically-provisioned
@@ -142,7 +158,7 @@ func createMountpointS3PVAndPVC(ctx context.Context, podClient corev1.CoreV1Inte
 // shared by every workspace pod in the namespace rather than being per-user, so
 // this is idempotent: an existing claim is left untouched and reported as ready.
 func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1Interface, namespace, pvcName string, opts SquashFSMountConfig) error {
-	bucketName, region, bucketPrefix, err := resolveSoftwareLibraryBucket(opts)
+	bucket, err := resolveSoftwareLibraryBucket(opts)
 	if err != nil {
 		return err
 	}
@@ -162,11 +178,11 @@ func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 	// colliding with another namespace's claim of the same library.
 	pvName := fmt.Sprintf("%s-%s-pv", pvcName, escapism(namespace))
 	mountOptions := []string{"read-only", "uid=1010", "gid=100"}
-	if bucketPrefix != "" {
-		mountOptions = append(mountOptions, fmt.Sprintf("prefix=%s", bucketPrefix))
+	if bucket.Prefix != "" {
+		mountOptions = append(mountOptions, fmt.Sprintf("prefix=%s", bucket.Prefix))
 	}
 
-	Config.Logger.Printf("Creating software library PV %s / PVC %s for bucket %s (region %s)", pvName, pvcName, bucketName, region)
+	Config.Logger.Printf("Creating software library PV %s / PVC %s for bucket %s (region %s)", pvName, pvcName, bucket.Name, bucket.Region)
 
 	// A stale PV from a previous run would block the new claim from binding, so
 	// clear it before recreating the pair.
@@ -184,11 +200,11 @@ func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 		PVCName:      pvcName,
 		Namespace:    namespace,
 		Labels:       map[string]string{softwareLibraryLabelKey: "true"},
-		BucketName:   bucketName,
-		VolumeHandle: fmt.Sprintf("%s-%s-software-library", bucketName, escapism(namespace)),
+		BucketName:   bucket.Name,
+		VolumeHandle: fmt.Sprintf("%s-%s-software-library", bucket.Name, escapism(namespace)),
 		MountOptions: mountOptions,
 		AccessMode:   k8sv1.ReadOnlyMany,
-		Region:       region,
+		Region:       bucket.Region,
 	})
 	// Another pod launching concurrently may have won the race; that is success.
 	if err != nil && k8serrors.IsAlreadyExists(err) {

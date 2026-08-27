@@ -868,13 +868,17 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 func ensureWorkspaceIdentity(ctx context.Context, podClient corev1.CoreV1Interface, pod *k8sv1.Pod, userName, accessToken string, squashFS SquashFSMountConfig) []SharedWorkspacePrefix {
 	var library *softwareLibraryAccess
 	if squashFS.Enabled {
-		bucket, _, prefix, err := resolveSoftwareLibraryBucket(squashFS)
+		bucket, err := resolveSoftwareLibraryBucket(squashFS)
 		if err != nil {
 			// applySquashFSMounter fails the launch on its own for this, so here we
 			// only skip granting access we cannot describe.
 			Config.Logger.Printf("Warning: cannot grant software library access for user %s: %v", userName, err)
 		} else {
-			library = &softwareLibraryAccess{BucketName: bucket, Prefix: prefix, KMSKeyARN: squashFS.KMSKeyARN}
+			library = &softwareLibraryAccess{
+				BucketName: bucket.Name,
+				Prefix:     bucket.Prefix,
+				KMSKeyARN:  bucket.KMSKeyARN,
+			}
 		}
 	}
 

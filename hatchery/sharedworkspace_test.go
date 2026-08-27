@@ -342,49 +342,89 @@ func TestResolveSoftwareLibraryBucket(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
 	t.Run("perContainerOverrideWins", func(t *testing.T) {
-		Config.Config.S3Config = S3Config{BucketName: "global-bucket", Region: "us-west-2"}
-		bucket, region, prefix, err := resolveSoftwareLibraryBucket(SquashFSMountConfig{
-			BucketName: "container-bucket", Region: "eu-west-1", BucketPrefix: "/lib/",
+		Config.Config.S3Config = S3Config{
+			BucketName: "global-bucket", Region: "us-west-2",
+			BucketPrefix: "global-lib/", KMSKeyARN: "arn:aws:kms:us-west-2:1:key/global",
+		}
+		got, err := resolveSoftwareLibraryBucket(SquashFSMountConfig{
+			BucketName: "container-bucket", Region: "eu-west-1",
+			BucketPrefix: "/lib/", KMSKeyARN: "arn:aws:kms:eu-west-1:1:key/container",
 		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if bucket != "container-bucket" || region != "eu-west-1" {
-			t.Errorf("expected the container override to win, got %q / %q", bucket, region)
+		if got.Name != "container-bucket" || got.Region != "eu-west-1" {
+			t.Errorf("expected the container override to win, got %q / %q", got.Name, got.Region)
 		}
-		if prefix != "lib/" {
-			t.Errorf("expected a normalized prefix %q, got %q", "lib/", prefix)
+		if got.Prefix != "lib/" {
+			t.Errorf("expected a normalized prefix %q, got %q", "lib/", got.Prefix)
+		}
+		if got.KMSKeyARN != "arn:aws:kms:eu-west-1:1:key/container" {
+			t.Errorf("expected the container KMS key, got %q", got.KMSKeyARN)
 		}
 	})
 
-	t.Run("fallsBackToS3Config", func(t *testing.T) {
-		Config.Config.S3Config = S3Config{BucketName: "global-bucket", Region: "us-west-2"}
-		bucket, region, prefix, err := resolveSoftwareLibraryBucket(SquashFSMountConfig{})
+	t.Run("fallsBackToS3ConfigForEveryField", func(t *testing.T) {
+		// s3-config is where these normally live, so a container that sets none of
+		// them must inherit all of them.
+		Config.Config.S3Config = S3Config{
+			BucketName: "global-bucket", Region: "us-west-2",
+			BucketPrefix: "/software-library/", KMSKeyARN: "arn:aws:kms:us-west-2:1:key/global",
+		}
+		got, err := resolveSoftwareLibraryBucket(SquashFSMountConfig{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if bucket != "global-bucket" || region != "us-west-2" {
-			t.Errorf("expected the s3-config fallback, got %q / %q", bucket, region)
+		if got.Name != "global-bucket" || got.Region != "us-west-2" {
+			t.Errorf("expected the s3-config fallback, got %q / %q", got.Name, got.Region)
 		}
-		if prefix != "" {
-			t.Errorf("expected an empty prefix, got %q", prefix)
+		if got.Prefix != "software-library/" {
+			t.Errorf("expected the s3-config prefix normalized, got %q", got.Prefix)
+		}
+		if got.KMSKeyARN != "arn:aws:kms:us-west-2:1:key/global" {
+			t.Errorf("expected the s3-config KMS key, got %q", got.KMSKeyARN)
+		}
+	})
+
+	t.Run("fieldsFallBackIndependently", func(t *testing.T) {
+		// Overriding only the bucket must not drop the inherited key, or an
+		// encrypted bucket would silently lose its decrypt grant.
+		Config.Config.S3Config = S3Config{
+			BucketName: "global-bucket", Region: "us-west-2",
+			KMSKeyARN: "arn:aws:kms:us-west-2:1:key/global",
+		}
+		got, err := resolveSoftwareLibraryBucket(SquashFSMountConfig{BucketName: "container-bucket"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.Name != "container-bucket" {
+			t.Errorf("expected the container bucket, got %q", got.Name)
+		}
+		if got.Region != "us-west-2" {
+			t.Errorf("expected the inherited region, got %q", got.Region)
+		}
+		if got.KMSKeyARN != "arn:aws:kms:us-west-2:1:key/global" {
+			t.Errorf("expected the inherited KMS key, got %q", got.KMSKeyARN)
 		}
 	})
 
 	t.Run("defaultsRegionWhenUnset", func(t *testing.T) {
 		Config.Config.S3Config = S3Config{BucketName: "global-bucket"}
-		_, region, _, err := resolveSoftwareLibraryBucket(SquashFSMountConfig{})
+		got, err := resolveSoftwareLibraryBucket(SquashFSMountConfig{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if region != defaultSTSRegion {
-			t.Errorf("expected the region to default to %q, got %q", defaultSTSRegion, region)
+		if got.Region != defaultSTSRegion {
+			t.Errorf("expected the region to default to %q, got %q", defaultSTSRegion, got.Region)
+		}
+		if got.KMSKeyARN != "" {
+			t.Errorf("expected no KMS key when none is configured, got %q", got.KMSKeyARN)
 		}
 	})
 
 	t.Run("errorsWhenNoBucketAnywhere", func(t *testing.T) {
 		Config.Config.S3Config = S3Config{}
-		if _, _, _, err := resolveSoftwareLibraryBucket(SquashFSMountConfig{}); err == nil {
+		if _, err := resolveSoftwareLibraryBucket(SquashFSMountConfig{}); err == nil {
 			t.Error("expected an error when no bucket is configured")
 		}
 	})
