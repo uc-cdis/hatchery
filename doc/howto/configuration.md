@@ -40,6 +40,14 @@ An example manifest entry may look like
       "sample-config-public-image": "",
       "imagebuilder-reader-role-arn": ""
     },
+    "s3-config": {
+      "bucketName": "workspace-software-s3-qa-gen3",
+      "region": "us-east-1",
+      "prefixBase": "",
+      "bucketPrefix": "",
+      "kmsKeyArn": ""
+    },
+    "oidc-provider-arn": "arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E",
     "containers": [
       {
         "target-port": 8888,
@@ -58,6 +66,14 @@ An example manifest entry may look like
         "user-volume-location": "/home/jovyan/pd",
         "gen3-volume-location": "/home/jovyan/.gen3",
         "friends": [],
+        "squashfs_mount": {
+            "enabled": false,
+            "source_sqsh": "/image/apps-current.sqsh",
+            "expected_sha256": "",
+            "mounter_image": "quay.io/cdis/ecs-ws-sidecar:master",
+            "cache_size_limit": "20Gi",
+            "pvc_claim_name": "software-library-pvc"
+        },
         "authz": {
             "version": 0.1,
             "or": [
@@ -177,8 +193,77 @@ An example manifest entry may look like
       * `g3auto-key` g3auto key for the secret, eg `"license_file.txt"`.
       * `file-path` container file-path where license should be copied.
       * `workspace-flavor` description of type of gen3-licensed container.
+    * `squashfs_mount` mounts a shared, read-only software library into the workspace from a SquashFS image stored in S3. A privileged `apps-mounter` sidecar copies the `.sqsh` file to a local cache, loop-mounts it, and shares the mount with the workspace container at `/apps`.
+      * `enabled` is false by default; if true, add the sidecar and the supporting volumes to this container's pod.
+      * `source_sqsh` the path to the SquashFS file as seen by the sidecar (default `/image/apps-current.sqsh`). `/image` is the mounted S3 location, so this path is relative to `bucket_prefix` when one is set.
+      * `expected_sha256` the SHA-256 digest of the SquashFS file. Strongly recommended: when it is empty, the sidecar logs a warning and skips digest verification.
+      * `mounter_image` the sidecar image path with tag (default `quay.io/cdis/ecs-ws-sidecar:master`).
+      * `cache_size_limit` the size limit of the local cache volume holding the copied SquashFS file (default `20Gi`). Must exceed the size of the image, or the pod is evicted mid-copy.
+      * `pvc_claim_name` the name of the PersistentVolumeClaim providing the SquashFS file (default `software-library-pvc`). Hatchery creates this claim and its PersistentVolume on demand if they do not already exist, so the claim does not need to be provisioned ahead of time. The claim is shared by all workspace pods in `user-namespace`.
+      * `bucket_name`, `region`, `bucket_prefix` and `kms_key_arn` optionally override the corresponding [`s3-config`](#s3-config) values for this container. Each falls back independently, so overriding only the bucket keeps the inherited region, prefix and key. These belong in `s3-config` in almost all cases — set them here only when one workspace needs a different bucket from the rest of the commons.
+      * **Note:** the bucket, the object, and the [Mountpoint for S3 CSI driver](https://github.com/awslabs/mountpoint-s3-csi-driver) must all already exist; Hatchery only creates the Kubernetes PV/PVC that reference them. A misconfiguration here does not fail the launch request: the PV/PVC are created successfully and the pod then fails to start, so check the pod events with `kubectl describe pod` to diagnose.
+      * The volume is mounted with the pod's own credentials, so Hatchery automatically creates a per-user IAM role and an IRSA-annotated ServiceAccount granting read access to the bucket. This requires the top-level `oidc-provider-arn` to be set, and requires Hatchery's own AWS credentials to allow `iam:GetRole`, `iam:CreateRole` and `iam:PutRolePolicy`. The same role and ServiceAccount are shared with the `shared-workspace` feature, so the two can be enabled together.
+* <a name="s3-config"></a>`s3-config` describes the S3 bucket used for mounting data into workspace pods, and is where any container using `squashfs_mount` reads its bucket settings from unless it overrides them.
+    * `bucketName` the name of an existing S3 bucket, e.g. `"workspace-software-s3-qa-gen3"`.
+    * `region` the region the bucket is in, e.g. `"us-east-1"`. Used as the Mountpoint-S3 `stsRegion`; defaults to `us-east-1`.
+    * `prefixBase` an optional prefix within the bucket; defaults to `"<userName>/"` when empty.
+    * `bucketPrefix` the optional prefix ("directory") within the bucket that contains the SquashFS file, e.g. `"software-library/"`. It becomes the root of `/image` in the mounter sidecar, so do not repeat it in `source_sqsh`.
+    * `kmsKeyArn` the customer managed KMS key the bucket is encrypted with, if any. **Required for SSE-KMS buckets:** the key policy alone is not enough, because granting an account root delegates the decision to that account's IAM, so the per-user workspace role also needs `kms:Decrypt`. Omitting it fails in a way that points away from encryption — the volume mounts, the object stats, and the sidecar then dies part way through the copy with `cp: read error: I/O error`.
+* `oidc-provider-arn` the full ARN of the EKS cluster's OIDC provider, e.g. `"arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B716D3041E"`. Required by any feature that mounts S3 with the pod's own credentials (`squashfs_mount` and `shared-workspace`), because it is used to build the IRSA trust policy. For backward compatibility, `shared-workspace.oidc-provider-arn` is still honored when this is unset, but new configurations should set it here: one cluster has one OIDC provider, and both features share it. See [Finding the OIDC provider ARN](#finding-the-oidc-provider-arn) below.
 * `more-configs`: see https://github.com/uc-cdis/hatchery/blob/master/doc/explanation/dockstore.md
 
+
+## Finding the OIDC provider ARN
+
+The `oidc-provider-arn` value is an IAM OIDC provider ARN built from the EKS
+cluster's OIDC issuer URL. The ARN is the issuer URL with the `https://` prefix
+removed, prefixed with `arn:aws:iam::<account-id>:oidc-provider/`.
+
+The most reliable way to get it is to derive it from the cluster, since an
+account usually has one provider per cluster and the ARNs are otherwise
+indistinguishable:
+
+```bash
+CLUSTER=my-cluster   # e.g. devplanetv2
+
+ISSUER=$(aws eks describe-cluster --name "$CLUSTER" \
+  --query 'cluster.identity.oidc.issuer' --output text)
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+
+echo "arn:aws:iam::${ACCOUNT}:oidc-provider/${ISSUER#https://}"
+```
+
+Confirm the provider is actually registered in IAM — the command above only
+builds a string, and a cluster can have an issuer URL with no corresponding IAM
+provider, in which case IRSA silently fails to work:
+
+```bash
+aws iam get-open-id-connect-provider \
+  --open-id-connect-provider-arn "<the ARN printed above>"
+```
+
+If that returns `NoSuchEntity`, the provider has not been created for the
+cluster yet; see the [AWS IRSA setup documentation](https://docs.aws.amazon.com/eks/latest/userguide/enable-iam-roles-for-service-accounts.html).
+
+To list the providers that do exist in the account:
+
+```bash
+aws iam list-open-id-connect-providers
+```
+
+If you do not have IAM read permissions but do have cluster access, the issuer
+can also be read directly from the cluster, then combined with the account ID as
+above:
+
+```bash
+kubectl get --raw /.well-known/openid-configuration | jq -r .issuer
+```
+
+**Note:** the ARN must be for the same AWS account the workspace pods run in,
+because Hatchery creates the per-user IAM role in whatever account its own
+credentials resolve to. A trust policy that references an OIDC provider in a
+different account produces a role that cannot be assumed, and the mount fails
+with a confusing error rather than a clear permissions one.
 
 ## Deployment
 

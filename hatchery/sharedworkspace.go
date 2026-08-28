@@ -15,8 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	k8sv1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8svalidation "k8s.io/apimachinery/pkg/util/validation"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -24,9 +26,82 @@ import (
 
 const sharedWorkspaceLabelKey = "hatchery-shared-user"
 
-// sharedWorkspaceSAName returns the per-user Kubernetes ServiceAccount name.
-func sharedWorkspaceSAName(userName string) string {
+// workspaceSAName returns the per-user Kubernetes ServiceAccount name used for
+// IRSA by both the shared-workspace and squashfs software-library features.
+//
+// The generated string is embedded in the "sub" condition of the trust policy on
+// IAM roles that already exist in AWS, so it must not be changed.
+func workspaceSAName(userName string) string {
 	return fmt.Sprintf("hatchery-shared-%s", escapism(userName))
+}
+
+// softwareLibraryAccess describes read-only access to the squashfs software
+// library bucket that the per-user workspace role should grant.
+type softwareLibraryAccess struct {
+	BucketName string
+	Prefix     string // normalized with a trailing slash; "" means the bucket root
+	// KMSKeyARN is set when the bucket is encrypted with a customer managed key.
+	KMSKeyARN string
+}
+
+// buildWorkspaceS3Policy builds the inline S3 policy document for the per-user
+// workspace role, covering the shared-workspace prefixes and, when library is
+// non-nil, read-only access to the squashfs software library bucket.
+func buildWorkspaceS3Policy(prefixes []SharedWorkspacePrefix, library *softwareLibraryAccess) string {
+	seenBuckets := map[string]bool{}
+	var bucketARNs []string
+	var readOnlyResources, writableResources []string
+	for _, p := range prefixes {
+		if !seenBuckets[p.BucketName] {
+			seenBuckets[p.BucketName] = true
+			bucketARNs = append(bucketARNs, fmt.Sprintf(`"arn:aws:s3:::%s"`, p.BucketName))
+		}
+		arn := fmt.Sprintf(`"arn:aws:s3:::%s/%s*"`, p.BucketName, p.Prefix)
+		if p.IsReadOnly() {
+			readOnlyResources = append(readOnlyResources, arn)
+		} else {
+			writableResources = append(writableResources, arn)
+		}
+	}
+
+	var statements []string
+	// Guarded: an empty Resource list is a malformed policy document that AWS
+	// rejects, which is reachable when only the software library is in use.
+	if len(bucketARNs) > 0 {
+		statements = append(statements, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":[%s]}`, strings.Join(bucketARNs, ",")))
+	}
+	if len(readOnlyResources) > 0 {
+		statements = append(statements, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject"],"Resource":[%s]}`, strings.Join(readOnlyResources, ",")))
+	}
+	if len(writableResources) > 0 {
+		statements = append(statements, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload"],"Resource":[%s]}`, strings.Join(writableResources, ",")))
+	}
+
+	if library != nil && library.BucketName != "" {
+		// s3:ListBucket is a bucket-level action, so it takes the bare bucket ARN
+		// and is narrowed with the s3:prefix condition key. Putting the prefix in
+		// the resource ARN instead would deny all listing.
+		listStmt := fmt.Sprintf(`{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::%s"]`, library.BucketName)
+		if library.Prefix != "" {
+			listStmt += fmt.Sprintf(`,"Condition":{"StringLike":{"s3:prefix":["%s*"]}}`, library.Prefix)
+		}
+		listStmt += "}"
+		statements = append(statements,
+			listStmt,
+			fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject"],"Resource":["arn:aws:s3:::%s/%s*"]}`, library.BucketName, library.Prefix),
+		)
+
+		// An SSE-KMS bucket needs kms:Decrypt on top of s3:GetObject. Without it
+		// the volume still mounts and the object still stats, so the sidecar starts
+		// copying and only then fails with an I/O error.
+		if library.KMSKeyARN != "" {
+			statements = append(statements,
+				fmt.Sprintf(`{"Effect":"Allow","Action":["kms:Decrypt","kms:DescribeKey"],"Resource":["%s"]}`, library.KMSKeyARN),
+			)
+		}
+	}
+
+	return fmt.Sprintf(`{"Version":"2012-10-17","Statement":[%s]}`, strings.Join(statements, ","))
 }
 
 // shortenedWorkspaceRoleName returns the workspace role name hashed version.
@@ -100,14 +175,26 @@ func ensureKeepFiles(prefixes []SharedWorkspacePrefix) error {
 	return nil
 }
 
-// ensureSharedWorkspaceIAMRole creates (or updates the inline policy of) a
-// per-user IAM role whose S3 policy is scoped to exactly the given prefixes.
+// ensureWorkspaceIAMRole creates (or updates the inline policy of) the per-user
+// IAM role used for IRSA, scoped to exactly the given shared-workspace prefixes
+// plus, when library is non-nil, read-only access to the software library bucket.
 // Returns the role ARN.
-func ensureSharedWorkspaceIAMRole(userName, namespace, oidcProviderARN string, prefixes []SharedWorkspacePrefix) (string, error) {
+func ensureWorkspaceIAMRole(userName, namespace, oidcProviderARN string, prefixes []SharedWorkspacePrefix, library *softwareLibraryAccess) (string, error) {
+	return ensureWorkspaceIAMRoleWithClient(iam.New(session.Must(session.NewSession())), userName, namespace, oidcProviderARN, prefixes, library)
+}
+
+// ensureWorkspaceIAMRoleWithClient is the testable core of ensureWorkspaceIAMRole.
+//
+// The inline policy is rewritten on every launch and reflects the container the
+// user just started, so launching a workspace without the software library drops
+// the library statements again. That is the intended least-privilege behavior --
+// only one workspace runs per user at a time -- but it means the role's policy is
+// not a stable artifact.
+func ensureWorkspaceIAMRoleWithClient(svc iamiface.IAMAPI, userName, namespace, oidcProviderARN string, prefixes []SharedWorkspacePrefix, library *softwareLibraryAccess) (string, error) {
 	roleName := sharedWorkspaceRoleName(namespace, userName)
 	accountID := accountIDFromOIDCARN(oidcProviderARN)
 	providerID := oidcProviderID(oidcProviderARN)
-	saName := sharedWorkspaceSAName(userName)
+	saName := workspaceSAName(userName)
 
 	trustPolicy := fmt.Sprintf(`{
 		"Version": "2012-10-17",
@@ -126,31 +213,7 @@ func ensureSharedWorkspaceIAMRole(userName, namespace, oidcProviderARN string, p
 		providerID+":aud",
 	)
 
-	seenBuckets := map[string]bool{}
-	var bucketARNs []string
-	var readOnlyResources, writableResources []string
-	for _, p := range prefixes {
-		if !seenBuckets[p.BucketName] {
-			seenBuckets[p.BucketName] = true
-			bucketARNs = append(bucketARNs, fmt.Sprintf(`"arn:aws:s3:::%s"`, p.BucketName))
-		}
-		arn := fmt.Sprintf(`"arn:aws:s3:::%s/%s*"`, p.BucketName, p.Prefix)
-		if p.IsReadOnly() {
-			readOnlyResources = append(readOnlyResources, arn)
-		} else {
-			writableResources = append(writableResources, arn)
-		}
-	}
-	statements := []string{fmt.Sprintf(`{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":[%s]}`, strings.Join(bucketARNs, ","))}
-	if len(readOnlyResources) > 0 {
-		statements = append(statements, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject"],"Resource":[%s]}`, strings.Join(readOnlyResources, ",")))
-	}
-	if len(writableResources) > 0 {
-		statements = append(statements, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload"],"Resource":[%s]}`, strings.Join(writableResources, ",")))
-	}
-	s3Policy := fmt.Sprintf(`{"Version":"2012-10-17","Statement":[%s]}`, strings.Join(statements, ","))
-
-	svc := iam.New(session.Must(session.NewSession()))
+	s3Policy := buildWorkspaceS3Policy(prefixes, library)
 
 	_, err := svc.GetRole(&iam.GetRoleInput{RoleName: aws.String(roleName)})
 	if err != nil {
@@ -177,6 +240,10 @@ func ensureSharedWorkspaceIAMRole(userName, namespace, oidcProviderARN string, p
 		}
 	}
 
+	// Written unconditionally so the policy converges on every launch. The name is
+	// kept as "shared-workspace-s3" even though the role now also covers the
+	// software library: renaming it would leave the old inline policy attached to
+	// every pre-existing role, and nothing deletes it.
 	if _, err = svc.PutRolePolicy(&iam.PutRolePolicyInput{
 		RoleName:       aws.String(roleName),
 		PolicyName:     aws.String("shared-workspace-s3"),
@@ -188,12 +255,19 @@ func ensureSharedWorkspaceIAMRole(userName, namespace, oidcProviderARN string, p
 	return fmt.Sprintf("arn:aws:iam::%s:role/%s", accountID, roleName), nil
 }
 
-// ensureSharedWorkspaceServiceAccount creates or updates the per-user Kubernetes
-// ServiceAccount annotated with the IAM role ARN for IRSA.
-func ensureSharedWorkspaceServiceAccount(ctx context.Context, podClient corev1.CoreV1Interface, namespace, userName, roleARN string) error {
-	saName := sharedWorkspaceSAName(userName)
+// ensureWorkspaceServiceAccount creates or updates the per-user Kubernetes
+// ServiceAccount annotated with the IAM role ARN for IRSA. The Mountpoint-S3 CSI
+// driver reads this annotation to assume the role, so a pod without it falls back
+// to the namespace default service account and fails to mount.
+func ensureWorkspaceServiceAccount(ctx context.Context, podClient corev1.CoreV1Interface, namespace, userName, roleARN string) error {
+	saName := workspaceSAName(userName)
 	existing, err := podClient.ServiceAccounts(namespace).Get(ctx, saName, metav1.GetOptions{})
 	if err != nil {
+		// Only a genuine NotFound means we should create; surfacing other errors
+		// avoids masking an RBAC or connectivity failure as an AlreadyExists.
+		if !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("failed to check for existing service account %s: %w", saName, err)
+		}
 		sa := &k8sv1.ServiceAccount{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      saName,
@@ -203,8 +277,18 @@ func ensureSharedWorkspaceServiceAccount(ctx context.Context, podClient corev1.C
 				},
 			},
 		}
-		_, err = podClient.ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{})
-		return err
+		if _, createErr := podClient.ServiceAccounts(namespace).Create(ctx, sa, metav1.CreateOptions{}); createErr != nil {
+			if !k8serrors.IsAlreadyExists(createErr) {
+				return fmt.Errorf("failed to create service account %s: %w", saName, createErr)
+			}
+			// A concurrent launch created it first; fall through and annotate it.
+			existing, err = podClient.ServiceAccounts(namespace).Get(ctx, saName, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to re-read service account %s: %w", saName, err)
+			}
+		} else {
+			return nil
+		}
 	}
 	if existing.Annotations == nil {
 		existing.Annotations = make(map[string]string)
@@ -397,7 +481,6 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 		Namespace:    namespace,
 		Labels:       map[string]string{sharedWorkspaceLabelKey: escapism(userName)},
 		BucketName:   prefix.BucketName,
-		VolumeHandle: fmt.Sprintf("%s/%s/%s", prefix.BucketName, escapism(userName), escapism(prefix.Name)),
 		MountOptions: mountOptions,
 		AccessMode:   accessMode,
 	})

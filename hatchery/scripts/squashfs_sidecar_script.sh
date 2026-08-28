@@ -73,9 +73,39 @@ fi
 echo "Apps SquashFS mounted successfully"
 ls -la "$TARGET" | head || true
 
+# Unmount on the way out so the squashfs does not outlive the container. The
+# mount propagates back to the host, and kubelet cannot reclaim the emptyDir
+# backing $TARGET while a filesystem is still mounted on it -- the pod then sits
+# in Terminating forever.
+#
+# A plain umount usually fails here with EBUSY: the workspace container mounts
+# $TARGET too, and Kubernetes signals all containers at once rather than in
+# order, so it is typically still holding a reference. A lazy unmount detaches
+# immediately and lets the kernel release the loop device once that last
+# reference goes away.
 cleanup() {
-  echo "Unmounting $TARGET"
-  umount "$TARGET" || true
+  if ! mountpoint -q "$TARGET" 2>/dev/null && [ "$(get_fstype "$TARGET" || true)" != "squashfs" ]; then
+    echo "Cleanup: $TARGET is not mounted, nothing to do"
+    return 0
+  fi
+
+  echo "Cleanup: unmounting $TARGET"
+  if umount "$TARGET" 2>/dev/null; then
+    echo "Cleanup: unmounted $TARGET"
+    return 0
+  fi
+
+  echo "Cleanup: $TARGET is busy, detaching lazily" >&2
+  if umount -l "$TARGET"; then
+    echo "Cleanup: lazily detached $TARGET"
+    return 0
+  fi
+
+  # Deliberately loud: a leaked mount wedges the pod in Terminating and needs
+  # manual cleanup on the node, so it must not be silently swallowed.
+  echo "ERROR: failed to unmount $TARGET; the mount may leak to the host" >&2
+  awk -v t="$TARGET" '$5 == t {print}' /proc/self/mountinfo >&2 || true
+  return 1
 }
 
 trap cleanup TERM INT EXIT
