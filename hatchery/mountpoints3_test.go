@@ -74,6 +74,12 @@ func TestCreateMountpointS3PVAndPVC(t *testing.T) {
 				if pv.Spec.CSI.VolumeAttributes["bucketName"] != spec.BucketName {
 					t.Errorf("expected bucketName %q, got %q", spec.BucketName, pv.Spec.CSI.VolumeAttributes["bucketName"])
 				}
+				// PVs must use Retain so the PV object survives PVC deletion and only
+				// hatchery's own explicit Delete removes it — no race with the PV
+				// controller auto-deleting it between PVC-delete and PV-delete.
+				if pv.Spec.PersistentVolumeReclaimPolicy != k8sv1.PersistentVolumeReclaimRetain {
+					t.Errorf("expected Retain reclaim policy on PV, got %v", pv.Spec.PersistentVolumeReclaimPolicy)
+				}
 			}
 
 			pvc, pvcErr := clientset.CoreV1().PersistentVolumeClaims(spec.Namespace).Get(context.Background(), spec.PVCName, metav1.GetOptions{})
@@ -91,5 +97,59 @@ func TestCreateMountpointS3PVAndPVC(t *testing.T) {
 				t.Errorf("expected PV to be deleted after PVC creation failure")
 			}
 		}
+	}
+}
+
+// TestSoftwareLibraryPVCSharedNameBlocksAllUsers documents the lifecycle blast-
+// radius bug: the software library PVC is currently shared across every workspace
+// pod in the namespace under a fixed name ("software-library-pvc"). If that PVC
+// enters Terminating for any reason, every user's pod launch fails until the PVC
+// is fully gone. The fix is a per-user PVC name so one user's cycling pod cannot
+// block another's launch.
+//
+// This test FAILS before the fix: ensureSoftwareLibraryPVAndPVC is called with
+// the shared name and returns "still terminating". It PASSES after the fix because
+// the caller derives a per-user name and the terminating PVC at the shared name is
+// invisible to user B's lookup.
+func TestSoftwareLibraryPVCSharedNameBlocksAllUsers(t *testing.T) {
+	defer SetupAndTeardownTest()()
+
+	Config.Config.S3Config = S3Config{BucketName: "test-bucket", Region: "us-east-1"}
+
+	clientset := fake.NewSimpleClientset()
+	ns := "test-ns"
+	ctx := context.Background()
+
+	// The current default shared PVC name that every user gets (pods.go applySquashFSMounter).
+	sharedPVCName := "software-library-pvc"
+
+	// Simulate: user A's pod is terminating and has left the shared PVC in
+	// Terminating state (DeletionTimestamp set, pvc-protection finalizer still present).
+	// We use a reactor so the fake client reliably returns DeletionTimestamp on Get,
+	// which the real API server sets and which the fake tracker may strip on Create.
+	now := metav1.Now()
+	clientset.PrependReactor("get", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		ga := action.(k8stesting.GetAction)
+		if ga.GetName() == sharedPVCName && ga.GetNamespace() == ns {
+			return true, &k8sv1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              sharedPVCName,
+					Namespace:         ns,
+					DeletionTimestamp: &now,
+					Finalizers:        []string{"kubernetes.io/pvc-protection"},
+				},
+			}, nil
+		}
+		return false, nil, nil
+	})
+
+	opts := SquashFSMountConfig{Enabled: true}
+
+	// User B's launch: with the current shared name it hits the terminating PVC
+	// and is incorrectly blocked. After the fix, user B uses their own PVC name
+	// and this path is no longer taken by the production code.
+	err := ensureSoftwareLibraryPVAndPVC(ctx, clientset.CoreV1(), ns, sharedPVCName, opts)
+	if err != nil {
+		t.Errorf("user B's launch must not be blocked by a different user's terminating PVC (fix: per-user PVC names): %v", err)
 	}
 }
