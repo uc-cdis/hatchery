@@ -40,6 +40,20 @@ var squashFSSidecarScript string
 //go:embed scripts/squashfs_wrapper_script.sh
 var squashFSWrapperScript string
 
+const (
+	// squashFSTerminationGracePeriod is the minimum grace period for pods running
+	// the squashfs mounter. The countdown covers the preStop hooks as well as the
+	// container stops, and the Kubernetes default of 30s is tight enough that a
+	// slow unmount can be SIGKILLed part way through -- which leaks the mount to
+	// the host and wedges the pod in Terminating.
+	squashFSTerminationGracePeriod = 60
+
+	// squashFSUnmountDrainSeconds is how long the workspace container lingers in
+	// preStop so the mounter can unmount /apps before the workspace container --
+	// which also holds that mount -- goes away.
+	squashFSUnmountDrainSeconds = 5
+)
+
 var (
 	trueVal  = true
 	falseVal = false
@@ -1040,8 +1054,34 @@ func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface,
 			{Name: "sqsh-cache", MountPath: "/sqsh-cache"},
 			{Name: "apps-mount", MountPath: "/apps", MountPropagation: &propBidirectional},
 		},
+		// Kubelet waits for preStop before sending SIGTERM, so this unmounts while
+		// the container is still healthy rather than racing its own signal handler.
+		// The mount propagates to the host, and kubelet cannot reclaim the emptyDir
+		// underneath it while a filesystem is still mounted, which leaves the pod
+		// stuck in Terminating.
+		//
+		// The workspace container may still hold /apps at this point (Kubernetes
+		// does not order termination across containers), hence the lazy fallback.
+		// A failing preStop hook kills the container, so this must not report an
+		// error when there is simply nothing mounted.
+		Lifecycle: &k8sv1.Lifecycle{
+			PreStop: &k8sv1.LifecycleHandler{
+				Exec: &k8sv1.ExecAction{
+					Command: []string{"/bin/sh", "-c", "umount /apps 2>/dev/null || umount -l /apps 2>/dev/null || true"},
+				},
+			},
+		},
 	}
 	pod.Spec.Containers = append([]k8sv1.Container{sidecar}, pod.Spec.Containers...)
+
+	// The countdown starts before preStop runs, so the unmount, the hook on the
+	// workspace container and the container stops all have to fit inside it. The
+	// 30s default is tight enough that a slow unmount can be SIGKILLed part way,
+	// which is exactly how the mount leaks.
+	if pod.Spec.TerminationGracePeriodSeconds == nil || *pod.Spec.TerminationGracePeriodSeconds < squashFSTerminationGracePeriod {
+		grace := int64(squashFSTerminationGracePeriod)
+		pod.Spec.TerminationGracePeriodSeconds = &grace
+	}
 
 	for i := range pod.Spec.Containers {
 		if pod.Spec.Containers[i].Name == "hatchery-container" {
@@ -1067,6 +1107,25 @@ func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface,
 			newArgs = append(newArgs, origCommand...)
 			newArgs = append(newArgs, origArgs...)
 			container.Args = newArgs
+
+			// Hold this container open briefly so the mounter's own preStop can
+			// unmount /apps before this one exits. Without the delay both are
+			// signalled at once and the unmount hits EBUSY on a mount this
+			// container is still holding.
+			//
+			// Only added when the container has no preStop of its own, since an
+			// existing one is likely doing something more important (unmounting
+			// FUSE, flushing state) and a container has just one preStop.
+			if container.Lifecycle == nil {
+				container.Lifecycle = &k8sv1.Lifecycle{}
+			}
+			if container.Lifecycle.PreStop == nil {
+				container.Lifecycle.PreStop = &k8sv1.LifecycleHandler{
+					Exec: &k8sv1.ExecAction{
+						Command: []string{"/bin/sh", "-c", fmt.Sprintf("sleep %d", squashFSUnmountDrainSeconds)},
+					},
+				}
+			}
 			break
 		}
 	}
