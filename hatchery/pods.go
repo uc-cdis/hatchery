@@ -363,12 +363,15 @@ var deleteK8sPod = func(ctx context.Context, userName string, accessToken string
 		fmt.Printf("Error occurred when deleting pod: %s", err)
 	}
 
-	// Clean up shared workspace PVCs immediately at termination rather than
-	// waiting until the next launch. This must come after the pod Delete so
-	// that the pod's DeletionTimestamp is already set; the finalizer-stripping
-	// inside cleanupUserSharedWorkspaces then allows pvc-protection to proceed.
+	// Clean up PVCs immediately at termination rather than waiting until the
+	// next launch. This must come after the pod Delete so that the pod's
+	// DeletionTimestamp is already set; the finalizer-stripping inside each
+	// cleanup function then allows pvc-protection to proceed.
 	if cleanupErr := cleanupUserSharedWorkspaces(ctx, podClient, userName, Config.Config.UserNamespace); cleanupErr != nil {
 		fmt.Printf("Warning: failed to clean up shared workspace PVCs for user %s: %s\n", userName, cleanupErr)
+	}
+	if cleanupErr := cleanupUserSoftwareLibraryPVC(ctx, podClient, userName, Config.Config.UserNamespace); cleanupErr != nil {
+		fmt.Printf("Warning: failed to clean up software library PVC for user %s: %s\n", userName, cleanupErr)
 	}
 
 	serviceName := userToResourceName(userName, "service")
@@ -960,7 +963,7 @@ func setupSharedWorkspaceVolumes(ctx context.Context, podClient corev1.CoreV1Int
 	}
 }
 
-func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface, namespace string, pod *k8sv1.Pod, opts SquashFSMountConfig) error {
+func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface, namespace string, pod *k8sv1.Pod, opts SquashFSMountConfig, userName string) error {
 	if !opts.Enabled {
 		return nil
 	}
@@ -981,14 +984,11 @@ func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface,
 	if err != nil {
 		return fmt.Errorf("invalid squashfs cache size limit %q: %v", cacheSizeStr, err)
 	}
-	pvcName := opts.PVCClaimName
-	if pvcName == "" {
-		pvcName = "software-library-pvc"
-	}
+	pvcName := softwareLibraryPVCName(userName)
 
 	// The pod would otherwise sit in Pending with a "persistentvolumeclaim not
 	// found" event, so provision the claim before referencing it below.
-	if err := ensureSoftwareLibraryPVAndPVC(ctx, podClient, namespace, pvcName, opts); err != nil {
+	if err := ensureSoftwareLibraryPVAndPVC(ctx, podClient, namespace, userName, opts); err != nil {
 		return fmt.Errorf("failed to ensure software library PVC %s: %w", pvcName, err)
 	}
 
@@ -1131,7 +1131,7 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 	if hatchApp.SquashFSMount.Enabled {
 		Config.Logger.Printf("Applying SquashFS mounter setup for container: %s", hatchApp.Name)
 
-		err := applySquashFSMounter(ctx, podClient, Config.Config.UserNamespace, pod, hatchApp.SquashFSMount)
+		err := applySquashFSMounter(ctx, podClient, Config.Config.UserNamespace, pod, hatchApp.SquashFSMount, userName)
 		if err != nil {
 			Config.Logger.Printf("failed to apply squashfs sidecar for container %s: %v", hatchApp.Name, err)
 			return err

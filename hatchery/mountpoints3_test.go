@@ -100,17 +100,12 @@ func TestCreateMountpointS3PVAndPVC(t *testing.T) {
 	}
 }
 
-// TestSoftwareLibraryPVCSharedNameBlocksAllUsers documents the lifecycle blast-
-// radius bug: the software library PVC is currently shared across every workspace
-// pod in the namespace under a fixed name ("software-library-pvc"). If that PVC
-// enters Terminating for any reason, every user's pod launch fails until the PVC
-// is fully gone. The fix is a per-user PVC name so one user's cycling pod cannot
-// block another's launch.
-//
-// This test FAILS before the fix: ensureSoftwareLibraryPVAndPVC is called with
-// the shared name and returns "still terminating". It PASSES after the fix because
-// the caller derives a per-user name and the terminating PVC at the shared name is
-// invisible to user B's lookup.
+// TestSoftwareLibraryPVCSharedNameBlocksAllUsers verifies that a terminating PVC
+// belonging to one user does not block another user's launch. Before the per-user
+// PVC fix this test failed because both users resolved to the same shared PVC name
+// ("software-library-pvc"), so user A's terminating PVC blocked user B. After the
+// fix each user's PVC name is derived from their username, so user B's lookup hits
+// a different name and succeeds.
 func TestSoftwareLibraryPVCSharedNameBlocksAllUsers(t *testing.T) {
 	defer SetupAndTeardownTest()()
 
@@ -120,20 +115,25 @@ func TestSoftwareLibraryPVCSharedNameBlocksAllUsers(t *testing.T) {
 	ns := "test-ns"
 	ctx := context.Background()
 
-	// The current default shared PVC name that every user gets (pods.go applySquashFSMounter).
-	sharedPVCName := "software-library-pvc"
+	userA := "user-a@test.com"
+	userB := "user-b@test.com"
+	userAPVCName := softwareLibraryPVCName(userA)
+	userBPVCName := softwareLibraryPVCName(userB)
 
-	// Simulate: user A's pod is terminating and has left the shared PVC in
-	// Terminating state (DeletionTimestamp set, pvc-protection finalizer still present).
+	if userAPVCName == userBPVCName {
+		t.Fatalf("per-user PVC names must be distinct: both resolved to %q", userAPVCName)
+	}
+
+	// Simulate user A's PVC stuck in Terminating (DeletionTimestamp set).
 	// We use a reactor so the fake client reliably returns DeletionTimestamp on Get,
 	// which the real API server sets and which the fake tracker may strip on Create.
 	now := metav1.Now()
 	clientset.PrependReactor("get", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		ga := action.(k8stesting.GetAction)
-		if ga.GetName() == sharedPVCName && ga.GetNamespace() == ns {
+		if ga.GetName() == userAPVCName && ga.GetNamespace() == ns {
 			return true, &k8sv1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:              sharedPVCName,
+					Name:              userAPVCName,
 					Namespace:         ns,
 					DeletionTimestamp: &now,
 					Finalizers:        []string{"kubernetes.io/pvc-protection"},
@@ -145,11 +145,24 @@ func TestSoftwareLibraryPVCSharedNameBlocksAllUsers(t *testing.T) {
 
 	opts := SquashFSMountConfig{Enabled: true}
 
-	// User B's launch: with the current shared name it hits the terminating PVC
-	// and is incorrectly blocked. After the fix, user B uses their own PVC name
-	// and this path is no longer taken by the production code.
-	err := ensureSoftwareLibraryPVAndPVC(ctx, clientset.CoreV1(), ns, sharedPVCName, opts)
-	if err != nil {
-		t.Errorf("user B's launch must not be blocked by a different user's terminating PVC (fix: per-user PVC names): %v", err)
+	// User A's own launch should be blocked while their PVC is terminating.
+	errA := ensureSoftwareLibraryPVAndPVC(ctx, clientset.CoreV1(), ns, userA, opts)
+	if errA == nil {
+		t.Error("expected ensureSoftwareLibraryPVAndPVC to return an error for a terminating PVC, but got nil")
+	}
+
+	// User B's launch must succeed independently — their PVC name is different
+	// from user A's and no terminating PVC exists at that name.
+	errB := ensureSoftwareLibraryPVAndPVC(ctx, clientset.CoreV1(), ns, userB, opts)
+	if errB != nil {
+		t.Errorf("user B's launch must not be blocked by user A's terminating PVC: %v", errB)
+	}
+
+	// Verify user B's PVC was actually created under their own name.
+	pvc, getErr := clientset.CoreV1().PersistentVolumeClaims(ns).Get(ctx, userBPVCName, metav1.GetOptions{})
+	if getErr != nil {
+		t.Errorf("expected PVC %q to exist for user B after successful ensure: %v", userBPVCName, getErr)
+	} else if pvc.Labels[softwareLibraryLabelKey] != escapism(userB) {
+		t.Errorf("expected PVC label %s=%q, got %q", softwareLibraryLabelKey, escapism(userB), pvc.Labels[softwareLibraryLabelKey])
 	}
 }

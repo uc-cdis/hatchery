@@ -101,7 +101,7 @@ func createMountpointS3PVAndPVC(ctx context.Context, podClient corev1.CoreV1Inte
 				k8sv1.ResourceStorage: storageSize,
 			},
 			AccessModes:                   []k8sv1.PersistentVolumeAccessMode{spec.AccessMode},
-			PersistentVolumeReclaimPolicy: k8sv1.PersistentVolumeReclaimDelete,
+			PersistentVolumeReclaimPolicy: k8sv1.PersistentVolumeReclaimRetain,
 			StorageClassName:              storageClass,
 			MountOptions:                  spec.MountOptions,
 			PersistentVolumeSource: k8sv1.PersistentVolumeSource{
@@ -153,11 +153,19 @@ func createMountpointS3PVAndPVC(ctx context.Context, podClient corev1.CoreV1Inte
 	return nil
 }
 
+// softwareLibraryPVCName returns the per-user PVC name for the squashfs software
+// library. Each user gets an independent PVC so that one user's terminating pod
+// cannot block another user's launch.
+func softwareLibraryPVCName(userName string) string {
+	return userToResourceName(userName, "software-library")
+}
+
 // ensureSoftwareLibraryPVAndPVC makes sure the read-only Mountpoint-S3 PV/PVC
-// backing the squashfs software library exists in the given namespace. The PVC is
-// shared by every workspace pod in the namespace rather than being per-user, so
-// this is idempotent: an existing claim is left untouched and reported as ready.
-func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1Interface, namespace, pvcName string, opts SquashFSMountConfig) error {
+// backing the squashfs software library exists for the given user. The PVC is
+// scoped per-user (derived from userName) so that lifecycle events on one user's
+// pod do not affect any other user's launch.
+func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1Interface, namespace, userName string, opts SquashFSMountConfig) error {
+	pvcName := softwareLibraryPVCName(userName)
 	bucket, err := resolveSoftwareLibraryBucket(opts)
 	if err != nil {
 		return err
@@ -204,9 +212,9 @@ func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 		PVName:       pvName,
 		PVCName:      pvcName,
 		Namespace:    namespace,
-		Labels:       map[string]string{softwareLibraryLabelKey: "true"},
+		Labels:       map[string]string{softwareLibraryLabelKey: escapism(userName)},
 		BucketName:   bucket.Name,
-		VolumeHandle: fmt.Sprintf("%s-%s-software-library", bucket.Name, escapism(namespace)),
+		VolumeHandle: fmt.Sprintf("%s-%s-%s-software-library", bucket.Name, escapism(userName), escapism(namespace)),
 		MountOptions: mountOptions,
 		AccessMode:   k8sv1.ReadOnlyMany,
 		Region:       bucket.Region,
@@ -217,6 +225,35 @@ func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 		return nil
 	}
 	return err
+}
+
+// cleanupUserSoftwareLibraryPVC deletes the per-user software library PVC and its
+// bound PV, stripping the pvc-protection finalizer first so the deletion is not
+// blocked while the referencing pod is still terminating. Mirrors the pattern used
+// by cleanupUserSharedWorkspaces for shared workspace PVCs.
+func cleanupUserSoftwareLibraryPVC(ctx context.Context, podClient corev1.CoreV1Interface, userName, namespace string) error {
+	labelSelector := fmt.Sprintf("%s=%s", softwareLibraryLabelKey, escapism(userName))
+	pvcs, err := podClient.PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{LabelSelector: labelSelector})
+	if err != nil {
+		return fmt.Errorf("failed to list software library PVCs for user %s: %w", userName, err)
+	}
+	policy := metav1.DeletePropagationBackground
+	deleteOpts := metav1.DeleteOptions{PropagationPolicy: &policy}
+	for _, pvc := range pvcs.Items {
+		pvName := pvc.Spec.VolumeName
+		if err := removePVCProtectionFinalizer(ctx, podClient, namespace, pvc.Name); err != nil {
+			Config.Logger.Printf("Warning: failed to remove pvc-protection finalizer from software library PVC %s for user %s: %v (continuing)", pvc.Name, userName, err)
+		}
+		if err := podClient.PersistentVolumeClaims(namespace).Delete(ctx, pvc.Name, deleteOpts); err != nil && !k8serrors.IsNotFound(err) {
+			Config.Logger.Printf("Warning: failed to delete software library PVC %s for user %s: %v (continuing)", pvc.Name, userName, err)
+		}
+		if pvName != "" {
+			if err := podClient.PersistentVolumes().Delete(ctx, pvName, deleteOpts); err != nil && !k8serrors.IsNotFound(err) {
+				Config.Logger.Printf("Warning: failed to delete software library PV %s for user %s: %v (continuing)", pvName, userName, err)
+			}
+		}
+	}
+	return nil
 }
 
 // normalizeS3Prefix trims leading slashes and ensures a single trailing slash so
