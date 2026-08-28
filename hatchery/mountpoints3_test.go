@@ -22,7 +22,6 @@ func TestCreateMountpointS3PVAndPVC(t *testing.T) {
 		Namespace:    "test-ns",
 		Labels:       map[string]string{"app": "test"},
 		BucketName:   "my-bucket",
-		VolumeHandle: "my-bucket",
 		MountOptions: []string{"--read-only"},
 		AccessMode:   k8sv1.ReadOnlyMany,
 	}
@@ -73,6 +72,12 @@ func TestCreateMountpointS3PVAndPVC(t *testing.T) {
 				}
 				if pv.Spec.CSI.VolumeAttributes["bucketName"] != spec.BucketName {
 					t.Errorf("expected bucketName %q, got %q", spec.BucketName, pv.Spec.CSI.VolumeAttributes["bucketName"])
+				}
+				// The driver parses the volume ID from the kubelet mount path, which
+				// is built from the PV name, and refuses to unmount when it does not
+				// match the handle. A mismatch leaves pods stuck Terminating.
+				if pv.Spec.CSI.VolumeHandle != spec.PVName {
+					t.Errorf("volumeHandle must equal the PV name %q, got %q", spec.PVName, pv.Spec.CSI.VolumeHandle)
 				}
 			}
 

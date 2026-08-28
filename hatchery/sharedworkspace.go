@@ -481,7 +481,6 @@ func createSharedWorkspacePVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 		Namespace:    namespace,
 		Labels:       map[string]string{sharedWorkspaceLabelKey: escapism(userName)},
 		BucketName:   prefix.BucketName,
-		VolumeHandle: fmt.Sprintf("%s/%s/%s", prefix.BucketName, escapism(userName), escapism(prefix.Name)),
 		MountOptions: mountOptions,
 		AccessMode:   accessMode,
 	})

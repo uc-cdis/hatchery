@@ -72,7 +72,6 @@ type mountpointS3PVSpec struct {
 	Namespace    string
 	Labels       map[string]string
 	BucketName   string
-	VolumeHandle string
 	MountOptions []string
 	AccessMode   k8sv1.PersistentVolumeAccessMode
 	// Region is the STS region the CSI driver uses to assume the pod's role.
@@ -106,8 +105,12 @@ func createMountpointS3PVAndPVC(ctx context.Context, podClient corev1.CoreV1Inte
 			MountOptions:                  spec.MountOptions,
 			PersistentVolumeSource: k8sv1.PersistentVolumeSource{
 				CSI: &k8sv1.CSIPersistentVolumeSource{
-					Driver:       mountpointS3CSIDriver,
-					VolumeHandle: spec.VolumeHandle,
+					Driver: mountpointS3CSIDriver,
+					// Must equal the PV name. On teardown the driver parses the volume
+					// ID out of the kubelet mount path, which is built from the PV
+					// name, and refuses to unmount when that disagrees with the handle
+					// it was passed. The pod then never finishes terminating.
+					VolumeHandle: spec.PVName,
 					VolumeAttributes: map[string]string{
 						"bucketName":           spec.BucketName,
 						"authenticationSource": "pod",
@@ -201,7 +204,6 @@ func ensureSoftwareLibraryPVAndPVC(ctx context.Context, podClient corev1.CoreV1I
 		Namespace:    namespace,
 		Labels:       map[string]string{softwareLibraryLabelKey: "true"},
 		BucketName:   bucket.Name,
-		VolumeHandle: fmt.Sprintf("%s-%s-software-library", bucket.Name, escapism(namespace)),
 		MountOptions: mountOptions,
 		AccessMode:   k8sv1.ReadOnlyMany,
 		Region:       bucket.Region,
