@@ -20,8 +20,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	k8sv1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 )
 
 // Config package-global shared hatchery config
@@ -56,7 +54,6 @@ func RegisterHatchery() {
 	http.HandleFunc("/allpaymodels", allpaymodels)
 
 	http.HandleFunc("/timetracker", timeTracker)
-	http.HandleFunc("/allCosts", allCosts)
 
 	// ECS functions
 	http.HandleFunc("/create-ecs-cluster", createECSCluster)
@@ -80,111 +77,6 @@ func home(w http.ResponseWriter, r *http.Request) {
 	</html>`
 	if _, err := fmt.Fprintln(w, htmlFooter); err != nil {
 		Config.Logger.Printf("Error writing html footer: %v", err)
-	}
-}
-
-type PodCostInfo struct {
-	PodName    string  `json:"pod_name"`
-	Namespace  string  `json:"namespace"`
-	Runtime    string  `json:"runtime"`
-	CPUCores   float64 `json:"cpu_cores"`
-	MemoryGB   float64 `json:"memory_gb"`
-	CPUCost    float64 `json:"cpu_cost"`
-	MemoryCost float64 `json:"memory_cost"`
-	TotalCost  float64 `json:"total_cost"`
-}
-
-type CostSummary struct {
-	Namespace string        `json:"namespace"`
-	TotalPods int           `json:"total_pods"`
-	TotalCost float64       `json:"total_cost"`
-	Pods      []PodCostInfo `json:"pods"`
-}
-
-func allCosts(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	// Get k8s client
-	config, err := GetConfig()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get k8s config: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create k8s client: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Get all pods in user namespace
-	ctx := context.TODO()
-	pods, err := clientset.CoreV1().Pods(Config.Config.UserNamespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get pods: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	var podCosts []PodCostInfo
-	var totalCost float64
-	now := time.Now()
-
-	for _, pod := range pods.Items {
-		// Skip if not running
-		if pod.Status.Phase != k8sv1.PodRunning {
-			continue
-		}
-
-		// Calculate runtime
-		startTime := pod.CreationTimestamp.Time
-		runtime := now.Sub(startTime)
-		runtimeHours := runtime.Hours()
-
-		var cpuTotal, memoryTotal float64
-		var cpuCost, memoryCost float64
-
-		// Sum up all container requests
-		for _, container := range pod.Spec.Containers {
-			// CPU
-			if cpuRequest := container.Resources.Requests.Cpu(); cpuRequest != nil {
-				cpuCores := float64(cpuRequest.MilliValue()) / 1000.0
-				cpuTotal += cpuCores
-				cpuCost += cpuCores * Config.Config.Pricing.Cpu * runtimeHours
-			}
-
-			// Memory
-			if memRequest := container.Resources.Requests.Memory(); memRequest != nil {
-				memoryGB := float64(memRequest.Value()) / (1024 * 1024 * 1024)
-				memoryTotal += memoryGB
-				memoryCost += memoryGB * Config.Config.Pricing.Memory * runtimeHours
-			}
-		}
-
-		podCost := PodCostInfo{
-			PodName:    pod.Name,
-			Namespace:  pod.Namespace,
-			Runtime:    runtime.String(),
-			CPUCores:   cpuTotal,
-			MemoryGB:   memoryTotal,
-			CPUCost:    cpuCost,
-			MemoryCost: memoryCost,
-			TotalCost:  cpuCost + memoryCost,
-		}
-
-		podCosts = append(podCosts, podCost)
-		totalCost += podCost.TotalCost
-	}
-
-	summary := CostSummary{
-		Namespace: Config.Config.UserNamespace,
-		TotalPods: len(podCosts),
-		TotalCost: totalCost,
-		Pods:      podCosts,
-	}
-
-	err = json.NewEncoder(w).Encode(summary)
-	if err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
 
