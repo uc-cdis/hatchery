@@ -109,6 +109,13 @@ var getCurrentPayModel = func(userName string) (result *PayModel, err error) {
 		activePayModels, _ := payModelsFromDatabase(userName, false)
 
 		if activePayModels != nil && len(*activePayModels) > 0 {
+			// Terminating a workspace resets current_pay_model to false on every
+			// row, so a user with exactly one pay model is left with nothing
+			// current and cannot launch until they re-select it. Where that
+			// choice is not surfaced to users, treat the only option as current.
+			if Config.Config.AutoSelectSinglePayModel && len(*activePayModels) == 1 {
+				return &(*activePayModels)[0], nil
+			}
 			// return nil since there is no current paymodel set by the user
 			return nil, nil
 		}
