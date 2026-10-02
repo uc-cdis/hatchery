@@ -457,3 +457,53 @@ func TestResolveOIDCProviderARN(t *testing.T) {
 		}
 	})
 }
+
+// TestAddSharedWorkspaceVolumesInjectsBaseMountEmptyDir verifies that an
+// emptyDir is mounted at mountBasePath whenever shared workspace volumes are
+// added to a pod. Without it, Kubernetes must mkdirat the per-user subdirectory
+// into the container's rootfs — which fails when squashfs makes the rootfs
+// read-only.
+func TestAddSharedWorkspaceVolumesInjectsBaseMountEmptyDir(t *testing.T) {
+	pod := &k8sv1.Pod{
+		Spec: k8sv1.PodSpec{
+			Containers: []k8sv1.Container{
+				{Name: "hatchery-container"},
+			},
+		},
+	}
+	prefixes := []SharedWorkspacePrefix{
+		{
+			Name:        "per-user/testuser@example.com",
+			BucketName:  "shared-bucket",
+			Prefix:      "per-user/testuser@example.com",
+			Permissions: []string{"read", "write"},
+		},
+	}
+	mountBasePath := "/home/jovyan/shared"
+
+	addSharedWorkspaceVolumesToPod(pod, "testuser@example.com", prefixes, mountBasePath)
+
+	// There must be an emptyDir volume whose VolumeMount on hatchery-container
+	// is exactly at mountBasePath (not a subdirectory of it).
+	foundBase := false
+	for _, vol := range pod.Spec.Volumes {
+		if vol.VolumeSource.EmptyDir == nil {
+			continue
+		}
+		for _, c := range pod.Spec.Containers {
+			if c.Name != "hatchery-container" {
+				continue
+			}
+			for _, vm := range c.VolumeMounts {
+				if vm.Name == vol.Name && vm.MountPath == mountBasePath {
+					foundBase = true
+				}
+			}
+		}
+	}
+	if !foundBase {
+		t.Errorf("expected an emptyDir volume mounted at %q on hatchery-container "+
+			"so that Kubernetes can mkdirat per-user subdirectories without writing "+
+			"to a read-only squashfs rootfs, but none was found", mountBasePath)
+	}
+}
