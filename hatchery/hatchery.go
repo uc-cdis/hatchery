@@ -8,13 +8,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	htmltemplate "html/template"
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -34,14 +36,44 @@ type containerOption struct {
 	IdleTimeLimit int    `json:"idle-time-limit"`
 }
 
-type TextOutput struct {
-	Text string
+type homeData struct {
+	SubDir     string
+	Containers []homeContainer
 }
 
-var textResult = template.Must(template.New("").Parse(`{{ .Text }}`))
+type homeContainer struct {
+	ID     string
+	Name   string
+	CPU    string
+	Memory string
+}
+
+const homeFallback = `<!DOCTYPE html><html><head><title>Gen3 Hatchery</title></head>
+<body><h1>Gen3 Hatchery</h1>
+{{- range .Containers }}
+<p><a href="{{ $.SubDir }}/launch?hash={{ .ID }}">Launch {{ .Name }} ({{ .CPU }} / {{ .Memory }})</a></p>
+{{- end }}
+</body></html>`
+
+var homeTmpl *htmltemplate.Template
+
+// loadHTMLTemplate reads name from /var/hatchery/templates/ (production) or
+// ./templates/ (dev), falling back to the inline fallback string.
+func loadHTMLTemplate(name, fallback string) *htmltemplate.Template {
+	for _, dir := range []string{"/var/hatchery/templates", "templates"} {
+		path := filepath.Join(dir, name)
+		if content, err := os.ReadFile(path); err == nil {
+			if t, err := htmltemplate.New(name).Parse(string(content)); err == nil {
+				return t
+			}
+		}
+	}
+	return htmltemplate.Must(htmltemplate.New(name).Parse(fallback))
+}
 
 // RegisterHatchery setup endpoints with the http engine
 func RegisterHatchery() {
+	homeTmpl = loadHTMLTemplate("home.html", homeFallback)
 	http.HandleFunc("/", home)
 	http.HandleFunc("/launch", launch)
 	http.HandleFunc("/terminate", terminate)
@@ -60,23 +92,18 @@ func RegisterHatchery() {
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
-	htmlHeader := `<html>
-	<head>Gen3 Hatchery</head>
-	<body>`
-	if _, err := fmt.Fprintln(w, htmlHeader); err != nil {
-		Config.Logger.Printf("Error writing html header: %v", err)
+	data := homeData{SubDir: Config.Config.SubDir}
+	for id, c := range Config.ContainersMap {
+		data.Containers = append(data.Containers, homeContainer{
+			ID:     id,
+			Name:   c.Name,
+			CPU:    c.CPULimit,
+			Memory: c.MemoryLimit,
+		})
 	}
-
-	for k, v := range Config.ContainersMap {
-		if _, err := fmt.Fprintf(w, "<h1><a href=\"%s/launch?hash=%s\">Launch %s - %s CPU - %s Memory</a></h1>", Config.Config.SubDir, k, v.Name, v.CPULimit, v.MemoryLimit); err != nil {
-			Config.Logger.Printf("Error writing launch link to response: %v", err)
-		}
-	}
-
-	htmlFooter := `</body>
-	</html>`
-	if _, err := fmt.Fprintln(w, htmlFooter); err != nil {
-		Config.Logger.Printf("Error writing html footer: %v", err)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := homeTmpl.Execute(w, data); err != nil {
+		Config.Logger.Printf("Error rendering home template: %v", err)
 	}
 }
 
@@ -739,7 +766,9 @@ func mountFiles(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		_ = textResult.Execute(w, TextOutput{string(out)})
+		if _, err := fmt.Fprint(w, string(out)); err != nil {
+			Config.Logger.Printf("Error writing mount file response: %v", err)
+		}
 		return
 	}
 
