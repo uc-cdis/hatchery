@@ -492,6 +492,27 @@ func addSharedWorkspaceVolumesToPod(pod *k8sv1.Pod, userName string, prefixes []
 	if mountBasePath == "" {
 		mountBasePath = "/home/jovyan/shared"
 	}
+
+	// Mount an emptyDir at mountBasePath so that Kubernetes can mkdirat
+	// per-user subdirectories without writing to the container's rootfs.
+	// Without this, squashfs images (which present a read-only rootfs) cause
+	// the kubelet to fail with "read-only file system" when it tries to create
+	// the per-user mountpoint directory.
+	baseVolName := "shared-workspace-base"
+	pod.Spec.Volumes = append(pod.Spec.Volumes, k8sv1.Volume{
+		Name:        baseVolName,
+		VolumeSource: k8sv1.VolumeSource{EmptyDir: &k8sv1.EmptyDirVolumeSource{}},
+	})
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name == "hatchery-container" {
+			pod.Spec.Containers[i].VolumeMounts = append(
+				pod.Spec.Containers[i].VolumeMounts,
+				k8sv1.VolumeMount{Name: baseVolName, MountPath: mountBasePath},
+			)
+			break
+		}
+	}
+
 	for _, prefix := range prefixes {
 		pvcName := sharedPVCName(userName, prefix.Name)
 		volName := sharedVolName(prefix.Name)
