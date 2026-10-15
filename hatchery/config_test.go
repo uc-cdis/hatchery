@@ -248,3 +248,23 @@ func TestInvalidConfigs(t *testing.T) {
 	}
 
 }
+
+func TestUsernameHashAlgorithm(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     HatcheryConfig
+		want    string
+		wantErr bool
+	}{
+		{"default", HatcheryConfig{}, "", false},
+		{"legacy bool", HatcheryConfig{HashedUsernames: true}, UsernameHashSHA256_16, false},
+		{"string", HatcheryConfig{UsernameHash: "sha256-16"}, UsernameHashSHA256_16, false},
+		{"unknown", HatcheryConfig{UsernameHash: "md5"}, "", true},
+	}
+	for _, c := range cases {
+		got, err := c.cfg.UsernameHashAlgorithm()
+		if got != c.want || (err != nil) != c.wantErr {
+			t.Errorf("%s: got (%q, %v), want (%q, err=%v)", c.name, got, err, c.want, c.wantErr)
+		}
+	}
+}

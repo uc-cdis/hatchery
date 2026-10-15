@@ -172,11 +172,39 @@ type SquashFSMountConfig struct {
 	KMSKeyARN    string `json:"kms_key_arn"`
 }
 
+// Supported values for HatcheryConfig.UsernameHash.
+const (
+	// UsernameHashSHA256_16 is the first 16 bytes of the SHA-256 of the username, as 32 lowercase hex chars.
+	UsernameHashSHA256_16 = "sha256-16"
+)
+
+// UsernameHashAlgorithm returns the effective username hash algorithm, or ""
+// when usernames are escaped rather than hashed. The legacy "hashed-usernames"
+// boolean maps to UsernameHashSHA256_16.
+func (c HatcheryConfig) UsernameHashAlgorithm() (string, error) {
+	switch c.UsernameHash {
+	case "":
+		if c.HashedUsernames {
+			return UsernameHashSHA256_16, nil
+		}
+		return "", nil
+	case UsernameHashSHA256_16:
+		return UsernameHashSHA256_16, nil
+	default:
+		return "", fmt.Errorf("unsupported 'username-hash' %q: must be empty or %q", c.UsernameHash, UsernameHashSHA256_16)
+	}
+}
+
 // HatcheryConfig is the root of all the configuration
 type HatcheryConfig struct {
 	UserNamespace   string   `json:"user-namespace"`
 	DefaultPayModel PayModel `json:"default-pay-model"`
-	HashedUsernames bool     `json:"hashed-usernames"`
+	// HashedUsernames is the legacy boolean form of UsernameHash; true means UsernameHashSHA256_16.
+	HashedUsernames bool `json:"hashed-usernames"`
+	// UsernameHash names how usernames are encoded in Kubernetes resource names:
+	// "" (escapism) or UsernameHashSHA256_16. Shared with workspace-proxy, which
+	// must be configured with the same value.
+	UsernameHash string `json:"username-hash"`
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
 	SkipNodeSelector       bool                  `json:"skip-node-selector"`
 	UseInteralServicesURL  bool                  `json:"use-internal-services-url"`
@@ -276,6 +304,10 @@ func LoadConfig(configFilePath string, loggerIn *log.Logger) (config *FullHatche
 	err = json.Unmarshal(plan, &data.Config)
 	if nil != err {
 		data.Logger.Printf("Unable to unmarshal configuration: %v", err)
+		return nil, err
+	}
+	if _, err = data.Config.UsernameHashAlgorithm(); nil != err {
+		data.Logger.Printf("Error in configuration: %v", err)
 		return nil, err
 	}
 	if nil != data.Config.MoreConfigs && 0 < len(data.Config.MoreConfigs) {
