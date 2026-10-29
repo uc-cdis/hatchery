@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -505,5 +506,52 @@ func TestAddSharedWorkspaceVolumesInjectsBaseMountEmptyDir(t *testing.T) {
 		t.Errorf("expected an emptyDir volume mounted at %q on hatchery-container "+
 			"so that Kubernetes can mkdirat per-user subdirectories without writing "+
 			"to a read-only squashfs rootfs, but none was found", mountBasePath)
+	}
+}
+
+func TestDeduplicatePrefixes(t *testing.T) {
+	ro := []string{"read"}
+	rw := []string{"read", "write"}
+	mk := func(prefix string, perms []string) SharedWorkspacePrefix {
+		return SharedWorkspacePrefix{Name: "group-" + prefix, BucketName: "b", Prefix: prefix, Permissions: perms}
+	}
+
+	tests := []struct {
+		name string
+		in   []SharedWorkspacePrefix
+		want []string
+	}{
+		{
+			name: "writable child under read-only parent drops the parent",
+			in:   []SharedWorkspacePrefix{mk("per-user/", ro), mk("per-user/testuser@example.com/", rw)},
+			want: []string{"per-user/testuser@example.com/"},
+		},
+		{
+			name: "read-only child under read-only parent is covered",
+			in:   []SharedWorkspacePrefix{mk("a/", ro), mk("a/b/", ro)},
+			want: []string{"a/"},
+		},
+		{
+			name: "any child under writable parent is covered",
+			in:   []SharedWorkspacePrefix{mk("a/", rw), mk("a/b/", rw), mk("a/c/", ro)},
+			want: []string{"a/"},
+		},
+		{
+			name: "unrelated prefixes are kept",
+			in:   []SharedWorkspacePrefix{mk("a/", ro), mk("b/", rw)},
+			want: []string{"a/", "b/"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := deduplicatePrefixes(tt.in)
+			var gotPrefixes []string
+			for _, p := range got {
+				gotPrefixes = append(gotPrefixes, p.Prefix)
+			}
+			if !reflect.DeepEqual(gotPrefixes, tt.want) {
+				t.Errorf("got %v, want %v", gotPrefixes, tt.want)
+			}
+		})
 	}
 }

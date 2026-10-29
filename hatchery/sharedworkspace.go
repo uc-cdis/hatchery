@@ -419,6 +419,11 @@ func getSharedWorkspacePrefixes(ctx context.Context, accessToken string) ([]Shar
 // an ancestor prefix with equal or higher permissions. A writable ancestor
 // covers any child; a read-only ancestor covers a read-only child but not a
 // writable one (which requires its own mount to expose write access).
+//
+// Conversely, a read-only prefix is dropped when a writable descendant exists.
+// Otherwise the writable mount would be nested inside a read-only
+// mountpoint-s3 mount, and the container runtime cannot create the mountpoint
+// directory there ("read-only file system").
 func deduplicatePrefixes(prefixes []SharedWorkspacePrefix) []SharedWorkspacePrefix {
 	var result []SharedWorkspacePrefix
 	for _, p := range prefixes {
@@ -432,6 +437,10 @@ func deduplicatePrefixes(prefixes []SharedWorkspacePrefix) []SharedWorkspacePref
 					covered = true
 					break
 				}
+			}
+			if p.IsReadOnly() && !other.IsReadOnly() && strings.HasPrefix(other.Prefix, p.Prefix) {
+				covered = true
+				break
 			}
 		}
 		if !covered {
@@ -500,7 +509,7 @@ func addSharedWorkspaceVolumesToPod(pod *k8sv1.Pod, userName string, prefixes []
 	// the per-user mountpoint directory.
 	baseVolName := "shared-workspace-base"
 	pod.Spec.Volumes = append(pod.Spec.Volumes, k8sv1.Volume{
-		Name:        baseVolName,
+		Name:         baseVolName,
 		VolumeSource: k8sv1.VolumeSource{EmptyDir: &k8sv1.EmptyDirVolumeSource{}},
 	})
 	for i := range pod.Spec.Containers {
