@@ -136,6 +136,7 @@ An example manifest entry may look like
 * `user-volume-size` the size of the user volume to be created. Applies to all containers because the user storage is the same across all of them.
 * `use-internal-services-url` Use internal service URLs (http://fence-service/ and http://ambassador-service/) for communication with other services instead of using GEN3_ENDPOINT environmental variable
 * `skip-node-selector` if set to `true`, will not set a node selector for the pods, which will be scheduled on any node. Useful for single-node clusters.
+* `disable-native-sidecars` if set to `true`, runs the `fuse-container` and `apps-mounter` sidecars as regular containers instead of [native sidecars](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/). By default they run as native sidecars, which start before the workspace container and stop only after it has exited, so the `/data` and `/apps` mounts are in place for the workspace's whole life. Native sidecars need Kubernetes 1.29 or later; set this on older clusters, which otherwise reject the pod or leave it stuck in `Init`.
 * `prisma`: TODO document
 * `pay-models-dynamodb-table` is the name of the DynamoDB table where Hatchery can get users' pay model information
 * `pay-models-dynamodb-arn` specify a cross-account role if the DynamoDB table is stored in another AWS account
