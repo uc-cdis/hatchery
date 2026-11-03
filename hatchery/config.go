@@ -178,7 +178,12 @@ type HatcheryConfig struct {
 	DefaultPayModel PayModel `json:"default-pay-model"`
 	HashedUsernames bool     `json:"hashed-usernames"`
 	// DisableLocalWS         bool             `json:"disable-local-ws"`
-	SkipNodeSelector       bool       `json:"skip-node-selector"`
+	SkipNodeSelector bool `json:"skip-node-selector"`
+	// DisableNativeSidecars runs the fuse and squashfs mounter sidecars as regular
+	// containers instead of native sidecars (restartable init containers). Native
+	// sidecars need Kubernetes 1.29+, so only set this on older clusters: they
+	// either reject the pod or drop restartPolicy and wedge it in Init.
+	DisableNativeSidecars  bool       `json:"disable-native-sidecars"`
 	UseInteralServicesURL  bool       `json:"use-internal-services-url"`
 	PayModels              []PayModel `json:"pay-models"`
 	PayModelsDynamodbTable string     `json:"pay-models-dynamodb-table"`
