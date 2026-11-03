@@ -56,6 +56,13 @@ func Test_GetCurrentPayModel(t *testing.T) {
 		},
 	}
 
+	configWithAutoSelectSinglePayModel := &FullHatcheryConfig{
+		Config: HatcheryConfig{
+			PayModelsDynamodbTable:   "random_non_empty_string",
+			AutoSelectSinglePayModel: true,
+		},
+	}
+
 	defaultPayModelForTest := &PayModel{
 		Name:  "Trial Workspace",
 		Local: true,
@@ -145,6 +152,67 @@ func Test_GetCurrentPayModel(t *testing.T) {
 			mockCurrentPayModelFromDB: []PayModel{},
 			mockPayModelsFromDB:       []PayModel{},
 			mockDefaultPaymodel:       defaultPayModelForTest,
+		},
+		{
+			// A terminate resets current_pay_model on the user's only row. With
+			// the flag on, that row is still returned so the user can launch.
+			name: "AutoSelectSingle_SingleActiveNotCurrent",
+			want: &PayModel{
+				Id:              "#1",
+				Name:            "Trial Workspace",
+				CurrentPayModel: false,
+				Status:          "active",
+			},
+			mockConfig:                configWithAutoSelectSinglePayModel,
+			mockCurrentPayModelFromDB: []PayModel{},
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Trial Workspace",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+			mockDefaultPaymodel: defaultPayModelForTest,
+		},
+		{
+			// With more than one option the user genuinely has a choice to make,
+			// so the flag must not pick one for them.
+			name:                      "AutoSelectSingle_MultipleActiveNotCurrent",
+			want:                      nil,
+			mockConfig:                configWithAutoSelectSinglePayModel,
+			mockCurrentPayModelFromDB: []PayModel{},
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Trial Workspace",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+				{
+					Id:              "#2",
+					Name:            "Direct Pay",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+			mockDefaultPaymodel: defaultPayModelForTest,
+		},
+		{
+			// Same single-row shape as above but flag off: unchanged behaviour.
+			name:                      "AutoSelectSingleDisabled_SingleActiveNotCurrent",
+			want:                      nil,
+			mockConfig:                configWithDbTable,
+			mockCurrentPayModelFromDB: []PayModel{},
+			mockPayModelsFromDB: []PayModel{
+				{
+					Id:              "#1",
+					Name:            "Trial Workspace",
+					CurrentPayModel: false,
+					Status:          "active",
+				},
+			},
+			mockDefaultPaymodel: defaultPayModelForTest,
 		},
 	}
 

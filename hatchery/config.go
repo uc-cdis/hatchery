@@ -183,24 +183,30 @@ type HatcheryConfig struct {
 	// containers instead of native sidecars (restartable init containers). Native
 	// sidecars need Kubernetes 1.29+, so only set this on older clusters: they
 	// either reject the pod or drop restartPolicy and wedge it in Init.
-	DisableNativeSidecars  bool                  `json:"disable-native-sidecars"`
-	UseInteralServicesURL  bool                  `json:"use-internal-services-url"`
-	PayModels              []PayModel            `json:"pay-models"`
-	PayModelsDynamodbTable string                `json:"pay-models-dynamodb-table"`
-	PayModelsDynamodbArn   string                `json:"pay-models-dynamodb-arn"`
-	LicenseUserMapsTable   string                `json:"license-user-maps-dynamodb-table"`
-	LicenseUserMapsGSI     string                `json:"license-user-maps-global-secondary-index"`
-	License                LicenseInfo           `json:"license"`
-	SubDir                 string                `json:"sub-dir"`
-	Containers             []Container           `json:"containers"`
-	UserVolumeSize         string                `json:"user-volume-size"`
-	Sidecar                SidecarContainer      `json:"sidecar"`
-	MoreConfigs            []AppConfigInfo       `json:"more-configs"`
-	PrismaConfig           PrismaConfig          `json:"prisma"`
-	S3Config               S3Config              `json:"s3-config"`
-	NextflowGlobalConfig   NextflowGlobalConfig  `json:"nextflow-global"`
-	Pricing                Pricing               `json:"pricing"`
-	SharedWorkspace        SharedWorkspaceConfig `json:"shared-workspace"`
+	DisableNativeSidecars  bool       `json:"disable-native-sidecars"`
+	UseInteralServicesURL  bool       `json:"use-internal-services-url"`
+	PayModels              []PayModel `json:"pay-models"`
+	PayModelsDynamodbTable string     `json:"pay-models-dynamodb-table"`
+	PayModelsDynamodbArn   string     `json:"pay-models-dynamodb-arn"`
+	// AutoSelectSinglePayModel treats a user's only active pay model as their
+	// current one, even when current_pay_model is false in DynamoDB. Terminating
+	// a workspace clears that flag for every row (see resetCurrentPaymodel), so on
+	// commons where users never pick a pay model explicitly this otherwise leaves
+	// them unable to launch until someone flips the flag by hand.
+	AutoSelectSinglePayModel bool                  `json:"auto-select-single-paymodel"`
+	LicenseUserMapsTable     string                `json:"license-user-maps-dynamodb-table"`
+	LicenseUserMapsGSI       string                `json:"license-user-maps-global-secondary-index"`
+	License                  LicenseInfo           `json:"license"`
+	SubDir                   string                `json:"sub-dir"`
+	Containers               []Container           `json:"containers"`
+	UserVolumeSize           string                `json:"user-volume-size"`
+	Sidecar                  SidecarContainer      `json:"sidecar"`
+	MoreConfigs              []AppConfigInfo       `json:"more-configs"`
+	PrismaConfig             PrismaConfig          `json:"prisma"`
+	S3Config                 S3Config              `json:"s3-config"`
+	NextflowGlobalConfig     NextflowGlobalConfig  `json:"nextflow-global"`
+	Pricing                  Pricing               `json:"pricing"`
+	SharedWorkspace          SharedWorkspaceConfig `json:"shared-workspace"`
 	// OIDCProviderARN is the full ARN of the EKS cluster's OIDC provider, used to
 	// build IRSA trust policies. It is a cluster-level property shared by the
 	// shared-workspace and squashfs software-library features.
