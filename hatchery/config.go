@@ -1,11 +1,12 @@
 package hatchery
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	k8sv1 "k8s.io/api/core/v1"
 
 	"crypto/md5"
@@ -136,7 +137,13 @@ type AllPayModels struct {
 }
 
 type DbConfig struct {
-	DynamoDb dynamodbiface.DynamoDBAPI
+	DynamoDb DynamoDBAPI
+}
+
+type DynamoDBAPI interface {
+	Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
+	PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+	UpdateItem(ctx context.Context, params *dynamodb.UpdateItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error)
 }
 
 type Pricing struct {

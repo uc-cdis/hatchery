@@ -9,10 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"github.com/google/uuid"
 
@@ -395,26 +396,25 @@ func (pt *PodTracker) handlePodModified(pod *v1.Pod, source string) {
 }
 
 func (pt *PodTracker) cleanupProcessedEvents(userName, podPaymodelID string) error {
-	sess, err := session.NewSession(&aws.Config{
-		Region:                        aws.String("us-east-1"),
-		CredentialsChainVerboseErrors: aws.Bool(true),
-	})
+	ctx := context.TODO()
+
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
 	if err != nil {
-		return fmt.Errorf("failed to create AWS session: %v", err)
+		return fmt.Errorf("failed to load AWS config: %v", err)
 	}
-	payModelTableConfig := getPayModelTableCreds(sess)
+	payModelTableConfig := getPayModelTableCreds(cfg)
 
-	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
+	dynamodbSvc := dynamodb.NewFromConfig(payModelTableConfig)
 
-	_, err = dynamodbSvc.UpdateItem(&dynamodb.UpdateItemInput{
+	_, err = dynamodbSvc.UpdateItem(ctx, &dynamodb.UpdateItemInput{
 		TableName: aws.String(Config.Config.PayModelsDynamodbTable),
-		Key: map[string]*dynamodb.AttributeValue{
-			"user_id":          {S: aws.String(userName)},
-			"bmh_workspace_id": {S: aws.String(podPaymodelID)},
+		Key: map[string]types.AttributeValue{
+			"user_id":          &types.AttributeValueMemberS{Value: userName},
+			"bmh_workspace_id": &types.AttributeValueMemberS{Value: podPaymodelID},
 		},
 		UpdateExpression: aws.String("REMOVE #PE"),
-		ExpressionAttributeNames: map[string]*string{
-			"#PE": aws.String("processed_events"),
+		ExpressionAttributeNames: map[string]string{
+			"#PE": "processed_events",
 		},
 	})
 	if err != nil {
@@ -495,17 +495,16 @@ func (pt *PodTracker) createDefaultTrialPayPayModel(userName string, podPaymodel
 		payModelID = podPaymodelID[0]
 	}
 
-	sess, err := session.NewSession(&aws.Config{
-		Region:                        aws.String("us-east-1"),
-		CredentialsChainVerboseErrors: aws.Bool(true),
-	})
+	ctx := context.TODO()
+
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create AWS session: %v", err)
+		return nil, fmt.Errorf("failed to load AWS config: %v", err)
 	}
 
-	payModelTableConfig := getPayModelTableCreds(sess)
+	payModelTableConfig := getPayModelTableCreds(cfg)
 
-	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
+	dynamodbSvc := dynamodb.NewFromConfig(payModelTableConfig)
 
 	defaultPayModel := Config.Config.DefaultPayModel
 	defaultPayModel.Id = payModelID
@@ -516,7 +515,9 @@ func (pt *PodTracker) createDefaultTrialPayPayModel(userName string, podPaymodel
 	defaultPayModel.Ecs = false
 	defaultPayModel.TotalUsage = 0.0
 
-	item, err := dynamodbattribute.MarshalMap(defaultPayModel)
+	item, err := attributevalue.MarshalMapWithOptions(defaultPayModel, func(o *attributevalue.EncoderOptions) {
+		o.TagKey = "json"
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal pay model: %v", err)
 	}
@@ -524,7 +525,7 @@ func (pt *PodTracker) createDefaultTrialPayPayModel(userName string, podPaymodel
 	Config.Logger.Printf("Putting item into table")
 
 	// Put the item in DynamoDB
-	_, err = dynamodbSvc.PutItem(&dynamodb.PutItemInput{
+	_, err = dynamodbSvc.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: aws.String(Config.Config.PayModelsDynamodbTable),
 		Item:      item,
 	})
@@ -549,45 +550,40 @@ func (pt *PodTracker) updatePayModelCost(eventKey string, userName string, podPa
 		return fmt.Errorf("no pay models DynamoDB table configured")
 	}
 
-	sess, err := session.NewSession(&aws.Config{
-		Region:                        aws.String("us-east-1"),
-		CredentialsChainVerboseErrors: aws.Bool(true),
-	})
+	ctx := context.TODO()
+
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
 	if err != nil {
-		return fmt.Errorf("failed to create AWS session: %v", err)
+		return fmt.Errorf("failed to load AWS config: %v", err)
 	}
 
-	payModelTableConfig := getPayModelTableCreds(sess)
+	payModelTableConfig := getPayModelTableCreds(cfg)
 
-	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
+	dynamodbSvc := dynamodb.NewFromConfig(payModelTableConfig)
 	// get the current cost
 	input := &dynamodb.UpdateItemInput{
 		TableName: aws.String(Config.Config.PayModelsDynamodbTable),
-		Key: map[string]*dynamodb.AttributeValue{
-			"user_id": {
-				S: aws.String(userName),
-			},
-			"bmh_workspace_id": {
-				S: aws.String(podPaymodelID),
-			},
+		Key: map[string]types.AttributeValue{
+			"user_id":          &types.AttributeValueMemberS{Value: userName},
+			"bmh_workspace_id": &types.AttributeValueMemberS{Value: podPaymodelID},
 		},
 		UpdateExpression:    aws.String("SET #C = if_not_exists(#C, :zero) + :inc ADD #PE :evt"),
 		ConditionExpression: aws.String("NOT contains(#PE, :evtVal)"),
-		ExpressionAttributeNames: map[string]*string{
-			"#C":  aws.String("total-usage"),
-			"#PE": aws.String("processed_events"),
+		ExpressionAttributeNames: map[string]string{
+			"#C":  "total-usage",
+			"#PE": "processed_events",
 		},
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":inc":    {N: aws.String(fmt.Sprintf("%.4f", additionalCost))},
-			":zero":   {N: aws.String("0")},
-			":evt":    {SS: []*string{aws.String(eventKey)}},
-			":evtVal": {S: aws.String(eventKey)},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":inc":    &types.AttributeValueMemberN{Value: fmt.Sprintf("%.4f", additionalCost)},
+			":zero":   &types.AttributeValueMemberN{Value: "0"},
+			":evt":    &types.AttributeValueMemberSS{Value: []string{eventKey}},
+			":evtVal": &types.AttributeValueMemberS{Value: eventKey},
 		},
-		ReturnValues: aws.String("UPDATED_NEW"),
+		ReturnValues: types.ReturnValueUpdatedNew,
 	}
 
 	Config.Logger.Printf("Attempting to update item in table")
-	result, err := dynamodbSvc.UpdateItem(input)
+	result, err := dynamodbSvc.UpdateItem(ctx, input)
 	if err != nil {
 		if strings.Contains(err.Error(), "AccessDeniedException") ||
 			strings.Contains(err.Error(), "is not authorized") {
@@ -602,13 +598,13 @@ func (pt *PodTracker) updatePayModelCost(eventKey string, userName string, podPa
 		return fmt.Errorf("failed to update pay model cost: %v", err)
 	}
 
-	if result.Attributes["total-usage"] != nil {
+	if totalUsage, ok := result.Attributes["total-usage"].(*types.AttributeValueMemberN); ok {
 		Config.Logger.Printf("Updated cost for user %s, workspace %s: $%s (added: $%.4f)",
-			userName, podPaymodelID, *result.Attributes["total-usage"].N, additionalCost)
+			userName, podPaymodelID, totalUsage.Value, additionalCost)
 	}
 
-	if peAttr, ok := result.Attributes["processed_events"]; ok {
-		if len(peAttr.SS) > 1000 { // threshold of number of PE attributes
+	if processedEvents, ok := result.Attributes["processed_events"].(*types.AttributeValueMemberSS); ok {
+		if len(processedEvents.Value) > 1000 { // threshold of number of PE attributes
 			err = pt.cleanupProcessedEvents(userName, podPaymodelID)
 			if err != nil {
 				Config.Logger.Printf("Cost tracking PE attributes cleanup failed")

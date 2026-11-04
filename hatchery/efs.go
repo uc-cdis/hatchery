@@ -1,14 +1,15 @@
 package hatchery
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/efs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/efs"
+	efstypes "github.com/aws/aws-sdk-go-v2/service/efs/types"
 )
 
 type EFS struct {
@@ -17,13 +18,13 @@ type EFS struct {
 	AccessPointId string
 }
 
-func (creds *CREDS) getEFSFileSystem(userName string, svc *efs.EFS) (*efs.DescribeFileSystemsOutput, error) {
+func (creds *CREDS) getEFSFileSystem(ctx context.Context, userName string, svc *efs.Client) (*efs.DescribeFileSystemsOutput, error) {
 	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "fs"
 	fsName = truncateString(fsName, 64)
 	input := &efs.DescribeFileSystemsInput{
 		CreationToken: aws.String(fsName),
 	}
-	result, err := svc.DescribeFileSystems(input)
+	result, err := svc.DescribeFileSystems(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe EFS FS: %s", err)
 	}
@@ -35,7 +36,7 @@ func (creds *CREDS) getEFSFileSystem(userName string, svc *efs.EFS) (*efs.Descri
 }
 
 // TODO: Check for MountTarget state regardless if fs exists or not
-func (creds *CREDS) createMountTarget(FileSystemId string, svc *efs.EFS, userName string) (*efs.MountTargetDescription, error) {
+func (creds *CREDS) createMountTarget(ctx context.Context, FileSystemId string, svc *efs.Client, userName string) (*efs.CreateMountTargetOutput, error) {
 	networkInfo, err := creds.describeWorkspaceNetwork(userName)
 	if err != nil {
 		return nil, err
@@ -44,23 +45,21 @@ func (creds *CREDS) createMountTarget(FileSystemId string, svc *efs.EFS, userNam
 		FileSystemId: aws.String(FileSystemId),
 		SubnetId:     networkInfo.subnets.Subnets[0].SubnetId,
 		// TODO: Make this correct, currently it's all using the same SG
-		SecurityGroups: []*string{
-			networkInfo.securityGroups.SecurityGroups[0].GroupId,
-		},
+		SecurityGroups: []string{aws.ToString(networkInfo.securityGroups.SecurityGroups[0].GroupId)},
 	}
 
-	result, err := svc.CreateMountTarget(input)
+	result, err := svc.CreateMountTarget(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create mount target: %s", err)
 	}
 	return result, nil
 }
 
-func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc *efs.EFS) (*string, error) {
+func (creds *CREDS) createAccessPoint(ctx context.Context, FileSystemId string, userName string, svc *efs.Client) (*string, error) {
 	exAccessPointInput := &efs.DescribeAccessPointsInput{
 		FileSystemId: &FileSystemId,
 	}
-	exResult, err := svc.DescribeAccessPoints(exAccessPointInput)
+	exResult, err := svc.DescribeAccessPoints(ctx, exAccessPointInput)
 	if err != nil {
 		return nil, err
 	}
@@ -71,12 +70,12 @@ func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc 
 			// A string of up to 64 ASCII characters that Amazon EFS uses to ensure idempotent creation.
 			ClientToken:  aws.String(ap),
 			FileSystemId: aws.String(FileSystemId),
-			PosixUser: &efs.PosixUser{
+			PosixUser: &efstypes.PosixUser{
 				Gid: aws.Int64(100),
 				Uid: aws.Int64(1000),
 			},
-			RootDirectory: &efs.RootDirectory{
-				CreationInfo: &efs.CreationInfo{
+			RootDirectory: &efstypes.RootDirectory{
+				CreationInfo: &efstypes.CreationInfo{
 					OwnerGid:    aws.Int64(100),
 					OwnerUid:    aws.Int64(1000),
 					Permissions: aws.String("755"),
@@ -85,7 +84,7 @@ func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc 
 			},
 		}
 
-		result, err := svc.CreateAccessPoint(input)
+		result, err := svc.CreateAccessPoint(ctx, input)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create accessPoint: %s", err)
 		}
@@ -98,14 +97,13 @@ func (creds *CREDS) createAccessPoint(FileSystemId string, userName string, svc 
 }
 
 func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
-	svc := efs.New(session.Must(session.NewSession(&aws.Config{
-		Credentials: creds.creds,
-		// TODO: Make this configurable
-		Region: aws.String("us-east-1"),
-	})))
+	ctx := context.TODO()
+	cfg := aws.Config{Region: "us-east-1", Credentials: creds.creds}
+	svc := efs.NewFromConfig(cfg)
+
 	fsName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "fs"
 	fsName = truncateString(fsName, 64)
-	exisitingFS, err := creds.getEFSFileSystem(userName, svc)
+	exisitingFS, err := creds.getEFSFileSystem(ctx, userName, svc)
 	if err != nil {
 		return nil, err
 	}
@@ -114,8 +112,8 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 			Backup:          aws.Bool(false),
 			CreationToken:   aws.String(fsName),
 			Encrypted:       aws.Bool(true),
-			PerformanceMode: aws.String("generalPurpose"),
-			Tags: []*efs.Tag{
+			PerformanceMode: efstypes.PerformanceModeGeneralPurpose,
+			Tags: []efstypes.Tag{
 				{
 					Key:   aws.String("Name"),
 					Value: aws.String(fsName),
@@ -127,26 +125,26 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 			},
 		}
 
-		result, err := svc.CreateFileSystem(input)
+		result, err := svc.CreateFileSystem(ctx, input)
 		if err != nil {
 			return nil, fmt.Errorf("error creating EFS filesystem: %s", err)
 		}
 
-		exisitingFS, _ = creds.getEFSFileSystem(userName, svc)
-		for *exisitingFS.FileSystems[0].LifeCycleState != "available" {
-			Config.Logger.Printf("EFS filesystem is in state: %s ...  Waiting for 2 seconds", *exisitingFS.FileSystems[0].LifeCycleState)
+		exisitingFS, _ = creds.getEFSFileSystem(ctx, userName, svc)
+		for exisitingFS.FileSystems[0].LifeCycleState != efstypes.LifeCycleStateAvailable {
+			Config.Logger.Printf("EFS filesystem is in state: %s ...  Waiting for 2 seconds", exisitingFS.FileSystems[0].LifeCycleState)
 			// sleep for 2 sec
 			time.Sleep(2 * time.Second)
-			exisitingFS, _ = creds.getEFSFileSystem(userName, svc)
+			exisitingFS, _ = creds.getEFSFileSystem(ctx, userName, svc)
 		}
 
 		// Create mount target
-		mountTarget, err := creds.createMountTarget(*result.FileSystemId, svc, userName)
+		mountTarget, err := creds.createMountTarget(ctx, *result.FileSystemId, svc, userName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create EFS MountTarget: %s", err)
 		}
 		Config.Logger.Printf("MountTarget created: %s", *mountTarget.MountTargetId)
-		accessPoint, err := creds.createAccessPoint(*result.FileSystemId, userName, svc)
+		accessPoint, err := creds.createAccessPoint(ctx, *result.FileSystemId, userName, svc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create EFS AccessPoint: %s", err)
 		}
@@ -159,7 +157,7 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 		}, nil
 	} else {
 		// create accesspoint if it doesn't exist
-		accessPoint, err := svc.DescribeAccessPoints(&efs.DescribeAccessPointsInput{
+		accessPoint, err := svc.DescribeAccessPoints(ctx, &efs.DescribeAccessPointsInput{
 			FileSystemId: exisitingFS.FileSystems[0].FileSystemId,
 		})
 		if err != nil {
@@ -167,7 +165,7 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 		}
 		var accessPointId string
 		if len(accessPoint.AccessPoints) == 0 {
-			accessPointResult, err := creds.createAccessPoint(*exisitingFS.FileSystems[0].FileSystemId, userName, svc)
+			accessPointResult, err := creds.createAccessPoint(ctx, *exisitingFS.FileSystems[0].FileSystemId, userName, svc)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create EFS AccessPoint: %s", err)
 			}
@@ -176,14 +174,14 @@ func (creds *CREDS) EFSFileSystem(userName string) (*EFS, error) {
 			accessPointId = *accessPoint.AccessPoints[0].AccessPointId
 		}
 		// create mountTarget if it doesn't exist
-		exMountTarget, err := svc.DescribeMountTargets(&efs.DescribeMountTargetsInput{
+		exMountTarget, err := svc.DescribeMountTargets(ctx, &efs.DescribeMountTargetsInput{
 			FileSystemId: exisitingFS.FileSystems[0].FileSystemId,
 		})
 		if err != nil {
 			return nil, err
 		}
 		if len(exMountTarget.MountTargets) == 0 {
-			mountTarget, err := creds.createMountTarget(*exisitingFS.FileSystems[0].FileSystemId, svc, userName)
+			mountTarget, err := creds.createMountTarget(ctx, *exisitingFS.FileSystems[0].FileSystemId, svc, userName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create EFS MountTarget: %s", err)
 			}

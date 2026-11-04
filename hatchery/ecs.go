@@ -8,10 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ecs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
+	"github.com/aws/smithy-go"
 )
 
 type CreateTaskDefinitionInput struct {
@@ -23,14 +24,14 @@ type CreateTaskDefinitionInput struct {
 	Name             string
 	Port             int64
 	LogGroupName     string
-	Volumes          []*ecs.Volume
-	MountPoints      []*ecs.MountPoint
+	Volumes          []ecstypes.Volume
+	MountPoints      []ecstypes.MountPoint
 	LogRegion        string
 	TaskRole         string
 	Type             string
 	EntryPoint       []string
 	Args             []string
-	SidecarContainer ecs.ContainerDefinition
+	SidecarContainer ecstypes.ContainerDefinition
 }
 
 type EnvVar struct {
@@ -38,12 +39,12 @@ type EnvVar struct {
 	Value string
 }
 
-func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
-	var environment []*ecs.KeyValuePair
+func (input *CreateTaskDefinitionInput) Environment() []ecstypes.KeyValuePair {
+	var environment []ecstypes.KeyValuePair
 
 	for _, envVar := range input.EnvVars {
 		environment = append(environment,
-			&ecs.KeyValuePair{
+			ecstypes.KeyValuePair{
 				Name:  aws.String(envVar.Key),
 				Value: aws.String(envVar.Value),
 			},
@@ -54,7 +55,8 @@ func (input *CreateTaskDefinitionInput) Environment() []*ecs.KeyValuePair {
 }
 
 // Create ECS cluster
-func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
+func (sess *CREDS) launchEcsCluster(userName string) (*ecstypes.Cluster, error) {
+	ctx := context.TODO()
 	svc := sess.svc
 	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
 
@@ -65,10 +67,10 @@ func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 	}
 
 	describeClusterInput := &ecs.DescribeClustersInput{
-		Clusters: []*string{aws.String(clusterName)},
+		Clusters: []string{clusterName},
 	}
 
-	exCluster, err := svc.DescribeClusters(describeClusterInput)
+	exCluster, err := svc.DescribeClusters(ctx, describeClusterInput)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +85,7 @@ func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 
 		input := &ecs.CreateClusterInput{
 			ClusterName: aws.String(clusterName),
-			Tags: []*ecs.Tag{
+			Tags: []ecstypes.Tag{
 				{
 					Key:   aws.String("Name"),
 					Value: aws.String(clusterName),
@@ -95,49 +97,46 @@ func (sess *CREDS) launchEcsCluster(userName string) (*ecs.Cluster, error) {
 			},
 		}
 
-		result, err := svc.CreateCluster(input)
+		result, err := svc.CreateCluster(ctx, input)
 		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok {
-				switch aerr.Code() {
-				default:
-					return nil, aerr
-				}
+			var apiErr smithy.APIError
+			if errors.As(err, &apiErr) {
+				return nil, apiErr
 			}
 			return nil, err
 		}
+
 		return result.Cluster, nil
 	}
-	return exCluster.Clusters[0], nil
+	return &exCluster.Clusters[0], nil
 }
 
-func (sess *CREDS) findEcsCluster() (*ecs.Cluster, error) {
+func (sess *CREDS) findEcsCluster() (*ecstypes.Cluster, error) {
+	ctx := context.TODO()
 	svc := sess.svc
 	clusterName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-cluster"
 	clusterInput := &ecs.DescribeClustersInput{
-		Clusters: []*string{
-			aws.String(clusterName),
-		},
+		Clusters: []string{clusterName},
 	}
-	describeClusterResult, err := svc.DescribeClusters(clusterInput)
+	describeClusterResult, err := svc.DescribeClusters(ctx, clusterInput)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			default:
-				return nil, aerr
-			}
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			return nil, apiErr
 		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
+			// Print the error
 			Config.Logger.Println(err.Error())
 		}
+		return nil, err
 	}
+
 	if len(describeClusterResult.Failures) > 0 {
 		for _, failure := range describeClusterResult.Failures {
 			if *failure.Reason == "MISSING" {
 				Config.Logger.Printf("ECS cluster named %s not found, trying to create this ECS cluster", clusterName)
 				input := &ecs.CreateClusterInput{
 					ClusterName: aws.String(clusterName),
-					Tags: []*ecs.Tag{
+					Tags: []ecstypes.Tag{
 						{
 							Key:   aws.String("Name"),
 							Value: aws.String(clusterName),
@@ -149,27 +148,30 @@ func (sess *CREDS) findEcsCluster() (*ecs.Cluster, error) {
 					},
 				}
 
-				_, err := svc.CreateCluster(input)
+				_, err := svc.CreateCluster(ctx, input)
 				if err != nil {
-					if aerr, ok := err.(awserr.Error); ok {
-						switch aerr.Code() {
-						default:
-							return nil, fmt.Errorf("cannot create ECS cluster named %s: %s", clusterName, aerr.Code())
-						}
+					var apiErr smithy.APIError
+					if errors.As(err, &apiErr) {
+						return nil, fmt.Errorf("cannot create ECS cluster named %s: %s, %s", clusterName, apiErr.ErrorCode(), apiErr.ErrorMessage())
+					} else {
+						return nil, fmt.Errorf("cannot create ECS cluster named %s: %s", clusterName, err.Error())
 					}
-					return nil, fmt.Errorf("cannot create ECS cluster named %s: %s", clusterName, err.Error())
 				}
-				describeClusterResult, err = svc.DescribeClusters(clusterInput)
-				if err != nil || len(describeClusterResult.Failures) > 0 {
+
+				describeClusterResult, err = svc.DescribeClusters(ctx, clusterInput)
+				if err != nil {
 					return nil, fmt.Errorf("still cannot find ECS cluster named %s: %s", clusterName, err.Error())
 				}
-				return describeClusterResult.Clusters[0], nil
+				if len(describeClusterResult.Failures) > 0 {
+					return nil, fmt.Errorf("still cannot find ECS cluster named %s: %s", clusterName, aws.ToString(describeClusterResult.Failures[0].Reason))
+				}
+				return &describeClusterResult.Clusters[0], nil
 			}
 		}
 		Config.Logger.Printf("ECS cluster named %s cannot be described", clusterName)
 		return nil, fmt.Errorf("ECS cluster named %s cannot be described", clusterName)
 	} else {
-		return describeClusterResult.Clusters[0], nil
+		return &describeClusterResult.Clusters[0], nil
 	}
 }
 
@@ -193,11 +195,9 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 	if err != nil {
 		return &status, err
 	}
-	service, err := sess.svc.DescribeServices(&ecs.DescribeServicesInput{
-		Cluster: cluster.ClusterName,
-		Services: []*string{
-			aws.String(svcName),
-		},
+	service, err := sess.svc.DescribeServices(ctx, &ecs.DescribeServicesInput{
+		Cluster:  cluster.ClusterName,
+		Services: []string{svcName},
 	})
 	if err != nil {
 		return &status, err
@@ -206,12 +206,12 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 	var taskDefName string
 	if len(service.Services) > 0 {
 		statusMessage = *service.Services[0].Status
-		if statusMessage == "ACTIVE" && (*service.Services[0].RunningCount == *service.Services[0].DesiredCount) {
+		if statusMessage == "ACTIVE" && (service.Services[0].RunningCount == service.Services[0].DesiredCount) {
 			taskDefName = *service.Services[0].TaskDefinition
 			if taskDefName == "" {
 				Config.Logger.Printf("No task definition found for user %s", userName)
 			} else {
-				desTaskDefOutput, err := sess.svc.DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
+				desTaskDefOutput, err := sess.svc.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{
 					TaskDefinition: &taskDefName,
 				})
 				if err == nil {
@@ -220,8 +220,8 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 						args := containerDefs[0].Command
 						if len(args) > 0 {
 							for i, arg := range args {
-								if strings.Contains(*arg, "shutdown_no_activity_timeout=") {
-									argSplit := strings.Split(*arg, "=")
+								if strings.Contains(arg, "shutdown_no_activity_timeout=") {
+									argSplit := strings.Split(arg, "=")
 									idleTimeLimit, err := strconv.Atoi(argSplit[len(argSplit)-1])
 									if err == nil {
 										status.IdleTimeLimit = idleTimeLimit * 1000
@@ -248,7 +248,7 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 				}
 			}
 		}
-		if (*service.Services[0].PendingCount > *service.Services[0].RunningCount) || *service.Services[0].PendingCount > 0 {
+		if (service.Services[0].PendingCount > service.Services[0].RunningCount) || service.Services[0].PendingCount > 0 {
 			status.Status = statusMap["LAUNCHING"]
 		} else {
 			status.Status = statusMap[statusMessage]
@@ -264,21 +264,23 @@ func (sess *CREDS) statusEcsWorkspace(ctx context.Context, userName string, acce
 var terminateEcsWorkspace = func(ctx context.Context, userName string, accessToken string, awsAcctID string) (string, error) {
 	Config.Logger.Printf("Terminating ECS workspace for user %s", userName)
 	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
-		// TODO: Make this configurable
-		Region: aws.String("us-east-1"),
-	}))
-	svc := NewSVC(sess, roleARN)
+
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion("us-east-1"),
+	)
+	if err != nil {
+		return "", err
+	}
+	svc := NewSVC(cfg, roleARN)
+
 	cluster, err := svc.findEcsCluster()
 	if err != nil {
 		return "", err
 	}
 	svcName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "svc"
-	desServiceOutput, err := svc.svc.DescribeServices(&ecs.DescribeServicesInput{
-		Cluster: cluster.ClusterName,
-		Services: []*string{
-			aws.String(svcName),
-		},
+	desServiceOutput, err := svc.svc.DescribeServices(ctx, &ecs.DescribeServicesInput{
+		Cluster:  cluster.ClusterName,
+		Services: []string{svcName},
 	})
 	if err != nil {
 		return "", err
@@ -292,7 +294,7 @@ var terminateEcsWorkspace = func(ctx context.Context, userName string, accessTok
 	if taskDefName == "" {
 		Config.Logger.Printf("No task definition found for user %s, skipping API key deletion", userName)
 	} else {
-		desTaskDefOutput, err := svc.svc.DescribeTaskDefinition(&ecs.DescribeTaskDefinitionInput{
+		desTaskDefOutput, err := svc.svc.DescribeTaskDefinition(ctx, &ecs.DescribeTaskDefinitionInput{
 			TaskDefinition: &taskDefName,
 		})
 		if err != nil {
@@ -324,7 +326,7 @@ var terminateEcsWorkspace = func(ctx context.Context, userName string, accessTok
 	}
 	// Terminate ECS service
 	Config.Logger.Printf("Terminating ECS service %s for user %s\n", svcName, userName)
-	delServiceOutput, err := svc.svc.DeleteService(&ecs.DeleteServiceInput{
+	delServiceOutput, err := svc.svc.DeleteService(ctx, &ecs.DeleteServiceInput{
 		Cluster: cluster.ClusterName,
 		Force:   aws.Bool(true),
 		Service: aws.String(svcName),
@@ -359,11 +361,14 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	ctx := context.Background()
 
 	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
+	cfg, err := config.LoadDefaultConfig(ctx,
 		// TODO: Make this configurable
-		Region: aws.String("us-east-1"),
-	}))
-	svc := NewSVC(sess, roleARN)
+		config.WithRegion("us-east-1"),
+	)
+	if err != nil {
+		return err
+	}
+	svc := NewSVC(cfg, roleARN)
 	hatchApp := Config.ContainersMap[hash]
 	mem, err := mem(hatchApp.MemoryLimit)
 	if err != nil {
@@ -375,6 +380,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 	if err != nil {
 		// Log error and return without launching workspace
 		Config.Logger.Printf("Failed to launch ECS workspace for user %v, Error: %v", userName, err)
+		return err
 	}
 
 	// Make sure ECS cluster exists
@@ -450,17 +456,17 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		Type:       "ws",
 		TaskRole:   *taskRole,
 		EntryPoint: hatchApp.Command,
-		Volumes: []*ecs.Volume{
+		Volumes: []ecstypes.Volume{
 			{
 				Name: aws.String("pd"),
-				EfsVolumeConfiguration: &ecs.EFSVolumeConfiguration{
-					AuthorizationConfig: &ecs.EFSAuthorizationConfig{
+				EfsVolumeConfiguration: &ecstypes.EFSVolumeConfiguration{
+					AuthorizationConfig: &ecstypes.EFSAuthorizationConfig{
 						AccessPointId: &volumes.AccessPointId,
-						Iam:           aws.String("ENABLED"),
+						Iam:           ecstypes.EFSAuthorizationConfigIAMEnabled,
 					},
 					FileSystemId:      &volumes.FileSystemId,
 					RootDirectory:     aws.String("/"),
-					TransitEncryption: aws.String("ENABLED"),
+					TransitEncryption: ecstypes.EFSTransitEncryptionEnabled,
 				},
 			},
 			{
@@ -470,7 +476,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 				Name: aws.String("gen3"),
 			},
 		},
-		MountPoints: []*ecs.MountPoint{
+		MountPoints: []ecstypes.MountPoint{
 			// TODO: make these path respect the container def in hatchery config
 			{
 				ContainerPath: aws.String("/home/jovyan/data"),
@@ -492,13 +498,13 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		EnvVars:          envVars,
 		Port:             int64(hatchApp.TargetPort),
 		ExecutionRoleArn: fmt.Sprintf("arn:aws:iam::%s:role/ecsTaskExecutionRole", payModel.AWSAccountId), // TODO: Make this configurable?
-		SidecarContainer: ecs.ContainerDefinition{
+		SidecarContainer: ecstypes.ContainerDefinition{
 			Image: &Config.Config.Sidecar.Image,
 			Name:  aws.String("sidecar-container"),
 			// 2 seconds is the smallest value allowed.
-			StopTimeout: aws.Int64(2),
+			StopTimeout: aws.Int32(2),
 			Essential:   aws.Bool(false),
-			MountPoints: []*ecs.MountPoint{
+			MountPoints: []ecstypes.MountPoint{
 				{
 					ContainerPath: aws.String("/data"),
 					SourceVolume:  aws.String("data-volume"),
@@ -516,7 +522,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		Config.Logger.Printf("Failed to set up task definition for user %v, Error: %v", userName, err)
 		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		if aerr != nil {
-			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
+			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, aerr.Error())
 		}
 		return err
 	}
@@ -528,7 +534,7 @@ func launchEcsWorkspace(userName string, hash string, accessToken string, payMod
 		Config.Logger.Printf("Failed to launch ECS workspace service for user %v, Error: %v", userName, err)
 		aerr := deleteAPIKeyWithContext(ctx, accessToken, apiKey.KeyID)
 		if aerr != nil {
-			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, err.Error())
+			Config.Logger.Printf("Error occurred when deleting API Key with ID %s for user %s: %s\n", apiKey.KeyID, userName, aerr.Error())
 		}
 		return err
 	}
@@ -565,39 +571,37 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 	}
 	svcName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + userToResourceName(userName, "pod") + "svc"
 	input := &ecs.CreateServiceInput{
-		DesiredCount:         aws.Int64(1),
+		DesiredCount:         aws.Int32(1),
 		Cluster:              cluster.ClusterArn,
 		ServiceName:          aws.String(svcName),
 		TaskDefinition:       &taskDefArn,
 		NetworkConfiguration: &networkConfig,
-		DeploymentConfiguration: &ecs.DeploymentConfiguration{
-			MinimumHealthyPercent: aws.Int64(0),
+		DeploymentConfiguration: &ecstypes.DeploymentConfiguration{
+			MinimumHealthyPercent: aws.Int32(0),
 		},
-		EnableECSManagedTags: aws.Bool(true),
-		LaunchType:           aws.String("FARGATE"),
-		LoadBalancers: []*ecs.LoadBalancer{
+		EnableECSManagedTags: true,
+		LaunchType:           ecstypes.LaunchTypeFargate,
+		LoadBalancers: []ecstypes.LoadBalancer{
 			{
 				ContainerName:  aws.String(userToResourceName(userName, "pod")),
-				ContainerPort:  aws.Int64(int64(hatchApp.TargetPort)),
+				ContainerPort:  aws.Int32(int32(hatchApp.TargetPort)),
 				TargetGroupArn: targetGroupArn,
 			},
 		},
 	}
 
-	result, err := svc.CreateService(input)
+	result, err := svc.CreateService(ctx, input)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case ecs.ErrCodeInvalidParameterException:
-				if aerr.Error() == "InvalidParameterException: Creation of service was not idempotent." {
-					Config.Logger.Print("Service already exists.. ")
-					return "", nil
-				}
-			}
+		var ipErr *ecstypes.InvalidParameterException
+		if errors.As(err, &ipErr) && ipErr.Message != nil && *ipErr.Message == "Creation of service was not idempotent." {
+			Config.Logger.Print("Service already exists.. ")
+			return "", nil
+		} else {
+			Config.Logger.Println(err.Error())
+			return "", err
 		}
-		Config.Logger.Println(err.Error())
-		return "", err
 	}
+
 	Config.Logger.Printf("Service launched: %s", *result.Service.ClusterArn)
 	err = createLocalService(ctx, userName, hash, *loadBalancer.LoadBalancers[0].DNSName, payModel)
 	if err != nil {
@@ -608,38 +612,39 @@ func (sess *CREDS) launchService(ctx context.Context, taskDefArn string, userNam
 
 // Create/Update Task Definition in ECS
 func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userName string, hash string, awsAcctID string) (string, error) {
+	ctx := context.TODO()
 	creds := sess.creds
 	LogGroup, err := sess.CreateLogGroup(fmt.Sprintf("/hatchery/%s/", awsAcctID), creds)
 	if err != nil {
 		Config.Logger.Printf("Failed to create/get LogGroup. Error: %s", err)
 		return "", err
 	}
-	svc := ecs.New(session.Must(session.NewSession(&aws.Config{
+	svc := ecs.NewFromConfig(aws.Config{
 		Credentials: creds,
-		Region:      aws.String("us-east-1"),
-	})))
+		Region:      "us-east-1",
+	})
 
 	Config.Logger.Printf("Creating ECS task definition")
 
-	logConfiguration := &ecs.LogConfiguration{
-		LogDriver: aws.String(ecs.LogDriverAwslogs),
-		Options: map[string]*string{
-			"awslogs-region":        aws.String("us-east-1"),
-			"awslogs-group":         aws.String(LogGroup),
-			"awslogs-stream-prefix": aws.String(userName),
+	logConfiguration := &ecstypes.LogConfiguration{
+		LogDriver: ecstypes.LogDriverAwslogs,
+		Options: map[string]string{
+			"awslogs-region":        "us-east-1",
+			"awslogs-group":         LogGroup,
+			"awslogs-stream-prefix": userName,
 		},
 	}
 
-	containerDefinition := &ecs.ContainerDefinition{
+	containerDefinition := ecstypes.ContainerDefinition{
 		Environment:      input.Environment(),
-		StopTimeout:      aws.Int64(2),
+		StopTimeout:      aws.Int32(2),
 		Essential:        aws.Bool(true),
 		MountPoints:      input.MountPoints,
 		Image:            aws.String(input.Image),
 		LogConfiguration: logConfiguration,
 		Name:             aws.String(input.Name),
-		EntryPoint:       aws.StringSlice(input.EntryPoint),
-		Command:          aws.StringSlice(input.Args),
+		EntryPoint:       input.EntryPoint,
+		Command:          input.Args,
 	}
 
 	sidecarContainerDefinition := input.SidecarContainer
@@ -647,18 +652,16 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 	sidecarContainerDefinition.Environment = input.Environment()
 
 	if input.Port != 0 {
-		containerDefinition.SetPortMappings(
-			[]*ecs.PortMapping{
-				{
-					ContainerPort: aws.Int64(int64(input.Port)),
-				},
+		containerDefinition.PortMappings = []ecstypes.PortMapping{
+			{
+				ContainerPort: aws.Int32(int32(input.Port)),
 			},
-		)
+		}
 	}
 
-	containerDefinitions := []*ecs.ContainerDefinition{
+	containerDefinitions := []ecstypes.ContainerDefinition{
 		containerDefinition,
-		&sidecarContainerDefinition,
+		sidecarContainerDefinition,
 	}
 
 	if Config.Config.PrismaConfig.Enable {
@@ -674,13 +677,13 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 			return "", err
 		}
 
-		paloAltoContainerDefinition := ecs.ContainerDefinition{
-			EntryPoint: aws.StringSlice([]string{
+		paloAltoContainerDefinition := ecstypes.ContainerDefinition{
+			EntryPoint: []string{
 				"/usr/local/bin/defender",
 				"fargate",
 				"sidecar",
-			}),
-			Environment: []*ecs.KeyValuePair{
+			},
+			Environment: []ecstypes.KeyValuePair{
 				{
 					Name:  aws.String("INSTALL_BUNDLE"),
 					Value: aws.String(installBundle.Bundle),
@@ -704,34 +707,34 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 				},
 			},
 			Essential: aws.Bool(true),
-			HealthCheck: &ecs.HealthCheck{
-				Command: aws.StringSlice([]string{
+			HealthCheck: &ecstypes.HealthCheck{
+				Command: []string{
 					"/usr/local/bin/defender",
 					"fargate",
 					"healthcheck",
-				}),
-				Interval:    aws.Int64(5),
-				Retries:     aws.Int64(3),
-				StartPeriod: aws.Int64(1),
-				Timeout:     aws.Int64(5),
+				},
+				Interval:    aws.Int32(5),
+				Retries:     aws.Int32(3),
+				StartPeriod: aws.Int32(1),
+				Timeout:     aws.Int32(5),
 			},
 			Image:            aws.String(*image),
 			Name:             aws.String("TwistlockDefender"),
 			LogConfiguration: logConfiguration,
 		}
 
-		containerDefinitions = append(containerDefinitions, &paloAltoContainerDefinition)
+		containerDefinitions = append(containerDefinitions, paloAltoContainerDefinition)
 	}
 
-	resp, err := svc.RegisterTaskDefinition(
+	resp, err := svc.RegisterTaskDefinition(ctx,
 		&ecs.RegisterTaskDefinitionInput{
 			ContainerDefinitions:    containerDefinitions,
 			Cpu:                     aws.String(input.Cpu),
 			ExecutionRoleArn:        aws.String(input.ExecutionRoleArn),
 			Family:                  aws.String(fmt.Sprintf("%s_%s", input.Type, input.Name)),
 			Memory:                  aws.String(input.Memory),
-			NetworkMode:             aws.String(ecs.NetworkModeAwsvpc),
-			RequiresCompatibilities: aws.StringSlice([]string{ecs.CompatibilityFargate}),
+			NetworkMode:             ecstypes.NetworkModeAwsvpc,
+			RequiresCompatibilities: []ecstypes.Compatibility{ecstypes.CompatibilityFargate},
 			TaskRoleArn:             aws.String(input.TaskRole),
 			Volumes:                 input.Volumes,
 		},
@@ -744,7 +747,7 @@ func (sess *CREDS) CreateTaskDefinition(input *CreateTaskDefinitionInput, userNa
 
 	td := resp.TaskDefinition
 
-	Config.Logger.Printf("Created ECS task definition [%s:%d]", aws.StringValue(td.Family), aws.Int64Value(td.Revision))
+	Config.Logger.Printf("Created ECS task definition [%s:%d]", aws.ToString(td.Family), td.Revision)
 
-	return aws.StringValue(td.TaskDefinitionArn), nil
+	return aws.ToString(td.TaskDefinitionArn), nil
 }

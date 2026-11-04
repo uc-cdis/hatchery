@@ -5,8 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/aws"
 )
 
 func TestGetDefaultPayModel(t *testing.T) {
@@ -435,7 +434,7 @@ func Test_GetPayModelTableCreds(t *testing.T) {
 	}{
 		{
 			name:       "PayModelTableInConfig",
-			want:       aws.Config{},
+			want:       aws.Config{Region: "us-east-1"},
 			mockConfig: configWithDbTable,
 		},
 	}
@@ -446,14 +445,10 @@ func Test_GetPayModelTableCreds(t *testing.T) {
 		/* Setup */
 		Config = testcase.mockConfig
 		//
-		sess := session.Must(session.NewSessionWithOptions(session.Options{
-			Config: aws.Config{
-				Region: aws.String("us-east-1"),
-			},
-		}))
+		cfg := aws.Config{Region: "us-east-1"}
 
 		/* Act */
-		got := getPayModelTableCreds(sess)
+		got := getPayModelTableCreds(cfg)
 
 		/* Assert */
 		if !reflect.DeepEqual(got, testcase.want) {
@@ -493,14 +488,10 @@ func Test_GetPayModelTableCredsWithArn(t *testing.T) {
 
 		/* Setup */
 		Config = testcase.mockConfig
-		sess := session.Must(session.NewSessionWithOptions(session.Options{
-			Config: aws.Config{
-				Region: aws.String("us-east-1"),
-			},
-		}))
+		cfg := aws.Config{Region: "us-east-1"}
 
 		/* Act */
-		got := getPayModelTableCreds(sess)
+		got := getPayModelTableCreds(cfg)
 
 		/* Assert */
 		// Credentials should not be nil

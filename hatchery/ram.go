@@ -1,33 +1,37 @@
 package hatchery
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ram"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ram"
+	"github.com/aws/aws-sdk-go-v2/service/ram/types"
 )
 
-func acceptTransitGatewayShare(pm *PayModel, sess *session.Session, ramArn *string) error {
+func acceptTransitGatewayShare(pm *PayModel, cfg aws.Config, ramArn *string) error {
+	ctx := context.TODO()
+
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	svc := NewSVC(sess, roleARN)
+	svc := NewSVC(cfg, roleARN)
 
 	// create RAM client in remote account.
-	ramSvc := ram.New(session.Must(session.NewSession(&aws.Config{
-		Credentials: svc.creds,
-		Region:      aws.String("us-east-1"),
-	})))
+	ramSvc := ram.NewFromConfig(cfg, func(o *ram.Options) {
+		o.Credentials = svc.creds
+		o.Region = "us-east-1"
+	})
 
 	// Check if the resource share is already accepted.
 	// If not, accept the resource share
 	ramName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-ram"
-	exResourceShares, err := ramSvc.GetResourceShares(&ram.GetResourceSharesInput{
+	exResourceShares, err := ramSvc.GetResourceShares(ctx, &ram.GetResourceSharesInput{
 		Name:          aws.String(ramName),
-		ResourceOwner: aws.String("OTHER-ACCOUNTS"),
+		ResourceOwner: types.ResourceOwnerOtherAccounts,
 	})
+
 	if err != nil {
 		// Log error
 		Config.Logger.Printf("cannot get resource share: %s", err.Error())
@@ -35,7 +39,7 @@ func acceptTransitGatewayShare(pm *PayModel, sess *session.Session, ramArn *stri
 	}
 	if len(exResourceShares.ResourceShares) == 0 {
 		roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-		svc := NewSVC(sess, roleARN)
+		svc := NewSVC(cfg, roleARN)
 		err := svc.acceptTGWShare(ramArn)
 		if err != nil {
 			// Log error
@@ -50,18 +54,18 @@ func acceptTransitGatewayShare(pm *PayModel, sess *session.Session, ramArn *stri
 }
 
 func (creds *CREDS) acceptTGWShare(ramArn *string) error {
-	session := session.Must(session.NewSession(&aws.Config{
+	ctx := context.TODO()
+	svc := ram.NewFromConfig(aws.Config{
 		Credentials: creds.creds,
-		Region:      aws.String("us-east-1"),
-	}))
-	svc := ram.New(session)
+		Region:      "us-east-1",
+	})
 
 	ramInvitationInput := &ram.GetResourceShareInvitationsInput{
-		ResourceShareArns: []*string{
-			ramArn,
+		ResourceShareArns: []string{
+			*ramArn,
 		},
 	}
-	resourceShareInvitation, err := svc.GetResourceShareInvitations(ramInvitationInput)
+	resourceShareInvitation, err := svc.GetResourceShareInvitations(ctx, ramInvitationInput)
 	if err != nil {
 		// Log error
 		Config.Logger.Printf("Cannot get resources share invitations: %s", err.Error())
@@ -80,8 +84,8 @@ func (creds *CREDS) acceptTGWShare(ramArn *string) error {
 		}
 		return nil
 	} else {
-		if *resourceShareInvitation.ResourceShareInvitations[0].Status != "ACCEPTED" {
-			_, err := svc.AcceptResourceShareInvitation(&ram.AcceptResourceShareInvitationInput{
+		if resourceShareInvitation.ResourceShareInvitations[0].Status != types.ResourceShareInvitationStatusAccepted {
+			_, err := svc.AcceptResourceShareInvitation(ctx, &ram.AcceptResourceShareInvitationInput{
 				ResourceShareInvitationArn: resourceShareInvitation.ResourceShareInvitations[0].ResourceShareInvitationArn,
 			})
 			if err != nil {
@@ -97,19 +101,21 @@ func (creds *CREDS) acceptTGWShare(ramArn *string) error {
 	}
 }
 
-func shareTransitGateway(session *session.Session, tgwArn string, accountid string) (*string, error) {
+func shareTransitGateway(cfg aws.Config, tgwArn string, accountid string) (*string, error) {
+	ctx := context.TODO()
+
 	// Share resources using resource share in Resource Access Manager
 	// https://docs.aws.amazon.com/sdk-for-go/api/service/ram/#ResourceShare
-	svc := ram.New(session)
+	svc := ram.NewFromConfig(cfg)
 
 	// RAM name cannot contain dots
 	ramName := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-ram"
 	getResourceShareInput := &ram.GetResourceSharesInput{
 		Name:                aws.String(ramName),
-		ResourceOwner:       aws.String("SELF"),
-		ResourceShareStatus: aws.String("ACTIVE"),
+		ResourceOwner:       types.ResourceOwnerSelf,
+		ResourceShareStatus: types.ResourceShareStatusActive,
 	}
-	exRs, err := svc.GetResourceShares(getResourceShareInput)
+	exRs, err := svc.GetResourceShares(ctx, getResourceShareInput)
 	if err != nil {
 		return nil, err
 	}
@@ -120,9 +126,9 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 			// be associated with a resource share.
 			AllowExternalPrincipals: aws.Bool(true),
 			Name:                    aws.String(ramName),
-			Principals:              []*string{aws.String(accountid)},
-			ResourceArns:            []*string{aws.String(tgwArn)},
-			Tags: []*ram.Tag{
+			Principals:              []string{accountid},
+			ResourceArns:            []string{tgwArn},
+			Tags: []types.Tag{
 				{
 					Key:   aws.String("Name"),
 					Value: aws.String(ramName),
@@ -133,7 +139,7 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 				},
 			},
 		}
-		resourceShare, err := svc.CreateResourceShare(resourceShareInput)
+		resourceShare, err := svc.CreateResourceShare(ctx, resourceShareInput)
 		if err != nil {
 			return nil, err
 		}
@@ -141,32 +147,32 @@ func shareTransitGateway(session *session.Session, tgwArn string, accountid stri
 	} else {
 		Config.Logger.Printf("Found existing resource share, associating resource share with account")
 		listResourcesInput := &ram.ListResourcesInput{
-			ResourceOwner: aws.String("SELF"),
-			ResourceArns:  []*string{&tgwArn},
+			ResourceOwner: types.ResourceOwnerSelf,
+			ResourceArns:  []string{tgwArn},
 		}
-		listResources, err := svc.ListResources(listResourcesInput)
+		listResources, err := svc.ListResources(ctx, listResourcesInput)
 		if err != nil {
 			return nil, err
 		}
 
 		listPrincipalsInput := &ram.ListPrincipalsInput{
 			ResourceArn:   aws.String(tgwArn),
-			Principals:    []*string{aws.String(accountid)},
-			ResourceOwner: aws.String("SELF"),
+			Principals:    []string{accountid},
+			ResourceOwner: types.ResourceOwnerSelf,
 		}
-		listPrincipals, err := svc.ListPrincipals(listPrincipalsInput)
+		listPrincipals, err := svc.ListPrincipals(ctx, listPrincipalsInput)
 		if err != nil {
-			Config.Logger.Printf("failed to ListPrincipals: %s", listPrincipalsInput)
+			Config.Logger.Printf("failed to ListPrincipals: %+v", listPrincipalsInput)
 			return nil, fmt.Errorf("failed to ListPrincipals: %s", err)
 		}
 		if len(listPrincipals.Principals) == 0 || len(listResources.Resources) == 0 {
 			Config.Logger.Printf("TransitGateway is not shared with AWS account %s, associating resource share with account", accountid)
 			associateResourceShareInput := &ram.AssociateResourceShareInput{
-				Principals:       []*string{aws.String(accountid)},
-				ResourceArns:     []*string{&tgwArn},
+				Principals:       []string{accountid},
+				ResourceArns:     []string{tgwArn},
 				ResourceShareArn: exRs.ResourceShares[len(exRs.ResourceShares)-1].ResourceShareArn,
 			}
-			_, err := svc.AssociateResourceShare(associateResourceShareInput)
+			_, err := svc.AssociateResourceShare(ctx, associateResourceShareInput)
 			if err != nil {
 				return nil, err
 			}

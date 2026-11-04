@@ -5,18 +5,19 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"path"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	k8sv1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -145,11 +146,16 @@ func accountIDFromOIDCARN(providerARN string) string {
 // ensureKeepFiles creates an empty file in the path because mountpoint-s3 can't
 // use S3 path if it doesn't exist
 func ensureKeepFiles(prefixes []SharedWorkspacePrefix) error {
-	svc := s3.New(session.Must(session.NewSession()))
+	ctx := context.TODO()
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return err
+	}
+	svc := s3.NewFromConfig(cfg)
 	for _, p := range prefixes {
 		key := path.Join(p.Prefix, ".keep")
 
-		_, err := svc.HeadObject(&s3.HeadObjectInput{
+		_, err := svc.HeadObject(ctx, &s3.HeadObjectInput{
 			Bucket: aws.String(p.BucketName),
 			Key:    aws.String(key),
 		})
@@ -159,11 +165,12 @@ func ensureKeepFiles(prefixes []SharedWorkspacePrefix) error {
 		}
 
 		// Only create the object when it does not exist.
-		if reqErr, ok := err.(awserr.RequestFailure); !ok || reqErr.StatusCode() != http.StatusNotFound {
+		var respErr *awshttp.ResponseError
+		if !errors.As(err, &respErr) || respErr.HTTPStatusCode() != http.StatusNotFound {
 			return err
 		}
 
-		_, err = svc.PutObject(&s3.PutObjectInput{
+		_, err = svc.PutObject(ctx, &s3.PutObjectInput{
 			Bucket: aws.String(p.BucketName),
 			Key:    aws.String(key),
 			Body:   nil,
@@ -175,12 +182,24 @@ func ensureKeepFiles(prefixes []SharedWorkspacePrefix) error {
 	return nil
 }
 
+// workspaceIAMAPI is the subset of the IAM client used to manage the per-user
+// workspace role.
+type workspaceIAMAPI interface {
+	GetRole(ctx context.Context, params *iam.GetRoleInput, optFns ...func(*iam.Options)) (*iam.GetRoleOutput, error)
+	CreateRole(ctx context.Context, params *iam.CreateRoleInput, optFns ...func(*iam.Options)) (*iam.CreateRoleOutput, error)
+	PutRolePolicy(ctx context.Context, params *iam.PutRolePolicyInput, optFns ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error)
+}
+
 // ensureWorkspaceIAMRole creates (or updates the inline policy of) the per-user
 // IAM role used for IRSA, scoped to exactly the given shared-workspace prefixes
 // plus, when library is non-nil, read-only access to the software library bucket.
 // Returns the role ARN.
 func ensureWorkspaceIAMRole(userName, namespace, oidcProviderARN string, prefixes []SharedWorkspacePrefix, library *softwareLibraryAccess) (string, error) {
-	return ensureWorkspaceIAMRoleWithClient(iam.New(session.Must(session.NewSession())), userName, namespace, oidcProviderARN, prefixes, library)
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
+		return "", err
+	}
+	return ensureWorkspaceIAMRoleWithClient(iam.NewFromConfig(cfg), userName, namespace, oidcProviderARN, prefixes, library)
 }
 
 // ensureWorkspaceIAMRoleWithClient is the testable core of ensureWorkspaceIAMRole.
@@ -190,7 +209,8 @@ func ensureWorkspaceIAMRole(userName, namespace, oidcProviderARN string, prefixe
 // the library statements again. That is the intended least-privilege behavior --
 // only one workspace runs per user at a time -- but it means the role's policy is
 // not a stable artifact.
-func ensureWorkspaceIAMRoleWithClient(svc iamiface.IAMAPI, userName, namespace, oidcProviderARN string, prefixes []SharedWorkspacePrefix, library *softwareLibraryAccess) (string, error) {
+func ensureWorkspaceIAMRoleWithClient(svc workspaceIAMAPI, userName, namespace, oidcProviderARN string, prefixes []SharedWorkspacePrefix, library *softwareLibraryAccess) (string, error) {
+	ctx := context.TODO()
 	roleName := sharedWorkspaceRoleName(namespace, userName)
 	accountID := accountIDFromOIDCARN(oidcProviderARN)
 	providerID := oidcProviderID(oidcProviderARN)
@@ -215,17 +235,19 @@ func ensureWorkspaceIAMRoleWithClient(svc iamiface.IAMAPI, userName, namespace, 
 
 	s3Policy := buildWorkspaceS3Policy(prefixes, library)
 
-	_, err := svc.GetRole(&iam.GetRoleInput{RoleName: aws.String(roleName)})
+	//Try to get IAM role
+	_, err := svc.GetRole(ctx, &iam.GetRoleInput{RoleName: aws.String(roleName)})
 	if err != nil {
-		aerr, ok := err.(awserr.Error)
-		if !ok || aerr.Code() != iam.ErrCodeNoSuchEntityException {
+		var nse *iamtypes.NoSuchEntityException
+		//If get role request fails, throw error
+		if !errors.As(err, &nse) {
 			return "", fmt.Errorf("failed to check IAM role %s: %w", roleName, err)
 		}
-
-		if _, err = svc.CreateRole(&iam.CreateRoleInput{
+		//If role is not found, create the role
+		if _, err = svc.CreateRole(ctx, &iam.CreateRoleInput{
 			RoleName:                 aws.String(roleName),
 			AssumeRolePolicyDocument: aws.String(trustPolicy),
-			Tags: []*iam.Tag{
+			Tags: []iamtypes.Tag{
 				{
 					Key:   aws.String("Namespace"),
 					Value: &namespace,
@@ -244,7 +266,7 @@ func ensureWorkspaceIAMRoleWithClient(svc iamiface.IAMAPI, userName, namespace, 
 	// kept as "shared-workspace-s3" even though the role now also covers the
 	// software library: renaming it would leave the old inline policy attached to
 	// every pre-existing role, and nothing deletes it.
-	if _, err = svc.PutRolePolicy(&iam.PutRolePolicyInput{
+	if _, err = svc.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
 		RoleName:       aws.String(roleName),
 		PolicyName:     aws.String("shared-workspace-s3"),
 		PolicyDocument: aws.String(s3Policy),

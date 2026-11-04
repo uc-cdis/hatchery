@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/imagebuilder"
-	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 type APIKeyStruct struct {
@@ -220,9 +220,10 @@ func getKernelIdleTimeWithContext(ctx context.Context, accessToken string) (last
 	return lastAct.Unix() * 1000, nil
 }
 
-func getAwsAccountId(sess *session.Session, awsConfig *aws.Config) (string, error) {
-	stsSvc := sts.New(sess, awsConfig)
-	req, err := stsSvc.GetCallerIdentity(&sts.GetCallerIdentityInput{})
+func getAwsAccountId(cfg aws.Config) (string, error) {
+	ctx := context.TODO()
+	stsSvc := sts.NewFromConfig(cfg)
+	req, err := stsSvc.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return "", err
 	}
@@ -241,21 +242,24 @@ func stringArrayContains(s []string, e string) bool {
 	return false
 }
 
-func getLatestImageBuilderAmi(imageBuilderReaderRoleArn string, imagePipelineArn string, imagebuilderListImagePipelineImages func(*imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error)) (string, error) {
+func getLatestImageBuilderAmi(imageBuilderReaderRoleArn string, imagePipelineArn string, imagebuilderListImagePipelineImages func(context.Context, *imagebuilder.ListImagePipelineImagesInput, ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelineImagesOutput, error)) (string, error) {
 	/*	The `imagebuilderListImagePipelineImages` parameter should not be provided in production. It allows
 		us to test this function by mocking the AWS SDK in the tests.
 	*/
+	ctx := context.TODO()
 	if imagebuilderListImagePipelineImages == nil {
-		sess := session.Must(session.NewSession(&aws.Config{
-			Region: aws.String("us-east-1"),
-		}))
-		creds := stscreds.NewCredentials(sess, imageBuilderReaderRoleArn)
-		imageBuilderSvc := imagebuilder.New(sess, &aws.Config{Credentials: creds})
+		cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+		if err != nil {
+			return "", err
+		}
+		stsClient := sts.NewFromConfig(cfg)
+		cfg.Credentials = aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(stsClient, imageBuilderReaderRoleArn))
+		imageBuilderSvc := imagebuilder.NewFromConfig(cfg)
 		imagebuilderListImagePipelineImages = imageBuilderSvc.ListImagePipelineImages
 	}
 
 	// get all images created by the image builder pipeline
-	listImagePipelineImagesOutput, err := imagebuilderListImagePipelineImages(&imagebuilder.ListImagePipelineImagesInput{
+	listImagePipelineImagesOutput, err := imagebuilderListImagePipelineImages(ctx, &imagebuilder.ListImagePipelineImagesInput{
 		ImagePipelineArn: aws.String(imagePipelineArn),
 	})
 	if err != nil {
@@ -266,7 +270,7 @@ func getLatestImageBuilderAmi(imageBuilderReaderRoleArn string, imagePipelineArn
 
 	// if the result is paginated, get the rest of the images
 	for listImagePipelineImagesOutput.NextToken != nil {
-		listImagePipelineImagesOutput, err = imagebuilderListImagePipelineImages(&imagebuilder.ListImagePipelineImagesInput{
+		listImagePipelineImagesOutput, err = imagebuilderListImagePipelineImages(ctx, &imagebuilder.ListImagePipelineImagesInput{
 			ImagePipelineArn: aws.String(imagePipelineArn),
 			NextToken:        listImagePipelineImagesOutput.NextToken,
 		})

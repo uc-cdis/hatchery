@@ -1,43 +1,43 @@
 package hatchery
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
-	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 var ErrNopaymodels = errors.New("no paymodels found")
 
-var getPayModelTableCreds = func(sess *session.Session) aws.Config {
-	// credentials for pay model dynamodb table
-	var awsConfig aws.Config
+var getPayModelTableCreds = func(cfg aws.Config) aws.Config {
 
 	// Assume a new role if we have a pay model arn
 	if Config.Config.PayModelsDynamodbArn != "" {
-		awsConfig = aws.Config{
-			Credentials: stscreds.NewCredentials(sess, Config.Config.PayModelsDynamodbArn),
-		}
-	} else {
-		awsConfig = aws.Config{}
+		stsClient := sts.NewFromConfig(cfg)
+		provider := stscreds.NewAssumeRoleProvider(stsClient, Config.Config.PayModelsDynamodbArn)
+		cfg.Credentials = aws.NewCredentialsCache(provider)
 	}
-	return awsConfig
+	// In v1, the region and default creds came from the session. In v2, session no longer exists. cfg was already loaded config.WithRegion("us-east-1")) at line 38, so returning it unchanged produces the same outcome — default credentials, us-east-1 region.
+	return cfg
 }
 
 var payModelsFromDatabase = func(userName string, current bool) (payModels *[]PayModel, err error) {
+	ctx := context.TODO()
 	// query pay model data for this user from DynamoDB
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region: aws.String("us-east-1"),
-		},
-	}))
-	payModelTableConfig := getPayModelTableCreds(sess)
-	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return nil, err
+	}
+	payModelTableConfig := getPayModelTableCreds(cfg)
+	dynamodbSvc := dynamodb.NewFromConfig(payModelTableConfig)
 
 	filtActive := expression.Name("request_status").Equal(expression.Value("active"))
 	filtAboveLimit := expression.Name("request_status").Equal(expression.Value("above limit"))
@@ -58,7 +58,7 @@ var payModelsFromDatabase = func(userName string, current bool) (payModels *[]Pa
 		FilterExpression:          expr.Filter(),
 		TableName:                 aws.String(Config.Config.PayModelsDynamodbTable),
 	}
-	res, err := dynamodbSvc.Scan(params)
+	res, err := dynamodbSvc.Scan(ctx, params)
 	if err != nil {
 		Config.Logger.Printf("Query API call failed: %s", err)
 		return nil, err
@@ -66,7 +66,9 @@ var payModelsFromDatabase = func(userName string, current bool) (payModels *[]Pa
 
 	// Populate list of all available paymodels
 	var payModelMap []PayModel
-	err = dynamodbattribute.UnmarshalListOfMaps(res.Items, &payModelMap)
+	err = attributevalue.UnmarshalListOfMapsWithOptions(res.Items, &payModelMap, func(o *attributevalue.DecoderOptions) {
+		o.TagKey = "json"
+	})
 	if err != nil {
 		Config.Logger.Printf("Got error unmarshalling paymodels: %s", err)
 		return nil, err
@@ -192,13 +194,13 @@ var getPayModelsForUser = func(userName string) (result *AllPayModels, err error
 }
 
 var setCurrentPaymodel = func(userName string, workspaceid string) (paymodel *PayModel, err error) {
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region: aws.String("us-east-1"),
-		},
-	}))
-	payModelTableConfig := getPayModelTableCreds(sess)
-	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
+	ctx := context.TODO()
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return nil, err
+	}
+	payModelTableConfig := getPayModelTableCreds(cfg)
+	dynamodbSvc := dynamodb.NewFromConfig(payModelTableConfig)
 	pm_db, err := payModelsFromDatabase(userName, false)
 	if err != nil {
 		return nil, err
@@ -231,18 +233,19 @@ var setCurrentPaymodel = func(userName string, workspaceid string) (paymodel *Pa
 }
 
 var resetCurrentPaymodel = func(userName string) error {
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		Config: aws.Config{
-			Region: aws.String("us-east-1"),
-		},
-	}))
-	payModelTableConfig := getPayModelTableCreds(sess)
-	dynamodbSvc := dynamodb.New(sess, &payModelTableConfig)
+	ctx := context.TODO()
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return err
+	}
+	payModelTableConfig := getPayModelTableCreds(cfg)
+	dynamodbSvc := dynamodb.NewFromConfig(payModelTableConfig)
 
 	return resetCurrentPaymodelInDB(userName, dynamodbSvc)
 }
 
-func updateCurrentPaymodelInDB(userName string, workspaceid string, svc *dynamodb.DynamoDB) error {
+func updateCurrentPaymodelInDB(userName string, workspaceid string, svc DynamoDBAPI) error {
+	ctx := context.TODO()
 	// Reset current_pay_model for all paymodels first
 	err := resetCurrentPaymodelInDB(userName, svc)
 	if err != nil {
@@ -250,61 +253,50 @@ func updateCurrentPaymodelInDB(userName string, workspaceid string, svc *dynamod
 	}
 	// Set paymodel with id=workspaceid to current
 	input := &dynamodb.UpdateItemInput{
-		ExpressionAttributeNames: map[string]*string{
-			"#CPM": aws.String("current_pay_model"),
+		ExpressionAttributeNames: map[string]string{
+			"#CPM": "current_pay_model",
 		},
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":f": {
-				BOOL: aws.Bool(true),
-			},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":f": &types.AttributeValueMemberBOOL{Value: true},
 		},
-		Key: map[string]*dynamodb.AttributeValue{
-			"user_id": {
-				S: aws.String(userName),
-			},
-			"bmh_workspace_id": {
-				S: aws.String(workspaceid),
-			},
+		Key: map[string]types.AttributeValue{
+			"user_id":          &types.AttributeValueMemberS{Value: userName},
+			"bmh_workspace_id": &types.AttributeValueMemberS{Value: workspaceid},
 		},
-		ReturnValues:     aws.String("ALL_NEW"),
+		ReturnValues:     types.ReturnValueAllNew,
 		TableName:        aws.String(Config.Config.PayModelsDynamodbTable),
 		UpdateExpression: aws.String("SET #CPM = :f"),
 	}
-	_, err = svc.UpdateItem(input)
+	_, err = svc.UpdateItem(ctx, input)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func resetCurrentPaymodelInDB(userName string, svc *dynamodb.DynamoDB) error {
+func resetCurrentPaymodelInDB(userName string, svc DynamoDBAPI) error {
+	ctx := context.TODO()
 	pm_db, err := payModelsFromDatabase(userName, false)
 	if err != nil {
 		return err
 	}
 	for _, pm := range *pm_db {
 		input := &dynamodb.UpdateItemInput{
-			ExpressionAttributeNames: map[string]*string{
-				"#CPM": aws.String("current_pay_model"),
+			ExpressionAttributeNames: map[string]string{
+				"#CPM": "current_pay_model",
 			},
-			ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-				":f": {
-					BOOL: aws.Bool(false),
-				},
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":f": &types.AttributeValueMemberBOOL{Value: false},
 			},
-			Key: map[string]*dynamodb.AttributeValue{
-				"user_id": {
-					S: aws.String(userName),
-				},
-				"bmh_workspace_id": {
-					S: aws.String(pm.Id),
-				},
+			Key: map[string]types.AttributeValue{
+				"user_id":          &types.AttributeValueMemberS{Value: userName},
+				"bmh_workspace_id": &types.AttributeValueMemberS{Value: pm.Id},
 			},
-			ReturnValues:     aws.String("ALL_NEW"),
+			ReturnValues:     types.ReturnValueAllNew,
 			TableName:        aws.String(Config.Config.PayModelsDynamodbTable),
 			UpdateExpression: aws.String("SET #CPM = :f"),
 		}
-		_, err := svc.UpdateItem(input)
+		_, err := svc.UpdateItem(ctx, input)
 		if err != nil {
 			return err
 		}

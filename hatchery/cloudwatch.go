@@ -1,24 +1,24 @@
 package hatchery
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/cloudwatchlogs"
+	"context"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 )
 
 // Create CloudWatch LogGroup for hatchery containers
-func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Credentials) (string, error) {
-	c := cloudwatchlogs.New(session.Must(session.NewSession(&aws.Config{
-		Credentials: creds,
-		Region:      aws.String("us-east-1"),
-	})))
+func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *aws.CredentialsCache) (string, error) {
+	ctx := context.TODO()
+
+	cfg := aws.Config{Region: "us-east-1", Credentials: creds}
+	c := cloudwatchlogs.NewFromConfig(cfg)
 
 	describeLogGroupIn := &cloudwatchlogs.DescribeLogGroupsInput{
 		LogGroupNamePrefix: aws.String(LogGroupName),
 	}
 
-	logGroup, err := c.DescribeLogGroups(describeLogGroupIn)
+	logGroup, err := c.DescribeLogGroups(ctx, describeLogGroupIn)
 	if err != nil {
 		Config.Logger.Printf("Error in DescribeLogGroup: %s", err)
 		return "", err
@@ -28,7 +28,7 @@ func (sess *CREDS) CreateLogGroup(LogGroupName string, creds *credentials.Creden
 		createLogGroupIn := &cloudwatchlogs.CreateLogGroupInput{
 			LogGroupName: aws.String(LogGroupName),
 		}
-		newLogGroup, err := c.CreateLogGroup(createLogGroupIn)
+		newLogGroup, err := c.CreateLogGroup(ctx, createLogGroupIn)
 		if err != nil {
 			Config.Logger.Printf("Error in  CreateLogGroup: %s, %s", err, newLogGroup)
 			return "", err

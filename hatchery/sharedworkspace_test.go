@@ -7,9 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	k8sv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -185,10 +184,8 @@ func TestBuildWorkspaceS3Policy(t *testing.T) {
 	})
 }
 
-// stubIAM records the calls made against it. Embedding iamiface.IAMAPI means only
-// the three methods actually used need implementations.
+// stubIAM records the calls made against it and satisfies workspaceIAMAPI.
 type stubIAM struct {
-	iamiface.IAMAPI
 	roleExists      bool
 	getRoleCalls    int
 	createRoleCalls int
@@ -199,15 +196,15 @@ type stubIAM struct {
 	createRoleErr   error
 }
 
-func (s *stubIAM) GetRole(*iam.GetRoleInput) (*iam.GetRoleOutput, error) {
+func (s *stubIAM) GetRole(_ context.Context, _ *iam.GetRoleInput, _ ...func(*iam.Options)) (*iam.GetRoleOutput, error) {
 	s.getRoleCalls++
 	if s.roleExists {
 		return &iam.GetRoleOutput{}, nil
 	}
-	return nil, awserr.New(iam.ErrCodeNoSuchEntityException, "not found", nil)
+	return nil, &iamtypes.NoSuchEntityException{}
 }
 
-func (s *stubIAM) CreateRole(in *iam.CreateRoleInput) (*iam.CreateRoleOutput, error) {
+func (s *stubIAM) CreateRole(_ context.Context, in *iam.CreateRoleInput, _ ...func(*iam.Options)) (*iam.CreateRoleOutput, error) {
 	s.createRoleCalls++
 	if in.AssumeRolePolicyDocument != nil {
 		s.lastTrustPolicy = *in.AssumeRolePolicyDocument
@@ -218,7 +215,7 @@ func (s *stubIAM) CreateRole(in *iam.CreateRoleInput) (*iam.CreateRoleOutput, er
 	return &iam.CreateRoleOutput{}, nil
 }
 
-func (s *stubIAM) PutRolePolicy(in *iam.PutRolePolicyInput) (*iam.PutRolePolicyOutput, error) {
+func (s *stubIAM) PutRolePolicy(_ context.Context, in *iam.PutRolePolicyInput, _ ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error) {
 	s.putPolicyCalls++
 	if in.PolicyDocument != nil {
 		s.lastPolicyDoc = *in.PolicyDocument

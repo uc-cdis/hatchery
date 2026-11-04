@@ -17,8 +17,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	k8sv1 "k8s.io/api/core/v1"
 )
 
@@ -662,6 +662,7 @@ func getBearerToken(r *http.Request) string {
 // Function to create ECS cluster.
 // TODO: NEED TO CALL THIS FUNCTION IF IT DOESN'T EXIST!!!
 func createECSCluster(w http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	userName := getCurrentUserName(r)
 	payModel, err := getCurrentPayModel(userName)
 	if payModel == nil {
@@ -673,11 +674,12 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
-		// TODO: Make this configurable
-		Region: aws.String("us-east-1"),
-	}))
-	svc := NewSVC(sess, roleARN)
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	svc := NewSVC(cfg, roleARN)
 
 	result, err := svc.launchEcsCluster(userName)
 	var reader *strings.Reader
@@ -685,7 +687,7 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 		reader = strings.NewReader(err.Error())
 		Config.Logger.Printf("Error: %s", err)
 	} else {
-		reader = strings.NewReader(result.String())
+		reader = strings.NewReader(aws.ToString(result.ClusterArn))
 	}
 	_, err = io.Copy(w, reader)
 	if err != nil {
@@ -696,11 +698,11 @@ func createECSCluster(w http.ResponseWriter, r *http.Request) {
 // Function to check status of ECS workspace.
 var statusEcs = func(ctx context.Context, userName string, accessToken string, awsAcctID string) (*WorkspaceStatus, error) {
 	roleARN := "arn:aws:iam::" + awsAcctID + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
-		// TODO: Make this configurable
-		Region: aws.String("us-east-1"),
-	}))
-	svc := NewSVC(sess, roleARN)
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return nil, err
+	}
+	svc := NewSVC(cfg, roleARN)
 	result, err := svc.statusEcsWorkspace(ctx, userName, accessToken)
 	if err != nil {
 		Config.Logger.Printf("Error: %s", err)
