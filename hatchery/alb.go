@@ -171,6 +171,10 @@ func (creds *CREDS) terminateLoadBalancerTargetGroup(userName string) error {
 		config.WithRegion("us-east-1"),
 		config.WithCredentialsProvider(aws.NewCredentialsCache(creds.creds)),
 	)
+	if err != nil {
+		fmt.Printf("Bad Config found, cannot terminate balancer target group: %s\n", err)
+		return err
+	}
 	svc := elasticloadbalancingv2.NewFromConfig(cfg)
 	tgName := truncateString(strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")+userToResourceName(userName, "service")+"tg", 32)
 	Config.Logger.Printf("Deleting target group: %s", tgName)
@@ -215,6 +219,10 @@ func (creds *CREDS) terminateLoadBalancer(userName string) error {
 		config.WithRegion("us-east-1"),
 		config.WithCredentialsProvider(aws.NewCredentialsCache(creds.creds)),
 	)
+	if err != nil {
+		fmt.Printf("Bad Config found, cannot terminate balancer: %s\n", err)
+		return err
+	}
 	svc := elasticloadbalancingv2.NewFromConfig(cfg)
 
 	albName := truncateString(strings.ReplaceAll(userToResourceName(userName, "service")+os.Getenv("GEN3_ENDPOINT"), ".", "-")+"alb", 32)
