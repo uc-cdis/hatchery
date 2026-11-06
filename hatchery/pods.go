@@ -22,10 +22,11 @@ import (
 	"k8s.io/client-go/util/homedir"
 
 	// AWS modules
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/eks"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/eks"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/google/uuid"
 
@@ -164,16 +165,19 @@ func getLocalPodClient() (corev1.CoreV1Interface, error) {
 // Generate EKS kubeconfig using AWS role
 func NewEKSClientset(ctx context.Context, userName string, payModel PayModel) (corev1.CoreV1Interface, error) {
 	roleARN := "arn:aws:iam::" + payModel.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String(payModel.Region),
-	}))
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(payModel.Region))
+	if err != nil {
+		return nil, err
+	}
 
-	creds := stscreds.NewCredentials(sess, roleARN)
-	eksSvc := eks.New(sess, &aws.Config{Credentials: creds})
+	creds := aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), roleARN))
+	eksSvc := eks.NewFromConfig(cfg, func(o *eks.Options) {
+		o.Credentials = creds
+	})
 	input := &eks.DescribeClusterInput{
 		Name: aws.String(payModel.Name),
 	}
-	result, err := eksSvc.DescribeClusterWithContext(ctx, input)
+	result, err := eksSvc.DescribeCluster(ctx, input)
 	if err != nil {
 		Config.Logger.Printf("Error calling DescribeCluster: %v", err)
 		return nil, err
@@ -185,20 +189,20 @@ func NewEKSClientset(ctx context.Context, userName string, payModel PayModel) (c
 		return nil, err
 	}
 	opts := &token.GetTokenOptions{
-		ClusterID:     aws.StringValue(result.Cluster.Name),
+		ClusterID:     aws.ToString(result.Cluster.Name),
 		AssumeRoleARN: roleARN,
 	}
 	tok, err := gen.GetWithOptions(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
-	ca, err := base64.StdEncoding.DecodeString(aws.StringValue(cluster.CertificateAuthority.Data))
+	ca, err := base64.StdEncoding.DecodeString(aws.ToString(cluster.CertificateAuthority.Data))
 	if err != nil {
 		return nil, err
 	}
 	clientset, err := kubernetes.NewForConfig(
 		&rest.Config{
-			Host:        aws.StringValue(cluster.Endpoint),
+			Host:        aws.ToString(cluster.Endpoint),
 			BearerToken: tok.Token,
 			TLSClientConfig: rest.TLSClientConfig{
 				CAData: ca,

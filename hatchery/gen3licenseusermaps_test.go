@@ -1,14 +1,14 @@
 package hatchery
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -22,11 +22,10 @@ type MockOutputPages struct {
 }
 
 type DynamodbMockClient struct {
-	dynamodbiface.DynamoDBAPI
 	mockOutput *MockOutputPages
 }
 
-func (m *DynamodbMockClient) Query(input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+func (m *DynamodbMockClient) Query(_ context.Context, input *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
 	if input.ExclusiveStartKey == nil {
 		return &m.mockOutput.first, nil
 	} else {
@@ -40,32 +39,32 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 	targetEnvironment := "test.planx-pla.net"
 	t.Setenv("GEN3_ENDPOINT", targetEnvironment)
 
-	firstMockItems := []map[string]*dynamodb.AttributeValue{
+	firstMockItems := []map[string]types.AttributeValue{
 		{
-			"ItemId":      {S: aws.String("1234-abcd")},
-			"Environment": {S: aws.String(targetEnvironment)},
-			"IsActive":    {S: aws.String("True")},
-			"LicenseId":   {N: aws.String("1")},
+			"ItemId":      &types.AttributeValueMemberS{Value: "1234-abcd"},
+			"Environment": &types.AttributeValueMemberS{Value: targetEnvironment},
+			"IsActive":    &types.AttributeValueMemberS{Value: "True"},
+			"LicenseId":   &types.AttributeValueMemberN{Value: "1"},
 		},
 		{
-			"ItemId":      {S: aws.String("1234-efgh")},
-			"Environment": {S: aws.String(targetEnvironment)},
-			"IsActive":    {S: aws.String("True")},
-			"LicenseId":   {N: aws.String("2")},
+			"ItemId":      &types.AttributeValueMemberS{Value: "1234-efgh"},
+			"Environment": &types.AttributeValueMemberS{Value: targetEnvironment},
+			"IsActive":    &types.AttributeValueMemberS{Value: "True"},
+			"LicenseId":   &types.AttributeValueMemberN{Value: "2"},
 		},
 	}
-	secondMockItems := []map[string]*dynamodb.AttributeValue{
+	secondMockItems := []map[string]types.AttributeValue{
 		{
-			"ItemId":      {S: aws.String("5678-abcd")},
-			"Environment": {S: aws.String(targetEnvironment)},
-			"IsActive":    {S: aws.String("True")},
-			"LicenseId":   {N: aws.String("3")},
+			"ItemId":      &types.AttributeValueMemberS{Value: "5678-abcd"},
+			"Environment": &types.AttributeValueMemberS{Value: targetEnvironment},
+			"IsActive":    &types.AttributeValueMemberS{Value: "True"},
+			"LicenseId":   &types.AttributeValueMemberN{Value: "3"},
 		},
 		{
-			"ItemId":      {S: aws.String("5678-efgh")},
-			"Environment": {S: aws.String(targetEnvironment)},
-			"IsActive":    {S: aws.String("True")},
-			"LicenseId":   {N: aws.String("4")},
+			"ItemId":      &types.AttributeValueMemberS{Value: "5678-efgh"},
+			"Environment": &types.AttributeValueMemberS{Value: targetEnvironment},
+			"IsActive":    &types.AttributeValueMemberS{Value: "True"},
+			"LicenseId":   &types.AttributeValueMemberN{Value: "4"},
 		},
 	}
 
@@ -142,8 +141,8 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 			mockQueryOutput: &MockOutputPages{
 				first: dynamodb.QueryOutput{
 					Items: firstMockItems,
-					LastEvaluatedKey: map[string]*dynamodb.AttributeValue{
-						"ItemId": {S: aws.String("1234-efgh")},
+					LastEvaluatedKey: map[string]types.AttributeValue{
+						"ItemId": &types.AttributeValueMemberS{Value: "1234-efgh"},
 					},
 				},
 				second: dynamodb.QueryOutput{
@@ -176,8 +175,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 		t.Logf("Testing GetActiveGen3LicenseUserMaps when %s", testcase.name)
 
 		dbconfig.DynamoDb = &DynamodbMockClient{
-			DynamoDBAPI: nil,
-			mockOutput:  testcase.mockQueryOutput,
+			mockOutput: testcase.mockQueryOutput,
 		}
 
 		mockContainer.License.Enabled = testcase.mockLicenseEnabled
@@ -204,8 +202,7 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 		t.Logf("Testing getLicenseUserMapsForUser when %s", testcase.name)
 
 		dbconfig.DynamoDb = &DynamodbMockClient{
-			DynamoDBAPI: nil,
-			mockOutput:  testcase.mockQueryOutput,
+			mockOutput: testcase.mockQueryOutput,
 		}
 
 		/* Act */
@@ -226,10 +223,10 @@ func Test_GetActiveGen3LicenseUserMaps(t *testing.T) {
 	}
 }
 
-func (m *DynamodbMockClient) PutItem(input *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
+func (m *DynamodbMockClient) PutItem(_ context.Context, input *dynamodb.PutItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
 	return &dynamodb.PutItemOutput{
-		Attributes: map[string]*dynamodb.AttributeValue{
-			"IsActive": {S: aws.String("True")},
+		Attributes: map[string]types.AttributeValue{
+			"IsActive": &types.AttributeValueMemberS{Value: "True"},
 		},
 	}, nil
 }
@@ -277,10 +274,10 @@ func Test_CreateGen3LicenseUserMap(t *testing.T) {
 
 }
 
-func (m *DynamodbMockClient) UpdateItem(input *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
+func (m *DynamodbMockClient) UpdateItem(_ context.Context, input *dynamodb.UpdateItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error) {
 	return &dynamodb.UpdateItemOutput{
-		Attributes: map[string]*dynamodb.AttributeValue{
-			"isActive": {S: aws.String("False")},
+		Attributes: map[string]types.AttributeValue{
+			"isActive": &types.AttributeValueMemberS{Value: "False"},
 		},
 	}, nil
 }

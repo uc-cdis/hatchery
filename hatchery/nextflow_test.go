@@ -1,16 +1,19 @@
 package hatchery
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/batch"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/imagebuilder"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/batch"
+	batchtypes "github.com/aws/aws-sdk-go-v2/service/batch/types"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
+	imagebuildertypes "github.com/aws/aws-sdk-go-v2/service/imagebuilder/types"
 )
 
 func TestReplaceAllUsernamePlaceholders(t *testing.T) {
@@ -92,14 +95,14 @@ func TestGetNextflowInstanceAmi(t *testing.T) {
 	}
 
 	// mock the `imagebuilder.ListImagePipelineImages` call to AWS
-	mockedListImagePipelineImages := func(input *imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error) {
+	mockedListImagePipelineImages := func(_ context.Context, input *imagebuilder.ListImagePipelineImagesInput, _ ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelineImagesOutput, error) {
 		// on the 1st call, return an old image and a NextToken to trigger a 2nd call
 		output := imagebuilder.ListImagePipelineImagesOutput{
-			ImageSummaryList: []*imagebuilder.ImageSummary{
+			ImageSummaryList: []imagebuildertypes.ImageSummary{
 				{
 					DateCreated: aws.String("2023-03-03T00:00:00Z"),
-					OutputResources: &imagebuilder.OutputResources{
-						Amis: []*imagebuilder.Ami{
+					OutputResources: &imagebuildertypes.OutputResources{
+						Amis: []imagebuildertypes.Ami{
 							{
 								Image: aws.String("old-ami"),
 							},
@@ -112,11 +115,11 @@ func TestGetNextflowInstanceAmi(t *testing.T) {
 		// on the 2nd call, return a new image and no NextToken
 		if input.NextToken != nil {
 			output = imagebuilder.ListImagePipelineImagesOutput{
-				ImageSummaryList: []*imagebuilder.ImageSummary{
+				ImageSummaryList: []imagebuildertypes.ImageSummary{
 					{
 						DateCreated: aws.String("2024-02-02T00:00:00Z"),
-						OutputResources: &imagebuilder.OutputResources{
-							Amis: []*imagebuilder.Ami{
+						OutputResources: &imagebuildertypes.OutputResources{
+							Amis: []imagebuildertypes.Ami{
 								{
 									Image: &builderLatestAmi,
 								},
@@ -170,20 +173,20 @@ func TestCleanUpNextflowResources(t *testing.T) {
 		return nil, nil
 	}
 
-	getNextflowAwsSettings = func(sess *session.Session, payModel *PayModel, userName string, action string) (string, aws.Config, error) {
+	getNextflowAwsSettings = func(cfg aws.Config, payModel *PayModel, userName string, action string) (string, aws.Config, error) {
 		return "test-aws-account-id", aws.Config{}, nil
 	}
 
 	stopSquidInstanceCallCount := 0
-	stopSquidInstance = func(hostname string, userName string, ec2svc *ec2.EC2) error {
+	stopSquidInstance = func(hostname string, userName string, ec2svc *ec2.Client) error {
 		stopSquidInstanceCallCount += 1
 		return nil
 	}
 
 	// mock AWS SDK functions
-	mockedIamSvcListAccessKeys := func(*iam.ListAccessKeysInput) (*iam.ListAccessKeysOutput, error) {
+	mockedIamSvcListAccessKeys := func(context.Context, *iam.ListAccessKeysInput, ...func(*iam.Options)) (*iam.ListAccessKeysOutput, error) {
 		output := iam.ListAccessKeysOutput{
-			AccessKeyMetadata: []*iam.AccessKeyMetadata{
+			AccessKeyMetadata: []iamtypes.AccessKeyMetadata{
 				{AccessKeyId: aws.String("123")},
 				{AccessKeyId: aws.String("789")},
 			},
@@ -192,15 +195,15 @@ func TestCleanUpNextflowResources(t *testing.T) {
 	}
 
 	deleteAccessKeyCallIds := []string{}
-	mockedIamSvcDeleteAccessKey := func(input *iam.DeleteAccessKeyInput) (*iam.DeleteAccessKeyOutput, error) {
+	mockedIamSvcDeleteAccessKey := func(_ context.Context, input *iam.DeleteAccessKeyInput, _ ...func(*iam.Options)) (*iam.DeleteAccessKeyOutput, error) {
 		deleteAccessKeyCallIds = append(deleteAccessKeyCallIds, *input.AccessKeyId)
 		return &iam.DeleteAccessKeyOutput{}, nil
 	}
 
-	mockedBatchSvcListJobs := func(input *batch.ListJobsInput) (*batch.ListJobsOutput, error) {
+	mockedBatchSvcListJobs := func(_ context.Context, input *batch.ListJobsInput, _ ...func(*batch.Options)) (*batch.ListJobsOutput, error) {
 		// on the 1st call, return a job and a NextToken to trigger a 2nd call
 		output := batch.ListJobsOutput{
-			JobSummaryList: []*batch.JobSummary{
+			JobSummaryList: []batchtypes.JobSummary{
 				{
 					JobId:   aws.String("abc"),
 					JobName: aws.String("Job ABC"),
@@ -211,7 +214,7 @@ func TestCleanUpNextflowResources(t *testing.T) {
 		// on the 2nd call, return another job and no NextToken
 		if input.NextToken != nil {
 			output = batch.ListJobsOutput{
-				JobSummaryList: []*batch.JobSummary{
+				JobSummaryList: []batchtypes.JobSummary{
 					{
 						JobId:   aws.String("xyz"),
 						JobName: aws.String("Job XYZ"),
@@ -223,7 +226,7 @@ func TestCleanUpNextflowResources(t *testing.T) {
 	}
 
 	terminateJobCallIds := []string{}
-	mockedBatchSvcTerminateJob := func(input *batch.TerminateJobInput) (*batch.TerminateJobOutput, error) {
+	mockedBatchSvcTerminateJob := func(_ context.Context, input *batch.TerminateJobInput, _ ...func(*batch.Options)) (*batch.TerminateJobOutput, error) {
 		terminateJobCallIds = append(terminateJobCallIds, *input.JobId)
 		return &batch.TerminateJobOutput{}, nil
 	}

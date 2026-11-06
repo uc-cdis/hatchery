@@ -1,6 +1,7 @@
 package hatchery
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -10,16 +11,22 @@ import (
 	"time"
 
 	"github.com/apparentlymart/go-cidr/cidr"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/batch"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/imagebuilder"
-	"github.com/aws/aws-sdk-go/service/kms"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/batch"
+	batchtypes "github.com/aws/aws-sdk-go-v2/service/batch/types"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/aws-sdk-go-v2/service/imagebuilder"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
+	kmstypes "github.com/aws/aws-sdk-go-v2/service/kms/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
 )
 
 /*
@@ -31,6 +38,7 @@ General TODOS:
 
 // create the AWS resources required to launch nextflow workflows
 func createNextflowResources(userName string, nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig) (string, string, error) {
+	ctx := context.TODO()
 	var err error
 
 	// credentials and AWS services init
@@ -38,19 +46,20 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	if err != nil {
 		return "", "", err
 	}
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String("us-east-1"),
-	}))
-	awsAccountId, awsConfig, err := getNextflowAwsSettings(sess, payModel, userName, "creating")
+	baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return "", "", err
+	}
+	awsAccountId, awsConfig, err := getNextflowAwsSettings(baseCfg, payModel, userName, "creating")
 	if err != nil {
 		return "", "", err
 	}
 	Config.Logger.Printf("AWS account ID: '%v'", awsAccountId)
-	batchSvc := batch.New(sess, &awsConfig)
-	iamSvc := iam.New(sess, &awsConfig)
-	s3Svc := s3.New(sess, &awsConfig)
-	ec2Svc := ec2.New(sess, &awsConfig)
-	kmsSvc := kms.New(sess, &awsConfig)
+	batchSvc := batch.NewFromConfig(awsConfig)
+	iamSvc := iam.NewFromConfig(awsConfig)
+	s3Svc := s3.NewFromConfig(awsConfig)
+	ec2Svc := ec2.NewFromConfig(awsConfig)
+	kmsSvc := kms.NewFromConfig(awsConfig)
 
 	userName = escapism(userName)
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
@@ -69,16 +78,16 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	tagWithUsername := fmt.Sprintf("%s-hatchery-nf-%s", hostname, userName)
 	tagWithoutUsername := fmt.Sprintf("%s-hatchery-nf", hostname)
 	// TODO Add more tags: "Environment" and possibly "gen3username" (MIDRC-746)
-	tagsMap := map[string]*string{
-		"Name": &tagWithUsername,
+	tagsMap := map[string]string{
+		"Name": tagWithUsername,
 	}
-	iamTags := []*iam.Tag{
+	iamTags := []iamtypes.Tag{
 		{
 			Key:   aws.String("Name"),
 			Value: &tagWithUsername,
 		},
 	}
-	kmsTags := []*kms.Tag{
+	kmsTags := []kmstypes.Tag{
 		{
 			TagKey:   aws.String("Name"),
 			TagValue: &tagWithoutUsername,
@@ -137,15 +146,15 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 
 	// create AWS batch job queue
 	batchJobQueueName := fmt.Sprintf("%s-nf-job-queue-%s", hostname, userName)
-	_, err = batchSvc.CreateJobQueue(&batch.CreateJobQueueInput{
+	_, err = batchSvc.CreateJobQueue(ctx, &batch.CreateJobQueueInput{
 		JobQueueName: &batchJobQueueName,
-		ComputeEnvironmentOrder: []*batch.ComputeEnvironmentOrder{
+		ComputeEnvironmentOrder: []batchtypes.ComputeEnvironmentOrder{
 			{
 				ComputeEnvironment: &batchComputeEnvArn,
-				Order:              aws.Int64(int64(0)),
+				Order:              aws.Int32(0),
 			},
 		},
-		Priority: aws.Int64(int64(0)),
+		Priority: aws.Int32(0),
 		Tags:     tagsMap,
 	})
 	if err != nil {
@@ -213,7 +222,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 
 	// create role for nextflow-created jobs
 	roleName := truncateString(policyName, 64)
-	roleResult, err := iamSvc.CreateRole(&iam.CreateRoleInput{
+	roleResult, err := iamSvc.CreateRole(ctx, &iam.CreateRoleInput{
 		RoleName: &roleName,
 		AssumeRolePolicyDocument: aws.String(`{
 			"Version": "2012-10-17",
@@ -232,21 +241,22 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	})
 	nextflowJobsRoleArn := ""
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
-				Config.Logger.Printf("Debug: role '%s' already exists", roleName)
-				listRolesResult, err := iamSvc.ListRoles(&iam.ListRolesInput{
-					PathPrefix: pathPrefix,
-				})
-				if err != nil || len(listRolesResult.Roles) == 0 {
-					Config.Logger.Printf("Error getting existing role '%s': %v", roleName, err)
-					return "", "", err
-				}
-				nextflowJobsRoleArn = *listRolesResult.Roles[0].Arn
-			} else {
-				Config.Logger.Printf("Error creating role '%s': %v", roleName, aerr)
+		var entityAlreadyExists *iamtypes.EntityAlreadyExistsException
+		if errors.As(err, &entityAlreadyExists) {
+			Config.Logger.Printf("Debug: role '%s' already exists", roleName)
+			listRolesResult, err := iamSvc.ListRoles(ctx, &iam.ListRolesInput{
+				PathPrefix: pathPrefix,
+			})
+			if err != nil {
+				Config.Logger.Printf("Error getting existing role '%s': %v", roleName, err)
 				return "", "", err
 			}
+			if len(listRolesResult.Roles) == 0 {
+				err = fmt.Errorf("role '%s' already exists but was not found under path '%s'", roleName, *pathPrefix)
+				Config.Logger.Printf("Error getting existing role '%s': %v", roleName, err)
+				return "", "", err
+			}
+			nextflowJobsRoleArn = *listRolesResult.Roles[0].Arn
 		} else {
 			Config.Logger.Printf("Error creating role '%s': %v", roleName, err)
 			return "", "", err
@@ -257,7 +267,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	}
 
 	// attach policy to role for nextflow-created jobs
-	_, err = iamSvc.AttachRolePolicy(&iam.AttachRolePolicyInput{
+	_, err = iamSvc.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
 		PolicyArn: &nextflowJobsPolicyArn,
 		RoleName:  &roleName,
 	})
@@ -384,17 +394,18 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 
 	// create user for nextflow client
 	nextflowUserName := fmt.Sprintf("%s-nf-%s", hostname, userName)
-	_, err = iamSvc.CreateUser(&iam.CreateUserInput{
+	_, err = iamSvc.CreateUser(ctx, &iam.CreateUserInput{
 		UserName: &nextflowUserName,
 		Tags:     iamTags,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "EntityAlreadyExists") {
+		var entityAlreadyExists *iamtypes.EntityAlreadyExistsException
+		if errors.As(err, &entityAlreadyExists) {
 			Config.Logger.Printf("Debug: user '%s' already exists", nextflowUserName)
 
 			// delete any existing access keys to avoid `LimitExceeded: Cannot exceed
 			// quota for AccessKeysPerUser: 2` error
-			err = deleteUserAccessKeys(nextflowUserName, iamSvc.ListAccessKeys, iamSvc.DeleteAccessKey)
+			err = deleteUserAccessKeys(ctx, nextflowUserName, iamSvc.ListAccessKeys, iamSvc.DeleteAccessKey)
 			if err != nil {
 				Config.Logger.Printf("Unable to delete access keys for user '%s': %v", nextflowUserName, err)
 				return "", "", err
@@ -409,7 +420,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	}
 
 	// attach policy to user for nextflow client
-	_, err = iamSvc.AttachUserPolicy(&iam.AttachUserPolicyInput{
+	_, err = iamSvc.AttachUserPolicy(ctx, &iam.AttachUserPolicyInput{
 		UserName:  &nextflowUserName,
 		PolicyArn: &nextflowPolicyArn,
 	})
@@ -421,7 +432,7 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	}
 
 	// create access key for the nextflow user
-	accessKeyResult, err := iamSvc.CreateAccessKey(&iam.CreateAccessKeyInput{
+	accessKeyResult, err := iamSvc.CreateAccessKey(ctx, &iam.CreateAccessKeyInput{
 		UserName: &nextflowUserName,
 	})
 	if err != nil {
@@ -435,33 +446,30 @@ func createNextflowResources(userName string, nextflowGlobalConfig NextflowGloba
 	return keyId, keySecret, nil
 }
 
-var getNextflowAwsSettings = func(sess *session.Session, payModel *PayModel, userName string, action string) (string, aws.Config, error) {
+var getNextflowAwsSettings = func(cfg aws.Config, payModel *PayModel, userName string, action string) (string, aws.Config, error) {
 	// credentials and AWS services init
-	var awsConfig aws.Config
 	var awsAccountId string
 	if payModel != nil && payModel.Ecs {
 		Config.Logger.Printf("Info: pay model enabled for user '%s': %s Nextflow resources in user's AWS account", userName, action)
 		roleArn := fmt.Sprintf("arn:aws:iam::%s:role/csoc_adminvm", payModel.AWSAccountId)
-		awsConfig = aws.Config{
-			Credentials: stscreds.NewCredentials(sess, roleArn),
-		}
+		cfg.Credentials = aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), roleArn))
 		awsAccountId = payModel.AWSAccountId
 	} else {
 		Config.Logger.Printf("Info: pay model disabled for user '%s': %s Nextflow resources in main AWS account", userName, action)
-		awsConfig = aws.Config{}
 		Config.Logger.Printf("Debug: Getting AWS account ID...")
 		var err error
-		awsAccountId, err = getAwsAccountId(sess, &awsConfig)
+		awsAccountId, err = getAwsAccountId(cfg)
 		if err != nil {
 			Config.Logger.Printf("Error getting AWS account ID: %v", err)
-			return "", awsConfig, err
+			return "", cfg, err
 		}
 	}
-	return awsAccountId, awsConfig, nil
+	return awsAccountId, cfg, nil
 }
 
 // Create VPC for aws batch compute environment
-func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string, computeEnvInstanceType string, squidInstanceType string) (*string, *[]string, error) {
+func setupVpcAndSquid(ec2Svc *ec2.Client, userName string, hostname string, computeEnvInstanceType string, squidInstanceType string) (*string, *[]string, error) {
+	ctx := context.TODO()
 	// TODO: make base CIDR configurable? (MIDRC-747)
 	cidrstring := "192.168.0.0/16"
 	_, IPNet, _ := net.ParseCIDR(cidrstring)
@@ -484,19 +492,19 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string, compute
 	// The VPC is per-user because the Squid architecture would not work with multiple users sharing a VPC, as
 	// it follows the lifecycle of the workspace. Idle VPCs don’t cost anything so we can create one per user.
 	vpcName := fmt.Sprintf("%s-nf-vpc-%s", hostname, userName)
-	vpc, err := ec2Svc.DescribeVpcs(&ec2.DescribeVpcsInput{
-		Filters: []*ec2.Filter{
+	vpc, err := ec2Svc.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("cidr"),
-				Values: []*string{aws.String(cidrstring)},
+				Values: []string{cidrstring},
 			},
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(vpcName)},
+				Values: []string{vpcName},
 			},
 			{
 				Name:   aws.String("tag:Environment"),
-				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+				Values: []string{os.Getenv("GEN3_ENDPOINT")},
 			},
 		},
 	})
@@ -565,7 +573,8 @@ func setupVpcAndSquid(ec2Svc *ec2.EC2, userName string, hostname string, compute
 
 // Function to make sure launch template is created, and configured correctly
 // We need a launch template since we need a user data script to authenticate with private ECR repositories
-func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, jobImageWhitelist []string) (*string, error) {
+func ensureLaunchTemplate(ec2Svc *ec2.Client, userName string, hostname string, jobImageWhitelist []string) (*string, error) {
+	ctx := context.TODO()
 	// user data script to authenticate with private ECR repositories
 	userData := generateEcrLoginUserData(jobImageWhitelist, userName)
 
@@ -574,18 +583,17 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 	Config.Logger.Printf("Debug: Launch template name: %s", launchTemplateName)
 
 	// create launch template
-	launchTemplate, err := ec2Svc.DescribeLaunchTemplates(&ec2.DescribeLaunchTemplatesInput{
-		LaunchTemplateNames: []*string{
-			aws.String(launchTemplateName),
-		},
+	launchTemplate, err := ec2Svc.DescribeLaunchTemplates(ctx, &ec2.DescribeLaunchTemplatesInput{
+		LaunchTemplateNames: []string{launchTemplateName},
 	})
 	if err != nil {
 		// If no launch template exists, create it
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "InvalidLaunchTemplateName.NotFoundException" {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "InvalidLaunchTemplateName.NotFoundException" {
 			Config.Logger.Printf("Debug: Launch template '%s' does not exist, creating it", launchTemplateName)
-			launchTemplate, err := ec2Svc.CreateLaunchTemplate(&ec2.CreateLaunchTemplateInput{
+			launchTemplate, err := ec2Svc.CreateLaunchTemplate(ctx, &ec2.CreateLaunchTemplateInput{
 				LaunchTemplateName: aws.String(launchTemplateName),
-				LaunchTemplateData: &ec2.RequestLaunchTemplateData{ // if changed, need to update launch template and compute env
+				LaunchTemplateData: &ec2types.RequestLaunchTemplateData{ // if changed, need to update launch template and compute env
 					UserData: aws.String(userData),
 				},
 			})
@@ -611,7 +619,8 @@ func ensureLaunchTemplate(ec2Svc *ec2.EC2, userName string, hostname string, job
 }
 
 // Create AWS Batch compute environment
-func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig, userName string, hostname string, tagsMap map[string]*string, batchSvc *batch.Batch, ec2Svc *ec2.EC2, iamSvc *iam.IAM, vpcid string, subnetids []string) (string, error) {
+func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, nextflowConfig NextflowConfig, userName string, hostname string, tagsMap map[string]string, batchSvc *batch.Client, ec2Svc *ec2.Client, iamSvc *iam.Client, vpcid string, subnetids []string) (string, error) {
+	ctx := context.TODO()
 	instanceProfileArn, err := createEcsInstanceProfile(iamSvc, fmt.Sprintf("%s-nf-ecsInstanceRole", hostname))
 	if err != nil {
 		Config.Logger.Printf("Unable to create ECS instance profile: %s", err.Error())
@@ -628,10 +637,8 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 	batchComputeEnvName := fmt.Sprintf("%s-nf-compute-env-%s", hostname, userName)
 
 	// Check if batch compute env exists, if it does return it
-	batchComputeEnv, err := batchSvc.DescribeComputeEnvironments(&batch.DescribeComputeEnvironmentsInput{
-		ComputeEnvironments: []*string{
-			aws.String(batchComputeEnvName),
-		},
+	batchComputeEnv, err := batchSvc.DescribeComputeEnvironments(ctx, &batch.DescribeComputeEnvironmentsInput{
+		ComputeEnvironments: []string{batchComputeEnvName},
 	})
 	if err != nil {
 		return "", err
@@ -644,7 +651,7 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 	if err != nil {
 		return "", err
 	}
-	ec2Configuration := []*batch.Ec2Configuration{
+	ec2Configuration := []batchtypes.Ec2Configuration{
 		{
 			ImageIdOverride: aws.String(ami),
 			ImageType:       aws.String("ECS_AL2"),
@@ -666,35 +673,29 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 			return "", err
 		}
 
-		subnets := []*string{}
-		for _, subnet := range subnetids {
-			s := subnet
-			subnets = append(subnets, &s)
-		}
-
 		// update any settings that may have changed in the config
 		// TODO also make sure it is pointing at the correct subnets - if the VPC is deleted,
 		// we should recreate the compute environment as well because it will be pointing at
 		// old vpc subnets (MIDRC-750)
-		_, err = batchSvc.UpdateComputeEnvironment(&batch.UpdateComputeEnvironmentInput{
+		_, err = batchSvc.UpdateComputeEnvironment(ctx, &batch.UpdateComputeEnvironmentInput{
 			ComputeEnvironment: &batchComputeEnvArn,
-			State:              aws.String("ENABLED"), // since the env already exists, make sure it's enabled
-			ComputeResources: &batch.ComputeResourceUpdate{
+			State:              batchtypes.CEStateEnabled, // since the env already exists, make sure it's enabled
+			ComputeResources: &batchtypes.ComputeResourceUpdate{
 				Ec2Configuration: ec2Configuration,
-				LaunchTemplate: &batch.LaunchTemplateSpecification{
+				LaunchTemplate: &batchtypes.LaunchTemplateSpecification{
 					LaunchTemplateName: launchTemplateName,
 					Version:            aws.String("$Latest"),
 				},
 				InstanceRole:       instanceProfileArn,
-				AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
-				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
-				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
-				InstanceTypes:      []*string{aws.String(nextflowConfig.InstanceType)},
-				Subnets:            subnets,
-				Type:               aws.String(nextflowConfig.ComputeEnvironmentType),
+				AllocationStrategy: batchtypes.CRUpdateAllocationStrategyBestFitProgressive,
+				MinvCpus:           aws.Int32(nextflowConfig.InstanceMinVCpus),
+				MaxvCpus:           aws.Int32(nextflowConfig.InstanceMaxVCpus),
+				InstanceTypes:      []string{nextflowConfig.InstanceType},
+				Subnets:            subnetids,
+				Type:               batchtypes.CRType(nextflowConfig.ComputeEnvironmentType),
 				Tags:               tagsMap,
 			},
-			UpdatePolicy: &batch.UpdatePolicy{
+			UpdatePolicy: &batchtypes.UpdatePolicy{
 				// existing jobs are not terminated and keep running for up to 30 min after this update
 				JobExecutionTimeoutMinutes: aws.Int64(30),
 				TerminateJobsOnUpdate:      aws.Bool(false),
@@ -706,22 +707,16 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 		}
 	} else { // compute environment does not exist, create it
 		Config.Logger.Printf("Debug: Batch compute environment '%s' does not exist, creating it", batchComputeEnvName)
-		subnets := []*string{}
-		for _, subnet := range subnetids {
-			s := subnet
-			subnets = append(subnets, &s)
-		}
-
 		// Get the default security group for the VPC
-		securityGroup, err := ec2Svc.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
-			Filters: []*ec2.Filter{
+		securityGroup, err := ec2Svc.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+			Filters: []ec2types.Filter{
 				{
 					Name:   aws.String("vpc-id"),
-					Values: []*string{aws.String(vpcid)},
+					Values: []string{vpcid},
 				},
 				{
 					Name:   aws.String("group-name"),
-					Values: []*string{aws.String("default")},
+					Values: []string{"default"},
 				},
 			},
 		})
@@ -730,23 +725,23 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 		}
 		securityGroupId := securityGroup.SecurityGroups[0].GroupId
 
-		batchComputeEnvResult, err := batchSvc.CreateComputeEnvironment(&batch.CreateComputeEnvironmentInput{
+		batchComputeEnvResult, err := batchSvc.CreateComputeEnvironment(ctx, &batch.CreateComputeEnvironmentInput{
 			ComputeEnvironmentName: &batchComputeEnvName,
-			Type:                   aws.String("MANAGED"),
-			ComputeResources: &batch.ComputeResource{
+			Type:                   batchtypes.CETypeManaged,
+			ComputeResources: &batchtypes.ComputeResource{
 				Ec2Configuration: ec2Configuration,
-				LaunchTemplate: &batch.LaunchTemplateSpecification{
+				LaunchTemplate: &batchtypes.LaunchTemplateSpecification{
 					LaunchTemplateName: launchTemplateName,
 					Version:            aws.String("$Latest"),
 				},
 				InstanceRole:       instanceProfileArn,
-				AllocationStrategy: aws.String("BEST_FIT_PROGRESSIVE"),
-				MinvCpus:           aws.Int64(int64(nextflowConfig.InstanceMinVCpus)),
-				MaxvCpus:           aws.Int64(int64(nextflowConfig.InstanceMaxVCpus)),
-				InstanceTypes:      []*string{aws.String(nextflowConfig.InstanceType)},
-				SecurityGroupIds:   []*string{securityGroupId},
-				Subnets:            subnets,
-				Type:               aws.String(nextflowConfig.ComputeEnvironmentType),
+				AllocationStrategy: batchtypes.CRAllocationStrategyBestFitProgressive,
+				MinvCpus:           aws.Int32(nextflowConfig.InstanceMinVCpus),
+				MaxvCpus:           aws.Int32(nextflowConfig.InstanceMaxVCpus),
+				InstanceTypes:      []string{nextflowConfig.InstanceType},
+				SecurityGroupIds:   []string{*securityGroupId},
+				Subnets:            subnetids,
+				Type:               batchtypes.CRType(nextflowConfig.ComputeEnvironmentType),
 				Tags:               tagsMap,
 			},
 			Tags: tagsMap,
@@ -768,20 +763,19 @@ func createBatchComputeEnvironment(nextflowGlobalConfig NextflowGlobalConfig, ne
 	return batchComputeEnvArn, nil
 }
 
-func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.Batch, mustBeValid bool) error {
+func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.Client, mustBeValid bool) error {
+	ctx := context.TODO()
 	maxIter := 6
 	iterDelaySecs := 5
 	var compEnvStatus string
 	for i := 0; ; i++ {
-		batchComputeEnvs, err := batchSvc.DescribeComputeEnvironments(&batch.DescribeComputeEnvironmentsInput{
-			ComputeEnvironments: []*string{
-				aws.String(batchComputeEnvName),
-			},
+		batchComputeEnvs, err := batchSvc.DescribeComputeEnvironments(ctx, &batch.DescribeComputeEnvironmentsInput{
+			ComputeEnvironments: []string{batchComputeEnvName},
 		})
 		if err != nil {
 			return err
 		}
-		compEnvStatus = *batchComputeEnvs.ComputeEnvironments[0].Status
+		compEnvStatus = string(batchComputeEnvs.ComputeEnvironments[0].Status)
 		// possible statuses: CREATING | UPDATING | DELETING | DELETED | VALID | INVALID
 		if compEnvStatus == "VALID" {
 			Config.Logger.Print("Debug: Compute environment is ready")
@@ -801,22 +795,24 @@ func waitForBatchComputeEnvironment(batchComputeEnvName string, batchSvc *batch.
 }
 
 // Create IAM role for AWS Batch compute environment
-func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
+func createEcsInstanceProfile(iamSvc *iam.Client, name string) (*string, error) {
+	ctx := context.TODO()
 	Config.Logger.Printf("Debug: Creating ECS instance profile '%s'", name)
 
-	instanceProfile, err := iamSvc.GetInstanceProfile(&iam.GetInstanceProfileInput{
+	instanceProfile, err := iamSvc.GetInstanceProfile(ctx, &iam.GetInstanceProfileInput{
 		InstanceProfileName: aws.String(name),
 	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == iam.ErrCodeNoSuchEntityException {
+		var noSuchEntity *iamtypes.NoSuchEntityException
+		if errors.As(err, &noSuchEntity) {
 			Config.Logger.Printf("Debug: Instance profile '%s' does not exist, creating it", name)
-			_, err = iamSvc.CreateInstanceProfile(&iam.CreateInstanceProfileInput{
+			_, err = iamSvc.CreateInstanceProfile(ctx, &iam.CreateInstanceProfileInput{
 				InstanceProfileName: aws.String(name),
 			})
 			if err != nil {
 				return nil, err
 			}
-			instanceProfile, err = iamSvc.GetInstanceProfile(&iam.GetInstanceProfileInput{
+			instanceProfile, err = iamSvc.GetInstanceProfile(ctx, &iam.GetInstanceProfileInput{
 				InstanceProfileName: aws.String(name),
 			})
 			if err != nil {
@@ -839,12 +835,13 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 		  }
 		]
 	  }`
-	_, err = iamSvc.CreateRole(&iam.CreateRoleInput{
+	_, err = iamSvc.CreateRole(ctx, &iam.CreateRoleInput{
 		AssumeRolePolicyDocument: aws.String(rolePolicy),
 		RoleName:                 aws.String(name),
 	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
+		var entityAlreadyExists *iamtypes.EntityAlreadyExistsException
+		if errors.As(err, &entityAlreadyExists) {
 			Config.Logger.Printf("Debug: Role '%s' already exists, assuming it is already linked to instance profile and continuing", name)
 			return instanceProfile.InstanceProfile.Arn, nil
 		} else {
@@ -854,7 +851,7 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 	}
 
 	// Attach policy to the role
-	_, err = iamSvc.AttachRolePolicy(&iam.AttachRolePolicyInput{
+	_, err = iamSvc.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
 		PolicyArn: aws.String("arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"),
 		RoleName:  aws.String(name),
 	})
@@ -862,7 +859,7 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 		return nil, err
 	}
 
-	_, err = iamSvc.AddRoleToInstanceProfile(&iam.AddRoleToInstanceProfileInput{
+	_, err = iamSvc.AddRoleToInstanceProfile(ctx, &iam.AddRoleToInstanceProfileInput{
 		InstanceProfileName: aws.String(name),
 		RoleName:            aws.String(name),
 	})
@@ -875,9 +872,10 @@ func createEcsInstanceProfile(iamSvc *iam.IAM, name string) (*string, error) {
 	return instanceProfile.InstanceProfile.Arn, nil
 }
 
-func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.S3, kmsSvc *kms.KMS, bucketName string, kmsTags []*kms.Tag) (string, error) {
+func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.Client, kmsSvc *kms.Client, bucketName string, kmsTags []kmstypes.Tag) (string, error) {
+	ctx := context.TODO()
 	// create S3 bucket for nextflow input, output and intermediate files
-	_, err := s3Svc.CreateBucket(&s3.CreateBucketInput{
+	_, err := s3Svc.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket: &bucketName,
 		// TODO We may need to add the LocationConstraint below if we change the region to not
 		// "us-east-1". It seems this block causes an error when the region is "us-east-1", so
@@ -897,7 +895,7 @@ func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.S3, kms
 	// set up KMS encryption on the bucket.
 	// the only way to check if the KMS key has already been created is to use an alias
 	kmsKeyAlias := fmt.Sprintf("alias/key-%s", bucketName)
-	kmsDescribeKeyOutput, err := kmsSvc.DescribeKey(&kms.DescribeKeyInput{
+	kmsDescribeKeyOutput, err := kmsSvc.DescribeKey(ctx, &kms.DescribeKeyInput{
 		KeyId: aws.String(kmsKeyAlias),
 	})
 	var kmsKeyArn *string
@@ -906,8 +904,9 @@ func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.S3, kms
 		Config.Logger.Printf("DEBUG: Existing KMS key: '%s' - '%s'", kmsKeyAlias, *kmsKeyArn)
 	} else {
 		// if the KMS key doesn't exist, create it
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "NotFoundException" {
-			kmsCreateKeyOutput, err := kmsSvc.CreateKey(&kms.CreateKeyInput{
+		var notFound *kmstypes.NotFoundException
+		if errors.As(err, &notFound) {
+			kmsCreateKeyOutput, err := kmsSvc.CreateKey(ctx, &kms.CreateKeyInput{
 				Tags: kmsTags,
 			})
 			if err != nil {
@@ -917,7 +916,7 @@ func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.S3, kms
 			kmsKeyArn = kmsCreateKeyOutput.KeyMetadata.Arn
 			Config.Logger.Printf("INFO: Created KMS key: '%s'", *kmsKeyArn)
 
-			_, err = kmsSvc.CreateAlias(&kms.CreateAliasInput{
+			_, err = kmsSvc.CreateAlias(ctx, &kms.CreateAliasInput{
 				AliasName:   &kmsKeyAlias,
 				TargetKeyId: kmsKeyArn,
 			})
@@ -933,13 +932,13 @@ func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.S3, kms
 	}
 
 	Config.Logger.Printf("DEBUG: Setting KMS encryption on bucket '%s'", bucketName)
-	_, err = s3Svc.PutBucketEncryption(&s3.PutBucketEncryptionInput{
+	_, err = s3Svc.PutBucketEncryption(ctx, &s3.PutBucketEncryptionInput{
 		Bucket: &bucketName,
-		ServerSideEncryptionConfiguration: &s3.ServerSideEncryptionConfiguration{
-			Rules: []*s3.ServerSideEncryptionRule{
+		ServerSideEncryptionConfiguration: &s3types.ServerSideEncryptionConfiguration{
+			Rules: []s3types.ServerSideEncryptionRule{
 				{
-					ApplyServerSideEncryptionByDefault: &s3.ServerSideEncryptionByDefault{
-						SSEAlgorithm:   aws.String("aws:kms"),
+					ApplyServerSideEncryptionByDefault: &s3types.ServerSideEncryptionByDefault{
+						SSEAlgorithm:   s3types.ServerSideEncryptionAwsKms,
 						KMSMasterKeyID: kmsKeyArn,
 					},
 					BucketKeyEnabled: aws.Bool(true),
@@ -953,7 +952,7 @@ func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.S3, kms
 	}
 
 	Config.Logger.Printf("DEBUG: Enforcing KMS encryption through bucket policy")
-	_, err = s3Svc.PutBucketPolicy(&s3.PutBucketPolicyInput{
+	_, err = s3Svc.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
 		Bucket: &bucketName,
 		Policy: aws.String(fmt.Sprintf(`{
 			"Version": "2012-10-17",
@@ -983,16 +982,16 @@ func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.S3, kms
 		expirationDays = 30
 	}
 	Config.Logger.Printf("DEBUG: Setting bucket objects expiration to %d days", expirationDays)
-	_, err = s3Svc.PutBucketLifecycleConfiguration(&s3.PutBucketLifecycleConfigurationInput{
+	_, err = s3Svc.PutBucketLifecycleConfiguration(ctx, &s3.PutBucketLifecycleConfigurationInput{
 		Bucket: &bucketName,
-		LifecycleConfiguration: &s3.BucketLifecycleConfiguration{
-			Rules: []*s3.LifecycleRule{
+		LifecycleConfiguration: &s3types.BucketLifecycleConfiguration{
+			Rules: []s3types.LifecycleRule{
 				{
-					Expiration: &s3.LifecycleExpiration{
-						Days: aws.Int64(int64(expirationDays)),
+					Expiration: &s3types.LifecycleExpiration{
+						Days: aws.Int32(int32(expirationDays)),
 					},
-					Status: aws.String("Enabled"),
-					Filter: &s3.LifecycleRuleFilter{
+					Status: s3types.ExpirationStatusEnabled,
+					Filter: &s3types.LifecycleRuleFilter{
 						Prefix: aws.String(""), // apply to all objects
 					},
 				},
@@ -1009,7 +1008,8 @@ func createS3bucket(nextflowGlobalConfig NextflowGlobalConfig, s3Svc *s3.S3, kms
 }
 
 // Function to set up squid and subnets for squid
-func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2.EC2, vpcid string, igw *string, fwRouteTableId *string, routeTableId *string, instanceType string) (*string, error) {
+func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2.Client, vpcid string, igw *string, fwRouteTableId *string, routeTableId *string, instanceType string) (*string, error) {
+	ctx := context.TODO()
 	_, IPNet, _ := net.ParseCIDR(cidrstring)
 	subnet, err := cidr.Subnet(IPNet, 2, 3)
 	if err != nil {
@@ -1027,7 +1027,7 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 
 	// add route to internet gateway
 	Config.Logger.Printf("Debug: Creating route to internet '%s' in route table '%s'", *igw, *fwRouteTableId)
-	_, err = ec2svc.CreateRoute(&ec2.CreateRouteInput{
+	_, err = ec2svc.CreateRoute(ctx, &ec2.CreateRouteInput{
 		DestinationCidrBlock: aws.String("0.0.0.0/0"),
 		GatewayId:            igw,
 		RouteTableId:         fwRouteTableId,
@@ -1037,7 +1037,7 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 	}
 
 	// associate route table to subnet
-	_, err = ec2svc.AssociateRouteTable(&ec2.AssociateRouteTableInput{
+	_, err = ec2svc.AssociateRouteTable(ctx, &ec2.AssociateRouteTableInput{
 		RouteTableId: fwRouteTableId,
 		SubnetId:     subnetId,
 	})
@@ -1053,28 +1053,25 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 
 	Config.Logger.Printf("Debug: Will add route to Squid '%s' in route table '%s'", *squidInstanceId, *routeTableId)
 	// add or replace route to squid
-	_, err = ec2svc.CreateRoute(&ec2.CreateRouteInput{
+	_, err = ec2svc.CreateRoute(ctx, &ec2.CreateRouteInput{
 		DestinationCidrBlock: aws.String("0.0.0.0/0"),
 		InstanceId:           squidInstanceId,
 		RouteTableId:         routeTableId,
 	})
 
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			// Note: code `IncorrectInstanceState` should never happen here, because `launchSquidInstance`
-			// waits until the instance is ready.
-			if aerr.Code() == "RouteAlreadyExists" {
-				// the route already exists, replace it
-				Config.Logger.Print("Debug: Route already exists, replacing it")
-				_, err = ec2svc.ReplaceRoute(&ec2.ReplaceRouteInput{
-					DestinationCidrBlock: aws.String("0.0.0.0/0"),
-					InstanceId:           squidInstanceId,
-					RouteTableId:         routeTableId,
-				})
-				if err != nil {
-					return nil, err
-				}
-			} else {
+		// Note: code `IncorrectInstanceState` should never happen here, because `launchSquidInstance`
+		// waits until the instance is ready.
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "RouteAlreadyExists" {
+			// the route already exists, replace it
+			Config.Logger.Print("Debug: Route already exists, replacing it")
+			_, err = ec2svc.ReplaceRoute(ctx, &ec2.ReplaceRouteInput{
+				DestinationCidrBlock: aws.String("0.0.0.0/0"),
+				InstanceId:           squidInstanceId,
+				RouteTableId:         routeTableId,
+			})
+			if err != nil {
 				return nil, err
 			}
 		} else {
@@ -1087,21 +1084,22 @@ func setupSquid(hostname string, userName string, cidrstring string, ec2svc *ec2
 }
 
 // Generic function to create subnet, and route table
-func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2, instanceType string) (*string, error) {
+func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.Client, instanceType string) (*string, error) {
+	ctx := context.TODO()
 	// Check if subnet exists if not create it
-	exsubnet, err := ec2Svc.DescribeSubnets(&ec2.DescribeSubnetsInput{
-		Filters: []*ec2.Filter{
+	exsubnet, err := ec2Svc.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("cidr-block"),
-				Values: []*string{aws.String(cidr)},
+				Values: []string{cidr},
 			},
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(subnetName)},
+				Values: []string{subnetName},
 			},
 			{
 				Name:   aws.String("tag:Environment"),
-				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+				Values: []string{os.Getenv("GEN3_ENDPOINT")},
 			},
 		},
 	})
@@ -1115,7 +1113,7 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2, 
 
 	// Fetch all availability zones
 	// this is being limited to a region by the ec2svc that gets passed in.
-	describeZonesOutput, err := ec2Svc.DescribeAvailabilityZones(&ec2.DescribeAvailabilityZonesInput{})
+	describeZonesOutput, err := ec2Svc.DescribeAvailabilityZones(ctx, &ec2.DescribeAvailabilityZonesInput{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe availability zones: %v", err)
 	}
@@ -1123,19 +1121,19 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2, 
 	// Make sure the selected AZ has the instance type from nextflow configuration available.
 	var selectedZone string
 	for _, zone := range describeZonesOutput.AvailabilityZones {
-		if *zone.State != "available" {
+		if zone.State != ec2types.AvailabilityZoneStateAvailable {
 			continue
 		}
-		result, err := ec2Svc.DescribeInstanceTypeOfferings(&ec2.DescribeInstanceTypeOfferingsInput{
-			LocationType: aws.String("availability-zone"),
-			Filters: []*ec2.Filter{
+		result, err := ec2Svc.DescribeInstanceTypeOfferings(ctx, &ec2.DescribeInstanceTypeOfferingsInput{
+			LocationType: ec2types.LocationTypeAvailabilityZone,
+			Filters: []ec2types.Filter{
 				{
 					Name:   aws.String("location"),
-					Values: []*string{aws.String(*zone.ZoneName)},
+					Values: []string{*zone.ZoneName},
 				},
 				{
 					Name:   aws.String("instance-type"),
-					Values: []*string{aws.String(instanceType)},
+					Values: []string{instanceType},
 				},
 			},
 		})
@@ -1155,15 +1153,15 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2, 
 
 	// create subnet
 	Config.Logger.Printf("Debug: Creating subnet '%v' with name '%s'", cidr, subnetName)
-	sn, err := ec2Svc.CreateSubnet(&ec2.CreateSubnetInput{
+	sn, err := ec2Svc.CreateSubnet(ctx, &ec2.CreateSubnetInput{
 		CidrBlock:        aws.String(cidr),
 		VpcId:            aws.String(vpcid),
 		AvailabilityZone: aws.String(selectedZone),
-		TagSpecifications: []*ec2.TagSpecification{
+		TagSpecifications: []ec2types.TagSpecification{
 			{
 				// Name
-				ResourceType: aws.String("subnet"),
-				Tags: []*ec2.Tag{
+				ResourceType: ec2types.ResourceTypeSubnet,
+				Tags: []ec2types.Tag{
 					{
 						Key:   aws.String("Name"),
 						Value: aws.String(subnetName),
@@ -1182,17 +1180,18 @@ func setupSubnet(subnetName string, cidr string, vpcid string, ec2Svc *ec2.EC2, 
 	return sn.Subnet.SubnetId, nil
 }
 
-func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid string, igwid string, routeTableName string) (*string, error) {
+func setupRouteTable(hostname string, userName string, ec2svc *ec2.Client, vpcid string, igwid string, routeTableName string) (*string, error) {
+	ctx := context.TODO()
 	// Check if route table exists
-	exrouteTable, err := ec2svc.DescribeRouteTables(&ec2.DescribeRouteTablesInput{
-		Filters: []*ec2.Filter{
+	exrouteTable, err := ec2svc.DescribeRouteTables(ctx, &ec2.DescribeRouteTablesInput{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(routeTableName)},
+				Values: []string{routeTableName},
 			},
 			{
 				Name:   aws.String("tag:Environment"),
-				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+				Values: []string{os.Getenv("GEN3_ENDPOINT")},
 			},
 		},
 	})
@@ -1204,13 +1203,13 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 		Config.Logger.Printf("Debug: Route table '%s' already exists, skipping creation", routeTableName)
 		return exrouteTable.RouteTables[0].RouteTableId, nil
 	}
-	routeTable, err := ec2svc.CreateRouteTable(&ec2.CreateRouteTableInput{
+	routeTable, err := ec2svc.CreateRouteTable(ctx, &ec2.CreateRouteTableInput{
 		VpcId: &vpcid,
-		TagSpecifications: []*ec2.TagSpecification{
+		TagSpecifications: []ec2types.TagSpecification{
 			{
 				// Name
-				ResourceType: aws.String("route-table"),
-				Tags: []*ec2.Tag{
+				ResourceType: ec2types.ResourceTypeRouteTable,
+				Tags: []ec2types.Tag{
 					{
 						Key:   aws.String("Name"),
 						Value: aws.String(routeTableName),
@@ -1231,7 +1230,7 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 	if routeTableName == fmt.Sprintf("%s-nf-fw-rt-%s", hostname, userName) {
 		// create route
 		Config.Logger.Printf("Debug: Creating route to internet '%s' in route table '%s'", igwid, *routeTable.RouteTable.RouteTableId)
-		_, err = ec2svc.CreateRoute(&ec2.CreateRouteInput{
+		_, err = ec2svc.CreateRoute(ctx, &ec2.CreateRouteInput{
 			DestinationCidrBlock: aws.String("0.0.0.0/0"),
 			GatewayId:            aws.String(igwid),
 			RouteTableId:         routeTable.RouteTable.RouteTableId,
@@ -1243,10 +1242,11 @@ func setupRouteTable(hostname string, userName string, ec2svc *ec2.EC2, vpcid st
 	return routeTable.RouteTable.RouteTableId, nil
 }
 
-func associateRouteTablesToSubnets(ec2svc *ec2.EC2, subnets []string, routeTableId string) error {
+func associateRouteTablesToSubnets(ec2svc *ec2.Client, subnets []string, routeTableId string) error {
+	ctx := context.TODO()
 	// associate route tables to subnets
 	for _, subnet := range subnets {
-		_, err := ec2svc.AssociateRouteTable(&ec2.AssociateRouteTableInput{
+		_, err := ec2svc.AssociateRouteTable(ctx, &ec2.AssociateRouteTableInput{
 			RouteTableId: aws.String(routeTableId),
 			SubnetId:     aws.String(subnet),
 		})
@@ -1258,28 +1258,29 @@ func associateRouteTablesToSubnets(ec2svc *ec2.EC2, subnets []string, routeTable
 	return nil
 }
 
-func launchSquidInstance(hostname string, userName string, ec2svc *ec2.EC2, subnetId *string, vpcId string, subnet string, instanceType string) (*string, error) {
+func launchSquidInstance(hostname string, userName string, ec2svc *ec2.Client, subnetId *string, vpcId string, subnet string, instanceType string) (*string, error) {
+	ctx := context.TODO()
 	instanceName := fmt.Sprintf("%s-nf-squid-%s", hostname, userName)
 
 	// check if instance already exists, if it does start it
 	// Check that the state of existing instance is either stopped,stopping or running
 	descInstanceInput := &ec2.DescribeInstancesInput{
-		Filters: []*ec2.Filter{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("instance-state-name"),
-				Values: []*string{aws.String("stopped"), aws.String("stopping"), aws.String("running"), aws.String("pending")},
+				Values: []string{"stopped", "stopping", "running", "pending"},
 			},
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(instanceName)},
+				Values: []string{instanceName},
 			},
 			{
 				Name:   aws.String("tag:Environment"),
-				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+				Values: []string{os.Getenv("GEN3_ENDPOINT")},
 			},
 		},
 	}
-	exinstance, err := ec2svc.DescribeInstances(descInstanceInput)
+	exinstance, err := ec2svc.DescribeInstances(ctx, descInstanceInput)
 	if err != nil {
 		return nil, err
 	}
@@ -1372,27 +1373,27 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 		}
 
 		// Launch EC2 instance
-		squid, err := ec2svc.RunInstances(&ec2.RunInstancesInput{
+		squid, err := ec2svc.RunInstances(ctx, &ec2.RunInstancesInput{
 			ImageId:      amiId,
-			InstanceType: aws.String(instanceType),
-			MinCount:     aws.Int64(1),
-			MaxCount:     aws.Int64(1),
+			InstanceType: ec2types.InstanceType(instanceType),
+			MinCount:     aws.Int32(1),
+			MaxCount:     aws.Int32(1),
 			// Network interfaces
-			NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
+			NetworkInterfaces: []ec2types.InstanceNetworkInterfaceSpecification{
 				{
 					AssociatePublicIpAddress: aws.Bool(true),
-					DeviceIndex:              aws.Int64(0),
+					DeviceIndex:              aws.Int32(0),
 					DeleteOnTermination:      aws.Bool(true),
 					SubnetId:                 subnetId,
-					Groups:                   []*string{sgId},
+					Groups:                   []string{*sgId},
 				},
 			},
 			// base64 encoded user data script
 			UserData: aws.String(base64.StdEncoding.EncodeToString([]byte(userData))),
-			TagSpecifications: []*ec2.TagSpecification{
+			TagSpecifications: []ec2types.TagSpecification{
 				{
-					ResourceType: aws.String("instance"),
-					Tags: []*ec2.Tag{
+					ResourceType: ec2types.ResourceTypeInstance,
+					Tags: []ec2types.Tag{
 						{
 							Key:   aws.String("Name"),
 							Value: aws.String(instanceName),
@@ -1412,9 +1413,9 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 
 		// make sure the eni has source/destionation check disabled
 		// https://docs.aws.amazon.com/vpc/latest/userguide/VPC_NAT_Instance.html#EIP_Disable_SrcDestCheck
-		_, err = ec2svc.ModifyNetworkInterfaceAttribute(&ec2.ModifyNetworkInterfaceAttributeInput{
+		_, err = ec2svc.ModifyNetworkInterfaceAttribute(ctx, &ec2.ModifyNetworkInterfaceAttributeInput{
 			NetworkInterfaceId: squid.Instances[0].NetworkInterfaces[0].NetworkInterfaceId,
-			SourceDestCheck: &ec2.AttributeBooleanValue{
+			SourceDestCheck: &ec2types.AttributeBooleanValue{
 				Value: aws.Bool(false),
 			},
 		})
@@ -1431,21 +1432,19 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 	iterDelaySecs := 10
 	var instanceState string
 	for i := 0; ; i++ {
-		exinstance, err = ec2svc.DescribeInstances(descInstanceInput)
+		exinstance, err = ec2svc.DescribeInstances(ctx, descInstanceInput)
 		if err != nil {
 			return nil, err
 		}
-		instanceState = *exinstance.Reservations[0].Instances[0].State.Name
+		instanceState = string(exinstance.Reservations[0].Instances[0].State.Name)
 		if instanceState == "running" {
 			Config.Logger.Print("Debug: Squid instance is ready")
 			break
 		}
 		if instanceState == "stopped" {
 			Config.Logger.Print("Debug: Instance already exists and is stopped, starting it now")
-			_, err := ec2svc.StartInstances(&ec2.StartInstancesInput{
-				InstanceIds: []*string{
-					&instanceId,
-				},
+			_, err := ec2svc.StartInstances(ctx, &ec2.StartInstancesInput{
+				InstanceIds: []string{instanceId},
 			})
 			if err != nil {
 				return nil, err
@@ -1461,20 +1460,21 @@ $(command -v docker) run --name squid --restart=always --network=host -d \
 	return &instanceId, nil
 }
 
-func setupFwSecurityGroup(hostname string, userName string, ec2svc *ec2.EC2, vpcId *string) (*string, error) {
+func setupFwSecurityGroup(hostname string, userName string, ec2svc *ec2.Client, vpcId *string) (*string, error) {
+	ctx := context.TODO()
 	// create security group
 	sgName := fmt.Sprintf("%s-nf-sg-fw-%s", hostname, userName)
 
 	// Check if security group exists
-	exsecurityGroup, err := ec2svc.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
-		Filters: []*ec2.Filter{
+	exsecurityGroup, err := ec2svc.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("group-name"),
-				Values: []*string{aws.String(sgName)},
+				Values: []string{sgName},
 			},
 			{
 				Name:   aws.String("vpc-id"),
-				Values: []*string{vpcId},
+				Values: []string{*vpcId},
 			},
 		},
 	})
@@ -1487,7 +1487,7 @@ func setupFwSecurityGroup(hostname string, userName string, ec2svc *ec2.EC2, vpc
 	}
 
 	sgDesc := "Security group for nextflow Squid"
-	sgId, err := ec2svc.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
+	sgId, err := ec2svc.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
 		Description: &sgDesc,
 		GroupName:   &sgName,
 		VpcId:       vpcId,
@@ -1498,14 +1498,14 @@ func setupFwSecurityGroup(hostname string, userName string, ec2svc *ec2.EC2, vpc
 	}
 
 	// Add ingress rules
-	_, err = ec2svc.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
+	_, err = ec2svc.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId: sgId.GroupId,
-		IpPermissions: []*ec2.IpPermission{
+		IpPermissions: []ec2types.IpPermission{
 			{
-				FromPort:   aws.Int64(0),
-				ToPort:     aws.Int64(65535),
+				FromPort:   aws.Int32(0),
+				ToPort:     aws.Int32(65535),
 				IpProtocol: aws.String("tcp"),
-				IpRanges: []*ec2.IpRange{
+				IpRanges: []ec2types.IpRange{
 					{
 						// TODO: make this configurable? (MIDRC-747)
 						CidrIp: aws.String("192.168.0.0/16"),
@@ -1523,23 +1523,20 @@ func setupFwSecurityGroup(hostname string, userName string, ec2svc *ec2.EC2, vpc
 }
 
 // Get latest amazonlinux ami
-func getLatestAmazonLinuxAmi(ec2svc *ec2.EC2) (*string, error) {
-	ami, err := ec2svc.DescribeImages(&ec2.DescribeImagesInput{
-		Filters: []*ec2.Filter{
+func getLatestAmazonLinuxAmi(ec2svc *ec2.Client) (*string, error) {
+	ctx := context.TODO()
+	ami, err := ec2svc.DescribeImages(ctx, &ec2.DescribeImagesInput{
+		Filters: []ec2types.Filter{
 			{
-				Name: aws.String("name"),
-				Values: []*string{
-					aws.String("amzn2-ami-ecs-hvm-2.0.*"),
-				},
+				Name:   aws.String("name"),
+				Values: []string{"amzn2-ami-ecs-hvm-2.0.*"},
 			},
 			{
 				Name:   aws.String("architecture"),
-				Values: []*string{aws.String("x86_64")},
+				Values: []string{"x86_64"},
 			},
 		},
-		Owners: []*string{
-			aws.String("amazon"),
-		},
+		Owners: []string{"amazon"},
 	})
 	if err != nil {
 		Config.Logger.Print("Error getting latest amazonlinux AMI: ", err)
@@ -1567,7 +1564,7 @@ func getLatestAmazonLinuxAmi(ec2svc *ec2.EC2) (*string, error) {
 func getNextflowInstanceAmi(
 	imageBuilderReaderRoleArn string,
 	nextflowConfig NextflowConfig,
-	imagebuilderListImagePipelineImages func(*imagebuilder.ListImagePipelineImagesInput) (*imagebuilder.ListImagePipelineImagesOutput, error),
+	imagebuilderListImagePipelineImages func(context.Context, *imagebuilder.ListImagePipelineImagesInput, ...func(*imagebuilder.Options)) (*imagebuilder.ListImagePipelineImagesOutput, error),
 ) (string, error) {
 	/*	The `imagebuilderListImagePipelineImages` parameter should not be provided in production. It allows
 		us to test this function by mocking the AWS SDK in the tests.
@@ -1588,14 +1585,15 @@ func getNextflowInstanceAmi(
 }
 
 func cancelBatchJobsInStatus(
+	ctx context.Context,
 	batchJobQueueName string,
-	status string,
-	batchSvcListJobs func(*batch.ListJobsInput) (*batch.ListJobsOutput, error),
-	batchSvcTerminateJob func(*batch.TerminateJobInput) (*batch.TerminateJobOutput, error),
+	status batchtypes.JobStatus,
+	batchSvcListJobs func(context.Context, *batch.ListJobsInput, ...func(*batch.Options)) (*batch.ListJobsOutput, error),
+	batchSvcTerminateJob func(context.Context, *batch.TerminateJobInput, ...func(*batch.Options)) (*batch.TerminateJobOutput, error),
 ) error {
-	listJobsOutput, err := batchSvcListJobs(&batch.ListJobsInput{
+	listJobsOutput, err := batchSvcListJobs(ctx, &batch.ListJobsInput{
 		JobQueue:  &batchJobQueueName,
-		JobStatus: aws.String(status),
+		JobStatus: status,
 	})
 	if err != nil {
 		Config.Logger.Printf("Error listing %s jobs in Batch queue '%s': %v", status, batchJobQueueName, err)
@@ -1603,9 +1601,9 @@ func cancelBatchJobsInStatus(
 	}
 	runningJobs := listJobsOutput.JobSummaryList
 	for listJobsOutput.NextToken != nil { // if the result is paginated, get the rest
-		listJobsOutput, err = batchSvcListJobs(&batch.ListJobsInput{
+		listJobsOutput, err = batchSvcListJobs(ctx, &batch.ListJobsInput{
 			JobQueue:  &batchJobQueueName,
-			JobStatus: aws.String(status),
+			JobStatus: status,
 			NextToken: listJobsOutput.NextToken,
 		})
 		if err != nil {
@@ -1622,7 +1620,7 @@ func cancelBatchJobsInStatus(
 	// in STARTING or RUNNING state
 	for _, job := range runningJobs {
 		Config.Logger.Printf("Canceling %s job: ID '%s', name '%s'", status, *job.JobId, *job.JobName)
-		_, err := batchSvcTerminateJob(&batch.TerminateJobInput{
+		_, err := batchSvcTerminateJob(ctx, &batch.TerminateJobInput{
 			JobId:  job.JobId,
 			Reason: aws.String("User's workspace was terminated"),
 		})
@@ -1638,10 +1636,10 @@ func cancelBatchJobsInStatus(
 // delete the AWS resources created to launch nextflow workflows
 func cleanUpNextflowResources(
 	userName string,
-	iamSvcListAccessKeys func(*iam.ListAccessKeysInput) (*iam.ListAccessKeysOutput, error),
-	iamSvcDeleteAccessKey func(*iam.DeleteAccessKeyInput) (*iam.DeleteAccessKeyOutput, error),
-	batchSvcListJobs func(*batch.ListJobsInput) (*batch.ListJobsOutput, error),
-	batchSvcTerminateJob func(*batch.TerminateJobInput) (*batch.TerminateJobOutput, error),
+	iamSvcListAccessKeys func(context.Context, *iam.ListAccessKeysInput, ...func(*iam.Options)) (*iam.ListAccessKeysOutput, error),
+	iamSvcDeleteAccessKey func(context.Context, *iam.DeleteAccessKeyInput, ...func(*iam.Options)) (*iam.DeleteAccessKeyOutput, error),
+	batchSvcListJobs func(context.Context, *batch.ListJobsInput, ...func(*batch.Options)) (*batch.ListJobsOutput, error),
+	batchSvcTerminateJob func(context.Context, *batch.TerminateJobInput, ...func(*batch.Options)) (*batch.TerminateJobOutput, error),
 ) error {
 	/*	Clean up Nextflow resource when a workspace is terminated:
 		- delete IAM user access keys
@@ -1653,23 +1651,25 @@ func cleanUpNextflowResources(
 		parameters should not be provided in production. They allow us to test this function by mocking
 		the AWS SDK in the tests.
 	*/
+	ctx := context.TODO()
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return err
 	}
 
 	// credentials and AWS services init
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String("us-east-1"),
-	}))
-	awsAccountId, awsConfig, err := getNextflowAwsSettings(sess, payModel, userName, "deleting")
+	baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return err
+	}
+	awsAccountId, awsConfig, err := getNextflowAwsSettings(baseCfg, payModel, userName, "deleting")
 	if err != nil {
 		return err
 	}
 	Config.Logger.Printf("Debug: AWS account ID: '%v'", awsAccountId)
-	iamSvc := iam.New(sess, &awsConfig)
-	ec2Svc := ec2.New(sess, &awsConfig)
-	batchSvc := batch.New(sess, &awsConfig)
+	iamSvc := iam.NewFromConfig(awsConfig)
+	ec2Svc := ec2.NewFromConfig(awsConfig)
+	batchSvc := batch.NewFromConfig(awsConfig)
 
 	userName = escapism(userName)
 	hostname := strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-")
@@ -1682,7 +1682,7 @@ func cleanUpNextflowResources(
 	if iamSvcDeleteAccessKey == nil {
 		iamSvcDeleteAccessKey = iamSvc.DeleteAccessKey
 	}
-	err = deleteUserAccessKeys(nextflowUserName, iamSvcListAccessKeys, iamSvcDeleteAccessKey)
+	err = deleteUserAccessKeys(ctx, nextflowUserName, iamSvcListAccessKeys, iamSvcDeleteAccessKey)
 	if err != nil {
 		Config.Logger.Printf("Unable to delete access keys for user '%s': %v", nextflowUserName, err)
 		return err
@@ -1725,10 +1725,10 @@ func cleanUpNextflowResources(
 	// First cancel jobs that are already incurring cost ("running" status). Then cancel in the order a job goes
 	// through statuses (first submitted, then pending, etc) to ensure all jobs are deleted. Finally cancel any
 	// jobs that reached the "running" status in the meantime. Ignore jobs in "succeeded" or "failed" status.
-	statusToCancel := []string{batch.JobStatusRunning, batch.JobStatusSubmitted, batch.JobStatusPending, batch.JobStatusRunnable, batch.JobStatusStarting, batch.JobStatusRunning}
+	statusToCancel := []batchtypes.JobStatus{batchtypes.JobStatusRunning, batchtypes.JobStatusSubmitted, batchtypes.JobStatusPending, batchtypes.JobStatusRunnable, batchtypes.JobStatusStarting, batchtypes.JobStatusRunning}
 	Config.Logger.Printf("Canceling user's jobs in Batch queue '%s'...", batchJobQueueName)
 	for _, status := range statusToCancel {
-		err = cancelBatchJobsInStatus(batchJobQueueName, status, batchSvcListJobs, batchSvcTerminateJob)
+		err = cancelBatchJobsInStatus(ctx, batchJobQueueName, status, batchSvcListJobs, batchSvcTerminateJob)
 		if err != nil {
 			Config.Logger.Printf("Error canceling user's Batch jobs: %v", err)
 			return err
@@ -1739,11 +1739,12 @@ func cleanUpNextflowResources(
 }
 
 func deleteUserAccessKeys(
+	ctx context.Context,
 	nextflowUserName string,
-	iamSvcListAccessKeys func(*iam.ListAccessKeysInput) (*iam.ListAccessKeysOutput, error),
-	iamSvcDeleteAccessKey func(*iam.DeleteAccessKeyInput) (*iam.DeleteAccessKeyOutput, error),
+	iamSvcListAccessKeys func(context.Context, *iam.ListAccessKeysInput, ...func(*iam.Options)) (*iam.ListAccessKeysOutput, error),
+	iamSvcDeleteAccessKey func(context.Context, *iam.DeleteAccessKeyInput, ...func(*iam.Options)) (*iam.DeleteAccessKeyOutput, error),
 ) error {
-	listAccessKeysResult, err := iamSvcListAccessKeys(&iam.ListAccessKeysInput{
+	listAccessKeysResult, err := iamSvcListAccessKeys(ctx, &iam.ListAccessKeysInput{
 		UserName: &nextflowUserName,
 	})
 	if err != nil {
@@ -1752,7 +1753,7 @@ func deleteUserAccessKeys(
 	}
 	for _, key := range listAccessKeysResult.AccessKeyMetadata {
 		Config.Logger.Printf("Deleting access key '%s' for user '%s'", *key.AccessKeyId, nextflowUserName)
-		_, err := iamSvcDeleteAccessKey(&iam.DeleteAccessKeyInput{
+		_, err := iamSvcDeleteAccessKey(ctx, &iam.DeleteAccessKeyInput{
 			UserName:    &nextflowUserName,
 			AccessKeyId: key.AccessKeyId,
 		})
@@ -1764,21 +1765,22 @@ func deleteUserAccessKeys(
 	return nil
 }
 
-var stopSquidInstance = func(hostname string, userName string, ec2svc *ec2.EC2) error {
+var stopSquidInstance = func(hostname string, userName string, ec2svc *ec2.Client) error {
+	ctx := context.TODO()
 	// check if instance already exists, if it does stop it and return
-	exinstance, err := ec2svc.DescribeInstances(&ec2.DescribeInstancesInput{
-		Filters: []*ec2.Filter{
+	exinstance, err := ec2svc.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("instance-state-name"),
-				Values: []*string{aws.String("stopped"), aws.String("stopping"), aws.String("running"), aws.String("pending")},
+				Values: []string{"stopped", "stopping", "running", "pending"},
 			},
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(fmt.Sprintf("%s-nf-squid-%s", hostname, userName))},
+				Values: []string{fmt.Sprintf("%s-nf-squid-%s", hostname, userName)},
 			},
 			{
 				Name:   aws.String("tag:Environment"),
-				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+				Values: []string{os.Getenv("GEN3_ENDPOINT")},
 			},
 		},
 	})
@@ -1787,17 +1789,15 @@ var stopSquidInstance = func(hostname string, userName string, ec2svc *ec2.EC2) 
 	}
 	if len(exinstance.Reservations) > 0 {
 		// Make sure the instance is stopped
-		if *exinstance.Reservations[0].Instances[0].State.Name == "stopped" {
+		if exinstance.Reservations[0].Instances[0].State.Name == ec2types.InstanceStateNameStopped {
 			Config.Logger.Print("Debug: Squid instance already stopped, skipping")
 			return nil
 		}
 
 		// Terminate the instance
 		Config.Logger.Print("Debug: running Squid instance found, terminating it now")
-		_, err := ec2svc.TerminateInstances(&ec2.TerminateInstancesInput{
-			InstanceIds: []*string{
-				exinstance.Reservations[0].Instances[0].InstanceId,
-			},
+		_, err := ec2svc.TerminateInstances(ctx, &ec2.TerminateInstancesInput{
+			InstanceIds: []string{*exinstance.Reservations[0].Instances[0].InstanceId},
 		})
 		if err != nil {
 			return err
@@ -1807,14 +1807,16 @@ var stopSquidInstance = func(hostname string, userName string, ec2svc *ec2.EC2) 
 }
 
 var generateNextflowConfig = func(nextflowGlobalConfig NextflowGlobalConfig, userName string) (string, error) {
-	sess := session.Must(session.NewSession(&aws.Config{
-		Region: aws.String("us-east-1"),
-	}))
+	ctx := context.TODO()
+	baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	if err != nil {
+		return "", err
+	}
 	payModel, err := getCurrentPayModel(userName)
 	if err != nil {
 		return "", err
 	}
-	awsAccountId, awsConfig, err := getNextflowAwsSettings(sess, payModel, userName, "fetching")
+	awsAccountId, awsConfig, err := getNextflowAwsSettings(baseCfg, payModel, userName, "fetching")
 	if err != nil {
 		return "", err
 	}
@@ -1831,12 +1833,17 @@ var generateNextflowConfig = func(nextflowGlobalConfig NextflowGlobalConfig, use
 	// get the jobs role
 	tag := fmt.Sprintf("%s-hatchery-nf-%s", hostname, userName)
 	pathPrefix := aws.String(fmt.Sprintf("/%s/", tag))
-	iamSvc := iam.New(sess, &awsConfig)
-	listRolesResult, err := iamSvc.ListRoles(&iam.ListRolesInput{
+	iamSvc := iam.NewFromConfig(awsConfig)
+	listRolesResult, err := iamSvc.ListRoles(ctx, &iam.ListRolesInput{
 		PathPrefix: pathPrefix,
 	})
-	if err != nil || len(listRolesResult.Roles) == 0 {
+	if err != nil {
 		Config.Logger.Printf("Error getting role with path prefix '%s', which should already exist: %v", *pathPrefix, err)
+		return "", err
+	}
+	if len(listRolesResult.Roles) == 0 {
+		err = fmt.Errorf("no role found with path prefix '%s', which should already exist", *pathPrefix)
+		Config.Logger.Print("Error getting jobs role: ", err)
 		return "", err
 	}
 	nextflowJobsRoleArn := *listRolesResult.Roles[0].Arn

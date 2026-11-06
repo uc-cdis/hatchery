@@ -1,18 +1,23 @@
 package hatchery
 
 import (
+	"context"
+	"errors"
 	"net"
 	"os"
 	"strings"
 
 	"github.com/apparentlymart/go-cidr/cidr"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/smithy-go"
 )
 
 func setupVPC(userName string) (*string, error) {
+	ctx := context.TODO()
+
 	Config.Logger.Printf("Setting up VPC for user %s", userName)
 	pm, err := getCurrentPayModel(userName)
 	if err != nil {
@@ -20,17 +25,18 @@ func setupVPC(userName string) (*string, error) {
 	}
 
 	roleARN := "arn:aws:iam::" + pm.AWSAccountId + ":role/csoc_adminvm"
-	sess := session.Must(session.NewSession(&aws.Config{
+	cfg, err := config.LoadDefaultConfig(ctx,
 		// TODO: Make this configurable
-		Region: aws.String("us-east-1"),
-	}))
+		config.WithRegion("us-east-1"),
+	)
+	if err != nil {
+		return nil, err
+	}
+	svc := NewSVC(cfg, roleARN)
 
-	svc := NewSVC(sess, roleARN)
-
-	ec2Remote := ec2.New(session.Must(session.NewSession(&aws.Config{
-		Credentials: svc.creds,
-		Region:      aws.String("us-east-1"),
-	})))
+	ec2Remote := ec2.NewFromConfig(cfg, func(o *ec2.Options) {
+		o.Credentials = svc.creds
+	})
 
 	// Subnets
 	// TODO: make base CIDR configurable?
@@ -47,22 +53,22 @@ func setupVPC(userName string) (*string, error) {
 	// VPC stuff
 	vpcname := userToResourceName(userName, "service") + "-" + strings.ReplaceAll(os.Getenv("GEN3_ENDPOINT"), ".", "-") + "-vpc"
 	descVPCInput := &ec2.DescribeVpcsInput{
-		Filters: []*ec2.Filter{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("cidr"),
-				Values: []*string{aws.String(subnetString)},
+				Values: []string{subnetString},
 			},
 			{
 				Name:   aws.String("tag:Name"),
-				Values: []*string{aws.String(vpcname)},
+				Values: []string{vpcname},
 			},
 			{
 				Name:   aws.String("tag:Environment"),
-				Values: []*string{aws.String(os.Getenv("GEN3_ENDPOINT"))},
+				Values: []string{os.Getenv("GEN3_ENDPOINT")},
 			},
 		},
 	}
-	vpc, err := ec2Remote.DescribeVpcs(descVPCInput)
+	vpc, err := ec2Remote.DescribeVpcs(ctx, descVPCInput)
 	if err != nil {
 		return nil, err
 	}
@@ -98,13 +104,15 @@ func setupVPC(userName string) (*string, error) {
 	return nil, nil
 }
 
-func createVPC(cidr string, vpcname string, svc *ec2.EC2) (*ec2.CreateVpcOutput, error) {
+func createVPC(cidr string, vpcname string, svc *ec2.Client) (*ec2.CreateVpcOutput, error) {
+	ctx := context.TODO()
+
 	createVPCInput := &ec2.CreateVpcInput{
 		CidrBlock: aws.String(cidr),
-		TagSpecifications: []*ec2.TagSpecification{
+		TagSpecifications: []ec2types.TagSpecification{
 			{
-				ResourceType: aws.String("vpc"),
-				Tags: []*ec2.Tag{
+				ResourceType: ec2types.ResourceTypeVpc,
+				Tags: []ec2types.Tag{
 					{
 						Key:   aws.String("Name"),
 						Value: aws.String(vpcname),
@@ -117,13 +125,13 @@ func createVPC(cidr string, vpcname string, svc *ec2.EC2) (*ec2.CreateVpcOutput,
 			},
 		},
 	}
-	vpc, err := svc.CreateVpc(createVPCInput)
+	vpc, err := svc.CreateVpc(ctx, createVPCInput)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = svc.ModifyVpcAttribute(&ec2.ModifyVpcAttributeInput{
-		EnableDnsHostnames: &ec2.AttributeBooleanValue{
+	_, err = svc.ModifyVpcAttribute(ctx, &ec2.ModifyVpcAttributeInput{
+		EnableDnsHostnames: &ec2types.AttributeBooleanValue{
 			Value: aws.Bool(true),
 		},
 		VpcId: vpc.Vpc.VpcId,
@@ -135,7 +143,9 @@ func createVPC(cidr string, vpcname string, svc *ec2.EC2) (*ec2.CreateVpcOutput,
 	return vpc, nil
 }
 
-func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
+func createSubnet(vpccidr string, vpcid string, svc *ec2.Client) error {
+	ctx := context.TODO()
+
 	_, cidrs, err := net.ParseCIDR(vpccidr)
 	if err != nil {
 		return err
@@ -162,11 +172,11 @@ func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
 		CidrBlock:        aws.String(subnet2Cidr.String()),
 		VpcId:            &vpcid,
 	}
-	_, err = svc.CreateSubnet(createSubnet1Input)
+	_, err = svc.CreateSubnet(ctx, createSubnet1Input)
 	if err != nil {
 		return err
 	}
-	_, err = svc.CreateSubnet(createSubnet2Input)
+	_, err = svc.CreateSubnet(ctx, createSubnet2Input)
 	if err != nil {
 		return err
 	}
@@ -174,27 +184,29 @@ func createSubnet(vpccidr string, vpcid string, svc *ec2.EC2) error {
 
 }
 
-func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) {
+func createInternetGW(name string, vpcid string, svc *ec2.Client) (*string, error) {
+	ctx := context.TODO()
+
 	Config.Logger.Printf("Setting up internet Gateway for VPC: %s", vpcid)
 	describeInternetGWInput := &ec2.DescribeInternetGatewaysInput{
-		Filters: []*ec2.Filter{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("attachment.vpc-id"),
-				Values: []*string{aws.String(vpcid)},
+				Values: []string{vpcid},
 			},
 		},
 	}
-	exIgw, err := svc.DescribeInternetGateways(describeInternetGWInput)
+	exIgw, err := svc.DescribeInternetGateways(ctx, describeInternetGWInput)
 	if err != nil {
 		return nil, err
 	}
 	if len(exIgw.InternetGateways) == 0 {
 		Config.Logger.Printf("No existing gateways found. Creating internet gateway for VPC: %s", vpcid)
 		createInternetGWInput := &ec2.CreateInternetGatewayInput{
-			TagSpecifications: []*ec2.TagSpecification{
+			TagSpecifications: []ec2types.TagSpecification{
 				{
-					ResourceType: aws.String("internet-gateway"),
-					Tags: []*ec2.Tag{
+					ResourceType: ec2types.ResourceTypeInternetGateway,
+					Tags: []ec2types.Tag{
 						{
 							Key:   aws.String("Name"),
 							Value: aws.String(name),
@@ -207,39 +219,40 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 				},
 			},
 		}
-		igw, err := svc.CreateInternetGateway(createInternetGWInput)
+		igw, err := svc.CreateInternetGateway(ctx, createInternetGWInput)
 		if err != nil {
 			return nil, err
 		}
-		_, err = svc.AttachInternetGateway(&ec2.AttachInternetGatewayInput{
+		_, err = svc.AttachInternetGateway(ctx, &ec2.AttachInternetGatewayInput{
 			InternetGatewayId: igw.InternetGateway.InternetGatewayId,
 			VpcId:             &vpcid,
 		})
 		if err != nil {
 			return nil, err
 		}
-		routeTable, err := svc.DescribeRouteTables(&ec2.DescribeRouteTablesInput{
-			Filters: []*ec2.Filter{
+		routeTable, err := svc.DescribeRouteTables(ctx, &ec2.DescribeRouteTablesInput{
+			Filters: []ec2types.Filter{
 				{
 					Name:   aws.String("vpc-id"),
-					Values: []*string{&vpcid},
+					Values: []string{vpcid},
 				},
 			},
 		})
 		if err != nil {
 			return nil, err
 		}
-		_, err = svc.CreateRoute(&ec2.CreateRouteInput{
+		_, err = svc.CreateRoute(ctx, &ec2.CreateRouteInput{
 			DestinationCidrBlock: aws.String("0.0.0.0/0"),
 			GatewayId:            igw.InternetGateway.InternetGatewayId,
 			RouteTableId:         routeTable.RouteTables[0].RouteTableId,
 		})
 		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok {
-				if aerr.Code() == "RouteAlreadyExists" {
+			var apiErr smithy.APIError
+			if errors.As(err, &apiErr) {
+				if apiErr.ErrorCode() == "RouteAlreadyExists" {
 					// the route already exists, replace it
 					Config.Logger.Print("Debug: Route already exists, replacing it")
-					_, err = svc.ReplaceRoute(&ec2.ReplaceRouteInput{
+					_, err = svc.ReplaceRoute(ctx, &ec2.ReplaceRouteInput{
 						DestinationCidrBlock: aws.String("0.0.0.0/0"),
 						GatewayId:            igw.InternetGateway.InternetGatewayId,
 						RouteTableId:         routeTable.RouteTables[0].RouteTableId,
@@ -258,7 +271,7 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 	} else {
 		if len(exIgw.InternetGateways[0].Attachments) == 0 {
 			Config.Logger.Printf("Existing gateway found but not attached to IGW. Attaching internet gateway for VPC: %s", vpcid)
-			_, err = svc.AttachInternetGateway(&ec2.AttachInternetGatewayInput{
+			_, err = svc.AttachInternetGateway(ctx, &ec2.AttachInternetGatewayInput{
 				InternetGatewayId: exIgw.InternetGateways[0].InternetGatewayId,
 				VpcId:             &vpcid,
 			})
@@ -267,11 +280,11 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 			}
 		}
 
-		routeTable, err := svc.DescribeRouteTables(&ec2.DescribeRouteTablesInput{
-			Filters: []*ec2.Filter{
+		routeTable, err := svc.DescribeRouteTables(ctx, &ec2.DescribeRouteTablesInput{
+			Filters: []ec2types.Filter{
 				{
 					Name:   aws.String("vpc-id"),
-					Values: []*string{&vpcid},
+					Values: []string{vpcid},
 				},
 			},
 		})
@@ -279,17 +292,18 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 			return nil, err
 		}
 
-		_, err = svc.CreateRoute(&ec2.CreateRouteInput{
+		_, err = svc.CreateRoute(ctx, &ec2.CreateRouteInput{
 			DestinationCidrBlock: aws.String("0.0.0.0/0"),
 			GatewayId:            exIgw.InternetGateways[0].InternetGatewayId,
 			RouteTableId:         routeTable.RouteTables[0].RouteTableId,
 		})
 		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok {
-				if aerr.Code() == "RouteAlreadyExists" {
+			var apiErr smithy.APIError
+			if errors.As(err, &apiErr) {
+				if apiErr.ErrorCode() == "RouteAlreadyExists" {
 					// the route already exists, replace it
 					Config.Logger.Print("Debug: Route already exists, replacing it")
-					_, err = svc.ReplaceRoute(&ec2.ReplaceRouteInput{
+					_, err = svc.ReplaceRoute(ctx, &ec2.ReplaceRouteInput{
 						DestinationCidrBlock: aws.String("0.0.0.0/0"),
 						GatewayId:            exIgw.InternetGateways[0].InternetGatewayId,
 						RouteTableId:         routeTable.RouteTables[0].RouteTableId,
@@ -309,7 +323,9 @@ func createInternetGW(name string, vpcid string, svc *ec2.EC2) (*string, error) 
 
 }
 
-func VPCRoutes(remote_network_info *NetworkInfo, main_network_info *NetworkInfo, tgwId *string, ec2_remote *ec2.EC2, ec2_local *ec2.EC2, teardown bool) error {
+func VPCRoutes(remote_network_info *NetworkInfo, main_network_info *NetworkInfo, tgwId *string, ec2_remote *ec2.Client, ec2_local *ec2.Client, teardown bool) error {
+	ctx := context.TODO()
+
 	if !teardown {
 		for _, cidr := range main_network_info.vpcCidrBlocks {
 			Config.Logger.Printf("Creating route to %s in remote VPC route table %s", *cidr, *main_network_info.routeTable.RouteTables[0].RouteTableId)
@@ -341,10 +357,11 @@ func VPCRoutes(remote_network_info *NetworkInfo, main_network_info *NetworkInfo,
 			RouteTableId:         main_network_info.routeTable.RouteTables[0].RouteTableId,
 		}
 
-		_, err := ec2_local.DeleteRoute(localDeleteRouteInput)
+		_, err := ec2_local.DeleteRoute(ctx, localDeleteRouteInput)
 		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok {
-				switch aerr.Code() {
+			var apiErr smithy.APIError
+			if errors.As(err, &apiErr) {
+				switch apiErr.ErrorCode() {
 				case "InvalidRoute.NotFound":
 					// Route already deleted, we are happy :)
 					Config.Logger.Printf("Route %s to remote vpc was already deleted from main VPC %s", *remote_network_info.vpc.Vpcs[0].CidrBlock, *main_network_info.vpc.Vpcs[0].VpcId)
@@ -357,17 +374,19 @@ func VPCRoutes(remote_network_info *NetworkInfo, main_network_info *NetworkInfo,
 	}
 }
 
-func createVPCRoute(routeTableId *string, cidrBlock *string, tgwId *string, svc *ec2.EC2) error {
+func createVPCRoute(routeTableId *string, cidrBlock *string, tgwId *string, svc *ec2.Client) error {
+	ctx := context.TODO()
+
 	exRemoteRouteInput := &ec2.DescribeRouteTablesInput{
-		RouteTableIds: []*string{routeTableId},
-		Filters: []*ec2.Filter{
+		RouteTableIds: []string{*routeTableId},
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("route.destination-cidr-block"),
-				Values: []*string{cidrBlock},
+				Values: []string{*cidrBlock},
 			},
 		},
 	}
-	exRemoteRoute, err := svc.DescribeRouteTables(exRemoteRouteInput)
+	exRemoteRoute, err := svc.DescribeRouteTables(ctx, exRemoteRouteInput)
 	if err != nil {
 		return err
 	}
@@ -377,7 +396,7 @@ func createVPCRoute(routeTableId *string, cidrBlock *string, tgwId *string, svc 
 			DestinationCidrBlock: cidrBlock,
 			RouteTableId:         routeTableId,
 		}
-		_, err := svc.DeleteRoute(remoteDeleteRouteInput)
+		_, err := svc.DeleteRoute(ctx, remoteDeleteRouteInput)
 		if err != nil {
 			return err
 		}
@@ -389,7 +408,7 @@ func createVPCRoute(routeTableId *string, cidrBlock *string, tgwId *string, svc 
 		TransitGatewayId:     tgwId,
 	}
 
-	_, err = svc.CreateRoute(remoteCreateRouteInput)
+	_, err = svc.CreateRoute(ctx, remoteCreateRouteInput)
 	if err != nil {
 		return err
 	}
@@ -397,15 +416,18 @@ func createVPCRoute(routeTableId *string, cidrBlock *string, tgwId *string, svc 
 	return nil
 }
 
-func deleteVPCRoute(routeTableId *string, cidrBlock *string, svc *ec2.EC2) error {
+func deleteVPCRoute(routeTableId *string, cidrBlock *string, svc *ec2.Client) error {
+	ctx := context.TODO()
+
 	delRouteInput := &ec2.DeleteRouteInput{
 		DestinationCidrBlock: cidrBlock,
 		RouteTableId:         routeTableId,
 	}
-	_, err := svc.DeleteRoute(delRouteInput)
+	_, err := svc.DeleteRoute(ctx, delRouteInput)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
 			case "InvalidRoute.NotFound":
 				// Route already deleted, we are happy :)
 				return nil

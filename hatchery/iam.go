@@ -1,19 +1,21 @@
 package hatchery
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/smithy-go"
 )
 
 func (creds *CREDS) taskRole(userName string) (*string, error) {
-	svc := iam.New(session.Must(session.NewSession(&aws.Config{
-		Credentials: creds.creds,
-		Region:      aws.String("us-east-1"),
-	})))
+	ctx := context.TODO()
+	cfg := aws.Config{Region: "us-east-1", Credentials: creds.creds}
+	svc := iam.NewFromConfig(cfg)
+
 	pm, err := getCurrentPayModel(userName)
 	if err != nil {
 		return nil, err
@@ -22,12 +24,12 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 	taskRoleInput := &iam.GetRoleInput{
 		RoleName: aws.String(userToResourceName(userName, "pod")),
 	}
-	taskRole, _ := svc.GetRole(taskRoleInput)
-	if taskRole.Role != nil {
+	taskRole, err := svc.GetRole(ctx, taskRoleInput)
+	if err == nil && taskRole.Role != nil {
 		return taskRole.Role.Arn, nil
 	} else {
 		policyAlreadyExists := false
-		_, err := svc.CreatePolicy(&iam.CreatePolicyInput{
+		_, err := svc.CreatePolicy(ctx, &iam.CreatePolicyInput{
 			PolicyDocument: aws.String(`{
 				"Version": "2012-10-17",
 				"Statement": [
@@ -45,20 +47,13 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 			PolicyName: aws.String(fmt.Sprintf("ws-task-policy-%s", userName)),
 		})
 		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok {
-				switch aerr.Code() {
+			var entityAlreadyExists *iamtypes.EntityAlreadyExistsException
+			var apiErr smithy.APIError
+			if errors.As(err, &entityAlreadyExists) {
 				// Update the policy to the latest spec if it is existed already
-				case iam.ErrCodeEntityAlreadyExistsException:
-					policyAlreadyExists = true
-				case iam.ErrCodeLimitExceededException:
-					fmt.Println(iam.ErrCodeLimitExceededException, aerr.Error())
-				case iam.ErrCodeNoSuchEntityException:
-					fmt.Println(iam.ErrCodeNoSuchEntityException, aerr.Error())
-				case iam.ErrCodeServiceFailureException:
-					fmt.Println(iam.ErrCodeServiceFailureException, aerr.Error())
-				default:
-					fmt.Println(aerr.Error())
-				}
+				policyAlreadyExists = true
+			} else if errors.As(err, &apiErr) {
+				fmt.Println(apiErr.ErrorCode(), apiErr.ErrorMessage())
 			}
 			if !policyAlreadyExists {
 				return nil, err
@@ -82,12 +77,12 @@ func (creds *CREDS) taskRole(userName string) (*string, error) {
 			  `),
 		}
 
-		createTaskRole, err := svc.CreateRole(createTaskRoleInput)
+		createTaskRole, err := svc.CreateRole(ctx, createTaskRoleInput)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create TaskRole: %s", err)
 		}
 
-		_, err = svc.AttachRolePolicy(&iam.AttachRolePolicyInput{
+		_, err = svc.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
 			PolicyArn: &policyArn,
 			RoleName:  aws.String(userToResourceName(userName, "pod")),
 		})
@@ -119,11 +114,11 @@ const ecsTaskExecutionRoleAssumeRolePolicyDocument = `{
 }`
 
 func (creds *CREDS) CreateEcsTaskExecutionRole() (*string, error) {
-	svc := iam.New(session.Must(session.NewSession(&aws.Config{
-		Credentials: creds.creds,
-		Region:      aws.String("us-east-1"),
-	})))
-	getRoleResp, err := svc.GetRole(
+	ctx := context.TODO()
+	cfg := aws.Config{Region: "us-east-1", Credentials: creds.creds}
+	svc := iam.NewFromConfig(cfg)
+
+	getRoleResp, err := svc.GetRole(ctx,
 		&iam.GetRoleInput{
 			RoleName: aws.String(ecsTaskExecutionRoleName),
 		},
@@ -133,7 +128,7 @@ func (creds *CREDS) CreateEcsTaskExecutionRole() (*string, error) {
 		return getRoleResp.Role.Arn, nil
 	}
 
-	createRoleResp, err := svc.CreateRole(
+	createRoleResp, err := svc.CreateRole(ctx,
 		&iam.CreateRoleInput{
 			AssumeRolePolicyDocument: aws.String(ecsTaskExecutionRoleAssumeRolePolicyDocument),
 			RoleName:                 aws.String(ecsTaskExecutionRoleName),
@@ -147,7 +142,7 @@ func (creds *CREDS) CreateEcsTaskExecutionRole() (*string, error) {
 
 	ecsTaskExecutionRoleArn := createRoleResp.Role.Arn
 
-	_, err = svc.AttachRolePolicy(
+	_, err = svc.AttachRolePolicy(ctx,
 		&iam.AttachRolePolicyInput{
 			RoleName:  aws.String(ecsTaskExecutionRoleName),
 			PolicyArn: aws.String(ecsTaskExecutionPolicyArn),
@@ -162,10 +157,11 @@ func (creds *CREDS) CreateEcsTaskExecutionRole() (*string, error) {
 	return ecsTaskExecutionRoleArn, nil
 }
 
-func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string, iamTags []*iam.Tag, policyDocument *string) (string, error) {
+func createOrUpdatePolicy(iamSvc *iam.Client, policyName string, pathPrefix *string, iamTags []iamtypes.Tag, policyDocument *string) (string, error) {
+	ctx := context.TODO()
 	/* Create the policy if it does not exist. If it does, there can only be up to 5 versions, so
 	delete old versions and then update the policy. */
-	policyResult, err := iamSvc.CreatePolicy(&iam.CreatePolicyInput{
+	policyResult, err := iamSvc.CreatePolicy(ctx, &iam.CreatePolicyInput{
 		PolicyName:     &policyName,
 		PolicyDocument: policyDocument,
 		Path:           pathPrefix, // so we can use the path later to get the policy ARN
@@ -173,68 +169,60 @@ func createOrUpdatePolicy(iamSvc *iam.IAM, policyName string, pathPrefix *string
 	})
 	policyArn := ""
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == iam.ErrCodeEntityAlreadyExistsException {
-				Config.Logger.Printf("Policy '%s' already exists. Deleting old versions and updating it...", policyName)
+		var entityAlreadyExists *iamtypes.EntityAlreadyExistsException
+		if errors.As(err, &entityAlreadyExists) {
+			Config.Logger.Printf("Policy '%s' already exists. Deleting old versions and updating it...", policyName)
 
-				// find the policy's ARN
-				listPoliciesResult, err := iamSvc.ListPolicies(&iam.ListPoliciesInput{
-					PathPrefix: pathPrefix,
-				})
-				if err != nil {
-					Config.Logger.Printf("Error getting existing policy '%s': %v", policyName, err)
-					return "", err
-				}
-				for _, policy := range listPoliciesResult.Policies {
-					if *policy.PolicyName == policyName {
-						policyArn = *policy.Arn
-						break
-					}
-				}
-				if policyArn == "" {
-					return "", fmt.Errorf("unable to find ARN for existing policy '%s'", policyName)
-				}
-
-				// there can only be up to 5 versions, so delete old versions
-				listVersionsResult, err := iamSvc.ListPolicyVersions(&iam.ListPolicyVersionsInput{
-					PolicyArn: &policyArn,
-				})
-				if err != nil {
-					Config.Logger.Printf("Error getting policy '%s' versions: %v", policyName, err)
-					return "", err
-				}
-				for _, version := range listVersionsResult.Versions {
-					if *version.IsDefaultVersion {
-						continue
-					}
-					Config.Logger.Printf("Deleting policy '%s' version '%s'", policyName, *version.VersionId)
-					_, err = iamSvc.DeletePolicyVersion(&iam.DeletePolicyVersionInput{
-						PolicyArn: &policyArn,
-						VersionId: version.VersionId,
-					})
-					if err != nil {
-						Config.Logger.Printf("Warning: Unable to delete policy '%s' version '%s': %v", policyName, *version.VersionId, err)
-					}
-				}
-
-				// update the policy
-				_, err = iamSvc.CreatePolicyVersion(&iam.CreatePolicyVersionInput{
-					PolicyArn:      &policyArn,
-					PolicyDocument: policyDocument,
-					SetAsDefault:   aws.Bool(true),
-				})
-				if err != nil {
-					Config.Logger.Printf("Error updating policy '%s': %v", policyName, err)
-					return "", err
-				}
-			} else {
-				Config.Logger.Printf("Error creating policy '%s': %v", policyName, aerr)
-				Config.Logger.Printf("Policy document: '%s'", *policyDocument)
+			// find the policy's ARN
+			listPoliciesResult, err := iamSvc.ListPolicies(ctx, &iam.ListPoliciesInput{
+				PathPrefix: pathPrefix,
+			})
+			if err != nil {
+				Config.Logger.Printf("Error getting existing policy '%s': %v", policyName, err)
 				return "", err
 			}
-		} else {
-			Config.Logger.Printf("Error creating policy '%s': %v", policyName, err)
-			return "", err
+			for _, policy := range listPoliciesResult.Policies {
+				if *policy.PolicyName == policyName {
+					policyArn = *policy.Arn
+					break
+				}
+			}
+			if policyArn == "" {
+				return "", fmt.Errorf("unable to find ARN for existing policy '%s'", policyName)
+			}
+
+			// there can only be up to 5 versions, so delete old versions
+			listVersionsResult, err := iamSvc.ListPolicyVersions(ctx, &iam.ListPolicyVersionsInput{
+				PolicyArn: &policyArn,
+			})
+			if err != nil {
+				Config.Logger.Printf("Error getting policy '%s' versions: %v", policyName, err)
+				return "", err
+			}
+			for _, version := range listVersionsResult.Versions {
+				if version.IsDefaultVersion {
+					continue
+				}
+				Config.Logger.Printf("Deleting policy '%s' version '%s'", policyName, *version.VersionId)
+				_, err = iamSvc.DeletePolicyVersion(ctx, &iam.DeletePolicyVersionInput{
+					PolicyArn: &policyArn,
+					VersionId: version.VersionId,
+				})
+				if err != nil {
+					Config.Logger.Printf("Warning: Unable to delete policy '%s' version '%s': %v", policyName, *version.VersionId, err)
+				}
+			}
+
+			// update the policy
+			_, err = iamSvc.CreatePolicyVersion(ctx, &iam.CreatePolicyVersionInput{
+				PolicyArn:      &policyArn,
+				PolicyDocument: policyDocument,
+				SetAsDefault:   true,
+			})
+			if err != nil {
+				Config.Logger.Printf("Error updating policy '%s': %v", policyName, err)
+				return "", err
+			}
 		}
 	} else {
 		Config.Logger.Printf("Created policy '%s'", policyName)
