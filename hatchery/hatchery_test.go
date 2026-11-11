@@ -1161,3 +1161,29 @@ aws {
 		return
 	}
 }
+
+func TestGetWorkspaceFlavor(t *testing.T) {
+	tests := []struct {
+		name      string
+		container Container
+		want      string
+	}{
+		{"jupyter by name", Container{Name: "Jupyter Notebook Bio Python", Image: "quay.io/cdis/jupyter-notebook:1.0"}, "jupyter"},
+		{"jupyter without jupyter in name", Container{Name: "Genomics (4CPU/16GB RAM, CPU only)", Image: "quay.io/cdis/jupyter-notebook:genomics-3.5.1"}, "jupyter"},
+		{"non-jupyter, non-rstudio defaults to jupyter", Container{Name: "Browser App", Image: "quay.io/cdis/jcoin-browser-app:jcoin-app"}, "jupyter"},
+		{"rstudio with space", Container{Name: "R Studio", Image: "quay.io/cdis/rstudio:4.4.0"}, "rstudio"},
+		{"rstudio with space and hyphen", Container{Name: "R Studio-3.6", Image: "quay.io/cdis/rstudio3.6:rstudio3.6-1.0.0"}, "rstudio"},
+		{"rstudio without space", Container{Name: "RStudio 4.1.0 + base packages", Image: "quay.io/cdis/example:1"}, "rstudio"},
+		{"rstudio by image only", Container{Name: "Statistics workspace", Image: "heliumdatastage/rstudio-server:1"}, "rstudio"},
+		{"jupyter with R kernel is not rstudio", Container{Name: "(Generic) Jupyter Lab Notebook with R Kernel", Image: "quay.io/cdis/jupyter-superslim-r:2.0.1"}, "jupyter"},
+		{"nextflow wins over rstudio", Container{Name: "R Studio", Image: "quay.io/cdis/rstudio:4.4.0", NextflowConfig: NextflowConfig{Enabled: true}}, "nextflow"},
+		{"license wins over rstudio", Container{Name: "R Studio", Image: "quay.io/cdis/rstudio:4.4.0", License: LicenseInfo{Enabled: true, WorkspaceFlavor: "gen3-licensed"}}, "gen3-licensed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getWorkspaceFlavor(tt.container); got != tt.want {
+				t.Errorf("getWorkspaceFlavor() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
