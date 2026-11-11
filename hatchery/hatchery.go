@@ -367,10 +367,8 @@ func getWorkspaceFlavor(container Container) string {
 		return "nextflow"
 	} else if container.License.Enabled {
 		return container.License.WorkspaceFlavor
-	} else if strings.Contains(strings.ToLower(container.Name), "jupyter") {
-		return "jupyter"
 	} else {
-		return ""
+		return "jupyter"
 	}
 }
 
