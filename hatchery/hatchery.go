@@ -367,11 +367,19 @@ func getWorkspaceFlavor(container Container) string {
 		return "nextflow"
 	} else if container.License.Enabled {
 		return container.License.WorkspaceFlavor
-	} else if strings.Contains(strings.ToLower(container.Name), "jupyter") {
-		return "jupyter"
+	} else if isRStudio(container) {
+		return "rstudio"
 	} else {
-		return ""
+		return "jupyter"
 	}
+}
+
+// isRStudio reports whether a container is an RStudio workspace. Display names
+// vary ("R Studio", "RStudio 4.1.0", "R Studio-3.6"), so the name is compared
+// with spaces and hyphens removed, and the image name is checked as well.
+func isRStudio(container Container) bool {
+	name := strings.NewReplacer(" ", "", "-", "").Replace(strings.ToLower(container.Name))
+	return strings.Contains(name, "rstudio") || strings.Contains(strings.ToLower(container.Image), "rstudio")
 }
 
 func launch(w http.ResponseWriter, r *http.Request) {
