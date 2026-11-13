@@ -131,6 +131,7 @@ An example manifest entry may look like
 
 * `user-namespace` is which namespace the pods will be deployed into.
 * `sub-dir` is the path to Hatchery off the host domain, i.e. if the full domain path is `https://nci-crdc-demo.datacommons.io/lw-workspace` then `sub-dir` is `/lw-workspace`.
+* `username-hash` selects how usernames are encoded in Kubernetes resource names: empty (default, escaped username) or `sha256-16` (first 16 bytes of the SHA-256 of the username, as 32 hex chars). When using workspace-proxy, it must be configured with the same value. `hashed-usernames: true` is the legacy equivalent of `"username-hash": "sha256-16"`.
 * `hashed-usernames` if set to `true`, Hatchery hashes usernames before using them to generate Kubernetes resource names and related label/selector values, including pods, services, Ambassador mappings, and PVCs. This is useful when usernames may be too long or contain characters that are not safe for Kubernetes metadata, such as long OIDC `sub` values.
   **Warning:** changing this setting changes the generated Kubernetes resource names for users. Existing PVCs created under the previous naming scheme will not be reused automatically. Enabling this setting will cause new PVCs to be created for users, so previous persistent workspace drives must be migrated manually if they need to be preserved.
 * `user-volume-size` the size of the user volume to be created. Applies to all containers because the user storage is the same across all of them.

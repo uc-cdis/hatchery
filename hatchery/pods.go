@@ -397,7 +397,8 @@ var deleteK8sPod = func(ctx context.Context, userName string, accessToken string
 func userToResourceName(userName string, resourceType string) string {
 	safeUserName := escapism(userName)
 
-	if Config.Config.HashedUsernames {
+	// LoadConfig has already rejected unsupported values.
+	if algo, _ := Config.Config.UsernameHashAlgorithm(); algo == UsernameHashSHA256_16 {
 		safeUserName = hashUserName32(userName)
 	}
 
