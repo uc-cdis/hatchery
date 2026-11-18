@@ -40,9 +40,6 @@ import (
 //go:embed scripts/squashfs_sidecar_script.sh
 var squashFSSidecarScript string
 
-//go:embed scripts/squashfs_wrapper_script.sh
-var squashFSWrapperScript string
-
 const (
 	// squashFSTerminationGracePeriod is the minimum grace period for pods running
 	// the squashfs mounter. The countdown covers the preStop hooks as well as the
@@ -50,11 +47,6 @@ const (
 	// slow unmount can be SIGKILLed part way through -- which leaks the mount to
 	// the host and wedges the pod in Terminating.
 	squashFSTerminationGracePeriod = 60
-
-	// squashFSUnmountDrainSeconds is how long the workspace container lingers in
-	// preStop so the mounter can unmount /apps before the workspace container --
-	// which also holds that mount -- goes away.
-	squashFSUnmountDrainSeconds = 5
 
 	// The mounter's startup probe holds back the workspace container until /apps
 	// is mounted. Copying the image into the local cache can take a while for a
@@ -74,18 +66,13 @@ var (
 	containerRestartAlways = k8sv1.ContainerRestartPolicyAlways
 )
 
-// addSidecar adds a sidecar container to the pod. As a native sidecar (a
-// restartable init container) kubelet starts it before the main containers and
+// addSidecar adds a sidecar container to the pod as a native sidecar (a
+// restartable init container). Kubelet starts it before the main containers and
 // stops it only after they have all exited, so anything it mounts is in place
-// for the workspace's whole life. With native sidecars disabled it falls back to
-// a regular container at the front of the list, which gets no such ordering.
-func addSidecar(pod *k8sv1.Pod, sidecar k8sv1.Container, native bool) {
-	if native {
-		sidecar.RestartPolicy = &containerRestartAlways
-		pod.Spec.InitContainers = append(pod.Spec.InitContainers, sidecar)
-		return
-	}
-	pod.Spec.Containers = append([]k8sv1.Container{sidecar}, pod.Spec.Containers...)
+// for the workspace's whole life.
+func addSidecar(pod *k8sv1.Pod, sidecar k8sv1.Container) {
+	sidecar.RestartPolicy = &containerRestartAlways
+	pod.Spec.InitContainers = append(pod.Spec.InitContainers, sidecar)
 }
 
 const ambassadorYaml = `---
@@ -868,8 +855,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		},
 	}
 
-	nativeSidecars := !hatchConfig.Config.DisableNativeSidecars
-	if nativeSidecars && len(fuseSidecar.Command) > 0 {
+	if len(fuseSidecar.Command) > 0 {
 		// The sidecar image runs bash as PID 1, which ignores SIGTERM, so once the
 		// workspace exits the pod would sit in Running until the grace period runs
 		// out and the sidecar is SIGKILLed. Exiting on SIGTERM lets the pod finish
@@ -878,7 +864,7 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		fuseSidecar.Args = append(append([]string{}, fuseSidecar.Command...), fuseSidecar.Args...)
 		fuseSidecar.Command = []string{"/bin/sh", "-c", `"$@" & child=$!; trap 'kill -TERM $child 2>/dev/null; exit 0' TERM INT; wait $child`, "fuse-sidecar"}
 	}
-	addSidecar(pod, fuseSidecar, nativeSidecars)
+	addSidecar(pod, fuseSidecar)
 
 	// some pods (ex - dockstore apps) only have "Friend" containers
 	if hatchApp.Image != "" {
@@ -1150,11 +1136,10 @@ func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface,
 		// stuck in Terminating.
 		//
 		// As a native sidecar this only runs once the workspace container has
-		// exited, so the plain umount normally succeeds. Without native sidecars
-		// Kubernetes does not order termination across containers and the
-		// workspace may still hold /apps, hence the lazy fallback. A failing
-		// preStop hook kills the container, so this must not report an error when
-		// there is simply nothing mounted.
+		// exited, so the plain umount normally succeeds; the lazy unmount is a
+		// fallback in case something else still holds /apps. A failing preStop
+		// hook kills the container, so this must not report an error when there
+		// is simply nothing mounted.
 		Lifecycle: &k8sv1.Lifecycle{
 			PreStop: &k8sv1.LifecycleHandler{
 				Exec: &k8sv1.ExecAction{
@@ -1163,21 +1148,18 @@ func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface,
 			},
 		},
 	}
-	native := !Config.Config.DisableNativeSidecars
-	if native {
-		// Kubelet holds back the main containers until a native sidecar's startup
-		// probe passes, so the workspace only starts once /apps is mounted.
-		sidecar.StartupProbe = &k8sv1.Probe{
-			ProbeHandler: k8sv1.ProbeHandler{
-				Exec: &k8sv1.ExecAction{
-					Command: []string{"/bin/sh", "-c", `awk '$5 == "/apps" && / - squashfs / { found = 1 } END { exit !found }' /proc/self/mountinfo`},
-				},
+	// Kubelet holds back the main containers until a native sidecar's startup
+	// probe passes, so the workspace only starts once /apps is mounted.
+	sidecar.StartupProbe = &k8sv1.Probe{
+		ProbeHandler: k8sv1.ProbeHandler{
+			Exec: &k8sv1.ExecAction{
+				Command: []string{"/bin/sh", "-c", `awk '$5 == "/apps" && / - squashfs / { found = 1 } END { exit !found }' /proc/self/mountinfo`},
 			},
-			PeriodSeconds:    squashFSStartupProbePeriodSeconds,
-			FailureThreshold: squashFSStartupProbeFailureThreshold,
-		}
+		},
+		PeriodSeconds:    squashFSStartupProbePeriodSeconds,
+		FailureThreshold: squashFSStartupProbeFailureThreshold,
 	}
-	addSidecar(pod, sidecar, native)
+	addSidecar(pod, sidecar)
 
 	// The countdown starts before preStop runs, so the unmount, the hook on the
 	// workspace container and the container stops all have to fit inside it. The
@@ -1197,46 +1179,8 @@ func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface,
 				k8sv1.VolumeMount{Name: "apps-mount", MountPath: "/apps", MountPropagation: &propHostToContainer},
 			)
 
-			// A native sidecar already starts before this container and stops after
-			// it, so neither the wait-for-mount wrapper nor the drain is needed.
-			if native {
-				break
-			}
-
-			origCommand := container.Command
-			origArgs := container.Args
-
-			if len(origCommand) == 0 {
-				origCommand = []string{"/bin/sh", "-c"}
-			}
-
-			container.Command = []string{"/bin/sh", "-ceu"}
-
-			// Pass "hatchery-wrapper" as a dummy argument.
-			// This becomes $0 inside the shell script, ensuring that following command (/jupyterlab-start.sh) becomes $1 and is included in "$@".
-			newArgs := []string{squashFSWrapperScript, "hatchery-wrapper"} // Used embedded variable
-			newArgs = append(newArgs, origCommand...)
-			newArgs = append(newArgs, origArgs...)
-			container.Args = newArgs
-
-			// Hold this container open briefly so the mounter's own preStop can
-			// unmount /apps before this one exits. Without the delay both are
-			// signalled at once and the unmount hits EBUSY on a mount this
-			// container is still holding.
-			//
-			// Only added when the container has no preStop of its own, since an
-			// existing one is likely doing something more important (unmounting
-			// FUSE, flushing state) and a container has just one preStop.
-			if container.Lifecycle == nil {
-				container.Lifecycle = &k8sv1.Lifecycle{}
-			}
-			if container.Lifecycle.PreStop == nil {
-				container.Lifecycle.PreStop = &k8sv1.LifecycleHandler{
-					Exec: &k8sv1.ExecAction{
-						Command: []string{"/bin/sh", "-c", fmt.Sprintf("sleep %d", squashFSUnmountDrainSeconds)},
-					},
-				}
-			}
+			// No wait-for-mount wrapper or drain hook is needed: the native sidecar
+			// starts before this container and stops after it.
 			break
 		}
 	}

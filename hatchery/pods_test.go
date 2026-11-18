@@ -117,37 +117,8 @@ func findContainer(containers []k8sv1.Container, name string) *k8sv1.Container {
 	return nil
 }
 
-func TestBuildPodNativeSidecarsDisabled(t *testing.T) {
-	defer SetupAndTeardownTest()()
-
-	config, err := LoadConfig("../testData/testConfig.json", nil)
-	if nil != err {
-		t.Fatalf("failed to load config, got: %v", err)
-	}
-	config.Config.DisableNativeSidecars = true
-	app := &config.Config.Containers[len(config.Config.Containers)-3]
-	pod, err := buildPod(config, app, "frickjack", nil)
-	if nil != err {
-		t.Fatalf("failed to build a pod - %v", err)
-	}
-
-	if len(pod.Spec.InitContainers) != 0 {
-		t.Errorf("expected no init containers, got %d", len(pod.Spec.InitContainers))
-	}
-	if len(pod.Spec.Containers) != len(app.Friends)+2 { // +2 b/c sidecar + main
-		t.Errorf("unexpected number of containers in pod, desired value is %v but got %v", len(app.Friends)+2, len(pod.Spec.Containers))
-	}
-	if pod.Spec.Containers[0].Name != "fuse-container" || pod.Spec.Containers[0].RestartPolicy != nil {
-		t.Errorf("expected fuse-container first with no restartPolicy, got %s", pod.Spec.Containers[0].Name)
-	}
-	if strings.Join(pod.Spec.Containers[0].Command, " ") != strings.Join(config.Config.Sidecar.Command, " ") {
-		t.Errorf("expected the fuse sidecar command to be left alone, got %v", pod.Spec.Containers[0].Command)
-	}
-}
-
 func TestApplySquashFSMounter(t *testing.T) {
-	// Swap in a fresh config: other tests leave the global in assorted states,
-	// and the mounter reads the native-sidecar switch from it.
+	// Swap in a fresh config: other tests leave the global in assorted states.
 	defer func(orig *FullHatcheryConfig) { Config = orig }(Config)
 	Config = &FullHatcheryConfig{Logger: log.New(io.Discard, "", log.LstdFlags)}
 
@@ -162,7 +133,6 @@ func TestApplySquashFSMounter(t *testing.T) {
 	}
 
 	t.Run("nativeSidecar", func(t *testing.T) {
-		Config.Config.DisableNativeSidecars = false
 		pod := newPod()
 		if err := applySquashFSMounter(context.Background(), fake.NewSimpleClientset().CoreV1(), ns, pod, opts); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -191,37 +161,6 @@ func TestApplySquashFSMounter(t *testing.T) {
 		}
 		if pod.Spec.TerminationGracePeriodSeconds == nil || *pod.Spec.TerminationGracePeriodSeconds != squashFSTerminationGracePeriod {
 			t.Errorf("expected termination grace period %d, got %v", squashFSTerminationGracePeriod, pod.Spec.TerminationGracePeriodSeconds)
-		}
-	})
-
-	t.Run("regularContainer", func(t *testing.T) {
-		Config.Config.DisableNativeSidecars = true
-		pod := newPod()
-		if err := applySquashFSMounter(context.Background(), fake.NewSimpleClientset().CoreV1(), ns, pod, opts); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if len(pod.Spec.InitContainers) != 0 {
-			t.Errorf("expected no init containers, got %d", len(pod.Spec.InitContainers))
-		}
-		if pod.Spec.Containers[0].Name != "apps-mounter" {
-			t.Fatalf("expected apps-mounter as the first container, got %s", pod.Spec.Containers[0].Name)
-		}
-		if pod.Spec.Containers[0].StartupProbe != nil {
-			t.Errorf("expected no startup probe on a regular container: it would not gate the workspace")
-		}
-
-		// Without ordering guarantees the workspace waits for the mount itself and
-		// lingers on stop so the mounter can unmount first.
-		ws := findContainer(pod.Spec.Containers, "hatchery-container")
-		if len(ws.Args) < 2 || ws.Args[0] != squashFSWrapperScript || ws.Args[1] != "hatchery-wrapper" {
-			t.Errorf("expected the workspace command to be wrapped, got %v", ws.Args)
-		}
-		if ws.Lifecycle == nil || ws.Lifecycle.PreStop == nil || ws.Lifecycle.PreStop.Exec == nil {
-			t.Fatalf("expected a drain preStop on the workspace container")
-		}
-		if !hasVolumeMount(ws, "apps-mount", "/apps") {
-			t.Errorf("expected the workspace container to mount /apps")
 		}
 	})
 }
