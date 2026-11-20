@@ -1161,3 +1161,34 @@ aws {
 		return
 	}
 }
+
+func TestGetWorkspaceFlavor(t *testing.T) {
+	tests := []struct {
+		name      string
+		container Container
+		want      string
+	}{
+		{"jupyter by name", Container{Name: "Jupyter Notebook Bio Python", Image: "quay.io/cdis/jupyter-notebook:1.0"}, "jupyter"},
+		{"jupyter name is case-insensitive", Container{Name: "JUPYTER Lab", Image: "quay.io/cdis/example:1"}, "jupyter"},
+		{"jupyter image without jupyter in name is unknown", Container{Name: "Genomics (4CPU/16GB RAM, CPU only)", Image: "quay.io/cdis/jupyter-notebook:genomics-3.5.1"}, "unknown_workspace_flavor"},
+		{"non-jupyter, non-rstudio is unknown", Container{Name: "Browser App", Image: "quay.io/cdis/jcoin-browser-app:jcoin-app"}, "unknown_workspace_flavor"},
+		{"zero-value container is unknown", Container{}, "unknown_workspace_flavor"},
+		{"dockstore-style app with empty image is unknown", Container{Name: "Test MultiContainer App", Image: ""}, "unknown_workspace_flavor"},
+		{"rstudio with space", Container{Name: "R Studio", Image: "quay.io/cdis/rstudio:4.4.0"}, "rstudio"},
+		{"rstudio with space and hyphen", Container{Name: "R Studio-3.6", Image: "quay.io/cdis/rstudio3.6:rstudio3.6-1.0.0"}, "rstudio"},
+		{"rstudio without space", Container{Name: "RStudio 4.1.0 + base packages", Image: "quay.io/cdis/example:1"}, "rstudio"},
+		{"rstudio by image only", Container{Name: "Statistics workspace", Image: "heliumdatastage/rstudio-server:1"}, "rstudio"},
+		{"jupyter with R kernel is not rstudio", Container{Name: "(Generic) Jupyter Lab Notebook with R Kernel", Image: "quay.io/cdis/jupyter-superslim-r:2.0.1"}, "jupyter"},
+		{"nextflow wins over rstudio", Container{Name: "R Studio", Image: "quay.io/cdis/rstudio:4.4.0", NextflowConfig: NextflowConfig{Enabled: true}}, "nextflow"},
+		{"license wins over rstudio", Container{Name: "R Studio", Image: "quay.io/cdis/rstudio:4.4.0", License: LicenseInfo{Enabled: true, WorkspaceFlavor: "gen3-licensed"}}, "gen3-licensed"},
+		{"license flavor is passed through as configured", Container{Name: "Stata", Image: "quay.io/cdis/stata:1", License: LicenseInfo{Enabled: true, WorkspaceFlavor: "stata"}}, "stata"},
+		{"nextflow wins over license", Container{Name: "Nextflow", NextflowConfig: NextflowConfig{Enabled: true}, License: LicenseInfo{Enabled: true, WorkspaceFlavor: "gen3-licensed"}}, "nextflow"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getWorkspaceFlavor(tt.container); got != tt.want {
+				t.Errorf("getWorkspaceFlavor() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
