@@ -369,8 +369,10 @@ func getWorkspaceFlavor(container Container) string {
 		return container.License.WorkspaceFlavor
 	} else if isRStudio(container) {
 		return "rstudio"
-	} else {
+	} else if strings.Contains(strings.ToLower(container.Name), "jupyter") {
 		return "jupyter"
+	} else {
+		return "unknown_workspace_flavor"
 	}
 }
 
