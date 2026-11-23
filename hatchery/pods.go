@@ -10,11 +10,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	k8sv1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
@@ -37,9 +40,6 @@ import (
 //go:embed scripts/squashfs_sidecar_script.sh
 var squashFSSidecarScript string
 
-//go:embed scripts/squashfs_wrapper_script.sh
-var squashFSWrapperScript string
-
 const (
 	// squashFSTerminationGracePeriod is the minimum grace period for pods running
 	// the squashfs mounter. The countdown covers the preStop hooks as well as the
@@ -48,16 +48,32 @@ const (
 	// the host and wedges the pod in Terminating.
 	squashFSTerminationGracePeriod = 60
 
-	// squashFSUnmountDrainSeconds is how long the workspace container lingers in
-	// preStop so the mounter can unmount /apps before the workspace container --
-	// which also holds that mount -- goes away.
-	squashFSUnmountDrainSeconds = 5
+	// The mounter's startup probe holds back the workspace container until /apps
+	// is mounted. Copying the image into the local cache can take a while for a
+	// large library, so the probe allows up to 30 minutes before giving up.
+	squashFSStartupProbePeriodSeconds    = 2
+	squashFSStartupProbeFailureThreshold = 900
+
+	// finishedPodDeleteTimeout bounds how long a relaunch waits for the user's
+	// finished pod to be removed before giving up.
+	finishedPodDeleteTimeout = 60 * time.Second
 )
 
 var (
 	trueVal  = true
 	falseVal = false
+
+	containerRestartAlways = k8sv1.ContainerRestartPolicyAlways
 )
+
+// addSidecar adds a sidecar container to the pod as a native sidecar (a
+// restartable init container). Kubelet starts it before the main containers and
+// stops it only after they have all exited, so anything it mounts is in place
+// for the workspace's whole life.
+func addSidecar(pod *k8sv1.Pod, sidecar k8sv1.Container) {
+	sidecar.RestartPolicy = &containerRestartAlways
+	pod.Spec.InitContainers = append(pod.Spec.InitContainers, sidecar)
+}
 
 const ambassadorYaml = `---
 apiVersion: ambassador/v1
@@ -306,8 +322,11 @@ func podStatus(ctx context.Context, userName string, accessToken string, payMode
 				conditions[i].Type = string(cond.Type)
 			}
 			status.Conditions = conditions
-			containerStates := make([]ContainerStates, len(pod.Status.ContainerStatuses))
-			for i, cs := range pod.Status.ContainerStatuses {
+			// Native sidecars report under InitContainerStatuses, and they are
+			// usually what a launching pod is waiting on.
+			statuses := append(append([]k8sv1.ContainerStatus{}, pod.Status.InitContainerStatuses...), pod.Status.ContainerStatuses...)
+			containerStates := make([]ContainerStates, len(statuses))
+			for i, cs := range statuses {
 				containerStates[i].State = cs.State
 				containerStates[i].Name = cs.Name
 				containerStates[i].Ready = cs.Ready
@@ -330,24 +349,9 @@ var statusK8sPod = func(ctx context.Context, userName string, accessToken string
 	return status, nil
 }
 
-var deleteK8sPod = func(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) error {
-	podClient, _, err := getPodClient(ctx, userName, payModelPtr)
-	if err != nil {
-		return err
-	}
-
-	policy := metav1.DeletePropagationBackground
-	var grace int64 = 20
-	deleteOptions := metav1.DeleteOptions{
-		PropagationPolicy:  &policy,
-		GracePeriodSeconds: &grace,
-	}
-
-	podName := userToResourceName(userName, "pod")
-	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("a workspace pod was not found: %s", err)
-	}
+// deleteMountedAPIKey revokes the API key hatchery minted for the pod's
+// workspace container, if it has one.
+func deleteMountedAPIKey(ctx context.Context, pod *k8sv1.Pod, userName string, accessToken string) {
 	containers := pod.Spec.Containers
 	var mountedAPIKeyID string
 	for i := range containers {
@@ -370,6 +374,66 @@ var deleteK8sPod = func(ctx context.Context, userName string, accessToken string
 			fmt.Printf("API Key with ID %s for user %s has been deleted\n", mountedAPIKeyID, userName)
 		}
 	}
+}
+
+// removeFinishedPod clears the way for a relaunch when the user's previous pod
+// has already finished. Once the workspace container exits (for example on its
+// idle timeout) the pod ends as Succeeded or Failed, which frees its resources
+// but keeps the object, and its name would otherwise block the new pod. A pod
+// that is still running is left alone so the conflict surfaces as before.
+func removeFinishedPod(ctx context.Context, podClient corev1.CoreV1Interface, podName string, userName string, accessToken string) error {
+	pods := podClient.Pods(Config.Config.UserNamespace)
+	existing, err := pods.Get(ctx, podName, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check for an existing pod %s: %w", podName, err)
+	}
+	if existing.Status.Phase != k8sv1.PodSucceeded && existing.Status.Phase != k8sv1.PodFailed {
+		return nil
+	}
+
+	Config.Logger.Printf("Removing finished pod %s (phase %s) for user %s before relaunching", podName, existing.Status.Phase, userName)
+	deleteMountedAPIKey(ctx, existing, userName, accessToken)
+	if err := pods.Delete(ctx, podName, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete finished pod %s: %w", podName, err)
+	}
+
+	// The containers have already exited, so this only waits on kubelet tearing
+	// down the volumes. The same name cannot be reused until the object is gone.
+	err = wait.PollUntilContextTimeout(ctx, time.Second, finishedPodDeleteTimeout, true, func(ctx context.Context) (bool, error) {
+		_, err := pods.Get(ctx, podName, metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			return true, nil
+		}
+		return false, err
+	})
+	if err != nil {
+		return fmt.Errorf("finished pod %s was not removed: %w", podName, err)
+	}
+	return nil
+}
+
+var deleteK8sPod = func(ctx context.Context, userName string, accessToken string, payModelPtr *PayModel) error {
+	podClient, _, err := getPodClient(ctx, userName, payModelPtr)
+	if err != nil {
+		return err
+	}
+
+	policy := metav1.DeletePropagationBackground
+	var grace int64 = 20
+	deleteOptions := metav1.DeleteOptions{
+		PropagationPolicy:  &policy,
+		GracePeriodSeconds: &grace,
+	}
+
+	podName := userToResourceName(userName, "pod")
+	pod, err := podClient.Pods(Config.Config.UserNamespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("a workspace pod was not found: %s", err)
+	}
+	deleteMountedAPIKey(ctx, pod, userName, accessToken)
 
 	fmt.Printf("Attempting to delete pod %s for user %s\n", podName, userName)
 	err = podClient.Pods(Config.Config.UserNamespace).Delete(ctx, podName, deleteOptions)
@@ -739,6 +803,38 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 		}
 	}
 
+	fuseSidecar := k8sv1.Container{
+		Name:  "fuse-container",
+		Image: hatchConfig.Config.Sidecar.Image,
+		SecurityContext: &k8sv1.SecurityContext{
+			Privileged: &trueVal,
+			RunAsUser:  &sideCarRunAsUser,
+			RunAsGroup: &sideCarRunAsGroup,
+		},
+		ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways),
+		Env:             sidecarEnvVars,
+		Command:         hatchConfig.Config.Sidecar.Command,
+		Args:            hatchConfig.Config.Sidecar.Args,
+		VolumeMounts:    volumeMounts,
+		Resources: k8sv1.ResourceRequirements{
+			Limits: k8sv1.ResourceList{
+				k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),
+				k8sv1.ResourceMemory: resource.MustParse(hatchConfig.Config.Sidecar.MemoryLimit),
+			},
+			Requests: k8sv1.ResourceList{
+				k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),
+				k8sv1.ResourceMemory: resource.MustParse(hatchConfig.Config.Sidecar.MemoryLimit),
+			},
+		},
+		Lifecycle: &k8sv1.Lifecycle{
+			PreStop: &k8sv1.LifecycleHandler{
+				Exec: &k8sv1.ExecAction{
+					Command: hatchConfig.Config.Sidecar.LifecyclePreStop,
+				},
+			},
+		},
+	}
+
 	pod = &k8sv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        podName,
@@ -750,46 +846,25 @@ func buildPod(hatchConfig *FullHatcheryConfig, hatchApp *Container, userName str
 			SecurityContext:    &securityContext,
 			InitContainers:     []k8sv1.Container{},
 			EnableServiceLinks: &falseVal,
-			Containers: []k8sv1.Container{
-				{
-					Name:  "fuse-container",
-					Image: hatchConfig.Config.Sidecar.Image,
-					SecurityContext: &k8sv1.SecurityContext{
-						Privileged: &trueVal,
-						RunAsUser:  &sideCarRunAsUser,
-						RunAsGroup: &sideCarRunAsGroup,
-					},
-					ImagePullPolicy: k8sv1.PullPolicy(k8sv1.PullAlways),
-					Env:             sidecarEnvVars,
-					Command:         hatchConfig.Config.Sidecar.Command,
-					Args:            hatchConfig.Config.Sidecar.Args,
-					VolumeMounts:    volumeMounts,
-					Resources: k8sv1.ResourceRequirements{
-						Limits: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(hatchConfig.Config.Sidecar.MemoryLimit),
-						},
-						Requests: k8sv1.ResourceList{
-							k8sv1.ResourceCPU:    resource.MustParse(hatchConfig.Config.Sidecar.CPULimit),
-							k8sv1.ResourceMemory: resource.MustParse(hatchConfig.Config.Sidecar.MemoryLimit),
-						},
-					},
-					Lifecycle: &k8sv1.Lifecycle{
-						PreStop: &k8sv1.LifecycleHandler{
-							Exec: &k8sv1.ExecAction{
-								Command: hatchConfig.Config.Sidecar.LifecyclePreStop,
-							},
-						},
-					},
-				},
-			},
-			RestartPolicy:    k8sv1.RestartPolicyNever,
-			ImagePullSecrets: []k8sv1.LocalObjectReference{},
-			NodeSelector:     nodeSelector,
-			Tolerations:      tolerations,
-			Volumes:          volumes,
+			Containers:         []k8sv1.Container{},
+			RestartPolicy:      k8sv1.RestartPolicyNever,
+			ImagePullSecrets:   []k8sv1.LocalObjectReference{},
+			NodeSelector:       nodeSelector,
+			Tolerations:        tolerations,
+			Volumes:            volumes,
 		},
 	}
+
+	if len(fuseSidecar.Command) > 0 {
+		// The sidecar image runs bash as PID 1, which ignores SIGTERM, so once the
+		// workspace exits the pod would sit in Running until the grace period runs
+		// out and the sidecar is SIGKILLed. Exiting on SIGTERM lets the pod finish
+		// as soon as the workspace does. The preStop hook still runs before the
+		// signal, so the sidecar's own cleanup is unaffected.
+		fuseSidecar.Args = append(append([]string{}, fuseSidecar.Command...), fuseSidecar.Args...)
+		fuseSidecar.Command = []string{"/bin/sh", "-c", `"$@" & child=$!; trap 'kill -TERM $child 2>/dev/null; exit 0' TERM INT; wait $child`, "fuse-sidecar"}
+	}
+	addSidecar(pod, fuseSidecar)
 
 	// some pods (ex - dockstore apps) only have "Friend" containers
 	if hatchApp.Image != "" {
@@ -1060,10 +1135,11 @@ func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface,
 		// underneath it while a filesystem is still mounted, which leaves the pod
 		// stuck in Terminating.
 		//
-		// The workspace container may still hold /apps at this point (Kubernetes
-		// does not order termination across containers), hence the lazy fallback.
-		// A failing preStop hook kills the container, so this must not report an
-		// error when there is simply nothing mounted.
+		// As a native sidecar this only runs once the workspace container has
+		// exited, so the plain umount normally succeeds; the lazy unmount is a
+		// fallback in case something else still holds /apps. A failing preStop
+		// hook kills the container, so this must not report an error when there
+		// is simply nothing mounted.
 		Lifecycle: &k8sv1.Lifecycle{
 			PreStop: &k8sv1.LifecycleHandler{
 				Exec: &k8sv1.ExecAction{
@@ -1072,7 +1148,18 @@ func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface,
 			},
 		},
 	}
-	pod.Spec.Containers = append([]k8sv1.Container{sidecar}, pod.Spec.Containers...)
+	// Kubelet holds back the main containers until a native sidecar's startup
+	// probe passes, so the workspace only starts once /apps is mounted.
+	sidecar.StartupProbe = &k8sv1.Probe{
+		ProbeHandler: k8sv1.ProbeHandler{
+			Exec: &k8sv1.ExecAction{
+				Command: []string{"/bin/sh", "-c", `awk '$5 == "/apps" && / - squashfs / { found = 1 } END { exit !found }' /proc/self/mountinfo`},
+			},
+		},
+		PeriodSeconds:    squashFSStartupProbePeriodSeconds,
+		FailureThreshold: squashFSStartupProbeFailureThreshold,
+	}
+	addSidecar(pod, sidecar)
 
 	// The countdown starts before preStop runs, so the unmount, the hook on the
 	// workspace container and the container stops all have to fit inside it. The
@@ -1092,40 +1179,8 @@ func applySquashFSMounter(ctx context.Context, podClient corev1.CoreV1Interface,
 				k8sv1.VolumeMount{Name: "apps-mount", MountPath: "/apps", MountPropagation: &propHostToContainer},
 			)
 
-			origCommand := container.Command
-			origArgs := container.Args
-
-			if len(origCommand) == 0 {
-				origCommand = []string{"/bin/sh", "-c"}
-			}
-
-			container.Command = []string{"/bin/sh", "-ceu"}
-
-			// Pass "hatchery-wrapper" as a dummy argument.
-			// This becomes $0 inside the shell script, ensuring that following command (/jupyterlab-start.sh) becomes $1 and is included in "$@".
-			newArgs := []string{squashFSWrapperScript, "hatchery-wrapper"} // Used embedded variable
-			newArgs = append(newArgs, origCommand...)
-			newArgs = append(newArgs, origArgs...)
-			container.Args = newArgs
-
-			// Hold this container open briefly so the mounter's own preStop can
-			// unmount /apps before this one exits. Without the delay both are
-			// signalled at once and the unmount hits EBUSY on a mount this
-			// container is still holding.
-			//
-			// Only added when the container has no preStop of its own, since an
-			// existing one is likely doing something more important (unmounting
-			// FUSE, flushing state) and a container has just one preStop.
-			if container.Lifecycle == nil {
-				container.Lifecycle = &k8sv1.Lifecycle{}
-			}
-			if container.Lifecycle.PreStop == nil {
-				container.Lifecycle.PreStop = &k8sv1.LifecycleHandler{
-					Exec: &k8sv1.ExecAction{
-						Command: []string{"/bin/sh", "-c", fmt.Sprintf("sleep %d", squashFSUnmountDrainSeconds)},
-					},
-				}
-			}
+			// No wait-for-mount wrapper or drain hook is needed: the native sidecar
+			// starts before this container and stops after it.
 			break
 		}
 	}
@@ -1240,6 +1295,11 @@ var createLocalK8sPod = func(ctx context.Context, hash string, userName string, 
 	}
 
 	setupSharedWorkspaceVolumes(ctx, podClient, pod, userName, sharedPrefixes)
+
+	if err := removeFinishedPod(ctx, podClient, podName, userName, accessToken); err != nil {
+		Config.Logger.Printf("Failed to launch pod %s for user %s: %v", hatchApp.Name, userName, err)
+		return err
+	}
 
 	_, err = podClient.Pods(Config.Config.UserNamespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
@@ -1395,6 +1455,11 @@ var createExternalK8sPod = func(ctx context.Context, hash string, userName strin
 				return err
 			}
 		}
+	}
+
+	if err := removeFinishedPod(ctx, podClient, podName, userName, accessToken); err != nil {
+		Config.Logger.Printf("Failed to launch pod %s for user %s: %v", hatchApp.Name, userName, err)
+		return err
 	}
 
 	_, err = podClient.Pods(Config.Config.UserNamespace).Create(ctx, pod, metav1.CreateOptions{})
