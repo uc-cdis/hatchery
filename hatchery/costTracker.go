@@ -17,10 +17,11 @@ import (
 	"github.com/google/uuid"
 
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -49,10 +50,11 @@ type PodTracker struct {
 
 	// In-memory state with thread safety
 	podLifecycles map[string]*PodLifecycle // key: namespace/podname
+	charged       map[types.UID]bool       // pods this replica has already billed
 	mu            sync.RWMutex
 
-	// Resume state
-	lastPodRV string // Last resource version for pod watching
+	// chargeFn records a pod's cost; defaults to updatePayModelCost (overridden in tests)
+	chargeFn func(eventKey, userName, podPaymodelID string, cost float64) error
 
 	// Control channels
 	stopCh chan struct{}
@@ -107,13 +109,20 @@ func NewPodTracker(namespace string) (*PodTracker, error) {
 		return nil, fmt.Errorf("failed to create k8s client: %v", err)
 	}
 
-	return &PodTracker{
-		k8sClient:     clientset,
+	return newPodTracker(clientset, namespace), nil
+}
+
+func newPodTracker(client kubernetes.Interface, namespace string) *PodTracker {
+	pt := &PodTracker{
+		k8sClient:     client,
 		namespace:     namespace,
 		podLifecycles: make(map[string]*PodLifecycle),
+		charged:       make(map[types.UID]bool),
 		stopCh:        make(chan struct{}),
 		doneCh:        make(chan struct{}),
-	}, nil
+	}
+	pt.chargeFn = pt.updatePayModelCost
+	return pt
 }
 
 // Start begins all tracking goroutines
@@ -135,64 +144,89 @@ func (pt *PodTracker) Stop() {
 	<-pt.doneCh
 }
 
-// PRIMARY: Pod Watch API with resume capability
+// startPodWatcher runs a pod informer for the namespace until the tracker is
+// stopped. The informer lists and then watches pods, and re-lists on its own
+// when the watch expires (410 Gone), so no events are lost for long.
 func (pt *PodTracker) startPodWatcher(ctx context.Context) {
-	log.Println("Starting primary pod watcher...")
+	log.Println("Starting pod informer...")
 
-	for {
+	stop := make(chan struct{})
+	go func() {
 		select {
 		case <-pt.stopCh:
-			return
-		default:
-			if err := pt.watchPods(ctx); err != nil {
-				Config.Logger.Printf("Pod watcher error: %v, retrying in 5s", err)
-				time.Sleep(5 * time.Second)
-			}
+		case <-ctx.Done():
 		}
+		close(stop)
+	}()
+
+	factory := informers.NewSharedInformerFactoryWithOptions(pt.k8sClient, 0, informers.WithNamespace(pt.namespace))
+	podInformer := factory.Core().V1().Pods().Informer()
+	if _, err := podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    pt.onPodAdd,
+		UpdateFunc: pt.onPodUpdate,
+		DeleteFunc: pt.onPodDelete,
+	}); err != nil {
+		Config.Logger.Printf("Failed to register pod informer handlers: %v", err)
+		return
+	}
+
+	factory.Start(stop)
+	if !cache.WaitForCacheSync(stop, podInformer.HasSynced) {
+		Config.Logger.Printf("Pod informer stopped before its cache synced")
+		return
+	}
+	log.Println("Pod informer synced")
+	<-stop
+	factory.Shutdown()
+}
+
+func (pt *PodTracker) onPodAdd(obj interface{}) {
+	pod, ok := obj.(*v1.Pod)
+	if !ok {
+		return
+	}
+	pt.handlePodCreated(pod, "watch")
+	// A pod that already finished (e.g. hatchery restarted) is billed now.
+	if isPodFinished(pod) {
+		pt.handlePodFinished(pod, "watch")
 	}
 }
 
-func (pt *PodTracker) watchPods(ctx context.Context) error {
-	// Resume from last known resource version
-	opts := metav1.ListOptions{ResourceVersion: pt.lastPodRV}
-
-	watcher, err := pt.k8sClient.CoreV1().Pods(pt.namespace).Watch(ctx, opts)
-	if err != nil {
-		return fmt.Errorf("failed to start pod watcher: %v", err)
+func (pt *PodTracker) onPodUpdate(_, newObj interface{}) {
+	if pod, ok := newObj.(*v1.Pod); ok {
+		pt.handlePodModified(pod, "watch")
 	}
-	defer watcher.Stop()
+}
 
-	for {
-		select {
-		case event, ok := <-watcher.ResultChan():
-			if !ok {
-				return fmt.Errorf("pod watch channel closed")
-			}
+func (pt *PodTracker) onPodDelete(obj interface{}) {
+	source := "watch"
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		// The delete happened while the watch was down: we get the last known state.
+		obj = tombstone.Obj
+		source = "tombstone"
+	}
+	if pod, ok := obj.(*v1.Pod); ok {
+		pt.handlePodDeleted(pod, source)
+	}
+}
 
-			pod, ok := event.Object.(*v1.Pod)
-			if !ok {
-				if status, ok := event.Object.(*metav1.Status); ok {
-					return fmt.Errorf("watch error (code %d): %s", status.Code, status.Message)
-				}
-				return fmt.Errorf("unexpected watch object type: %T", event.Object)
-			}
+// isPodFinished reports whether the pod reached a terminal phase. With native
+// sidecars this happens when the workspace container exits (e.g. idle timeout).
+func isPodFinished(pod *v1.Pod) bool {
+	return pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed
+}
 
-			pt.lastPodRV = pod.ResourceVersion
-			switch event.Type {
-			case watch.Added:
-				pt.handlePodCreated(pod, "watch")
-			case watch.Deleted:
-				pt.handlePodDeleted(pod, "watch")
-			case watch.Modified:
-				pt.handlePodModified(pod, "watch")
-			}
-
-		case <-pt.stopCh:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
+// podFinishedAt returns when the last container of a finished pod exited, or
+// the zero time if no container reports a finish time.
+func podFinishedAt(pod *v1.Pod) time.Time {
+	var end time.Time
+	statuses := append(append([]v1.ContainerStatus{}, pod.Status.InitContainerStatuses...), pod.Status.ContainerStatuses...)
+	for _, status := range statuses {
+		if terminated := status.State.Terminated; terminated != nil && terminated.FinishedAt.After(end) {
+			end = terminated.FinishedAt.Time
 		}
 	}
+	return end
 }
 
 // Handle pod creation
@@ -302,95 +336,98 @@ func (pt *PodTracker) calculatePodPrice(pod *v1.Pod, runtime time.Duration) *Pod
 
 // Handle pod deletion
 func (pt *PodTracker) handlePodDeleted(pod *v1.Pod, source string) {
-	key := pt.getPodKey(pod)
-	now := time.Now()
-	var cost *PodCost
+	if isPodFinished(pod) {
+		// Billed up to when it finished, not when it was deleted. No-op if the
+		// finish was already billed.
+		pt.handlePodFinished(pod, source)
+	} else {
+		end := time.Now()
+		if pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() {
+			end = pod.DeletionTimestamp.Time
+		}
+		pt.chargePod(pod, end, "🛑 Pod deleted", source)
+	}
 
 	pt.mu.Lock()
-	defer pt.mu.Unlock()
+	delete(pt.podLifecycles, pt.getPodKey(pod))
+	delete(pt.charged, pod.UID)
+	pt.mu.Unlock()
+}
 
-	// Extract user information from pod labels or annotations
+// handlePodFinished bills a pod that reached Succeeded/Failed, up to the time
+// its last container exited. A finished pod can stay around until its node is
+// removed or the user relaunches, and that time must not be billed.
+func (pt *PodTracker) handlePodFinished(pod *v1.Pod, source string) {
+	end := podFinishedAt(pod)
+	if end.IsZero() {
+		end = time.Now()
+	}
+	pt.chargePod(pod, end, "🏁 Pod finished", source)
+}
+
+// chargePod bills a pod once, for the time from its launch until end. The
+// DynamoDB event key is derived from the pod UID only, so the charge is
+// idempotent across replicas, hatchery restarts and finish-then-delete.
+func (pt *PodTracker) chargePod(pod *v1.Pod, end time.Time, what string, source string) {
+	key := pt.getPodKey(pod)
+
+	pt.mu.Lock()
+	if pt.charged == nil {
+		pt.charged = make(map[types.UID]bool)
+	}
+	if pt.charged[pod.UID] {
+		pt.mu.Unlock()
+		return
+	}
+	pt.charged[pod.UID] = true
+	launchTime := pod.CreationTimestamp.Time
+	if lifecycle, exists := pt.podLifecycles[key]; exists {
+		launchTime = lifecycle.LaunchTime
+		lifecycle.StopTime = &end
+	} else {
+		Config.Logger.Printf("⚠️  No launch time recorded for %s, using its creation time", pod.Name)
+	}
+	pt.mu.Unlock()
+
+	if launchTime.IsZero() {
+		Config.Logger.Printf("⚠️  Pod %s has no creation time, not billing it", pod.Name)
+		return
+	}
+
+	runtime := end.Sub(launchTime)
+	cost := pt.calculatePodPrice(pod, runtime)
+	Config.Logger.Printf("%s: %s, runtime: %s, cost: $%.4f (source: %s)",
+		what, pod.Name, runtime.String(), cost.TotalCost, source)
+
 	userName := pt.extractUserNameFromPod(pod)
 	podPaymodelID := pt.extractPaymodelIDFromPod(pod)
-
-	// Use DeletionTimestamp if available, fallback to now
-	var terminationTime time.Time
-	if pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() {
-		terminationTime = pod.DeletionTimestamp.Time
-		Config.Logger.Printf("Using DeletionTimestamp: %s", terminationTime.Format(time.RFC3339))
-	} else {
-		terminationTime = time.Now()
-		Config.Logger.Printf("DeletionTimestamp not available, using current time: %s", terminationTime.Format(time.RFC3339))
-	}
-
-	lifecycle, exists := pt.podLifecycles[key]
-	if !exists {
-		// We don't have launch time - try to figure it out!
-		Config.Logger.Printf("⚠️  Pod deleted but no launch time recorded: %s", pod.Name)
-
-		// Use the pod's CreationTimestamp as fallback
-		launchTime := pod.CreationTimestamp.Time
-		if launchTime.IsZero() {
-			// Last resort - estimate based on deletion time
-			launchTime = now.Add(-time.Hour) // Assume it ran for 1 hour minimum
-			Config.Logger.Printf("⚠️  Using estimated launch time for %s: %s", pod.Name, launchTime.Format(time.RFC3339))
-		}
-
-		pt.podLifecycles[key] = &PodLifecycle{
-			PodName:           pod.Name,
-			Namespace:         pod.Namespace,
-			LaunchTime:        launchTime,
-			StopTime:          &now,
-			NodeName:          pod.Spec.NodeName,
-			Source:            source + "_recovery",
-			CreationTimestamp: launchTime,
-		}
-
-		runtime := terminationTime.Sub(launchTime)
-		cost = pt.calculatePodPrice(pod, runtime)
-
-		Config.Logger.Printf("🛑 Pod deleted (recovered): %s, runtime: %s, cost: $%.4f (source: %s)",
-			pod.Name, runtime.String(), cost.TotalCost, source+"_recovery")
-
-		// remove it from the memory
-		delete(pt.podLifecycles, key)
-	} else {
-		// Normal case - we have the launch time
-		lifecycle.StopTime = &now
-		runtime := terminationTime.Sub(lifecycle.LaunchTime)
-		cost = pt.calculatePodPrice(pod, runtime)
-
-		Config.Logger.Printf("🛑 Pod deleted: %s, runtime: %s, cost: $%.4f (source: %s)",
-			pod.Name, runtime.String(), cost.TotalCost, source)
-
-		// remove it from the memory
-		delete(pt.podLifecycles, key)
-	}
 	Config.Logger.Printf("🧑‍💻 User and workpaceid info %v, %s", userName, podPaymodelID)
-	eventKey := fmt.Sprintf("%s/%s", pod.UID, pod.ResourceVersion)
-	// Update pay model cost if we have user info
-	if userName != "" && podPaymodelID != "" {
-		if err := pt.updatePayModelCost(eventKey, userName, podPaymodelID, cost.TotalCost); err != nil {
-			Config.Logger.Printf("⚠️  Failed to update cost for user %s: %v", userName, err)
-		}
+	if userName == "" || podPaymodelID == "" {
+		return
+	}
+	eventKey := fmt.Sprintf("%s/charged", pod.UID)
+	charge := pt.chargeFn
+	if charge == nil {
+		charge = pt.updatePayModelCost
+	}
+	if err := charge(eventKey, userName, podPaymodelID, cost.TotalCost); err != nil {
+		Config.Logger.Printf("⚠️  Failed to update cost for user %s: %v", userName, err)
 	}
 }
 
 // Handle pod modifications (phase changes, etc.)
 func (pt *PodTracker) handlePodModified(pod *v1.Pod, source string) {
-	// For billing, we mainly care about creation/deletion
-	// But we can update metadata if needed
 	key := pt.getPodKey(pod)
 
-	pt.mu.RLock()
-	lifecycle, exists := pt.podLifecycles[key]
-	pt.mu.RUnlock()
-
-	if exists && lifecycle.NodeName == "" && pod.Spec.NodeName != "" {
-		pt.mu.Lock()
+	pt.mu.Lock()
+	if lifecycle, exists := pt.podLifecycles[key]; exists && lifecycle.NodeName == "" && pod.Spec.NodeName != "" {
 		lifecycle.NodeName = pod.Spec.NodeName
-		pt.mu.Unlock()
 		Config.Logger.Printf("📍 Updated node for pod %s: %s", pod.Name, pod.Spec.NodeName)
+	}
+	pt.mu.Unlock()
+
+	if isPodFinished(pod) {
+		pt.handlePodFinished(pod, source)
 	}
 }
 
